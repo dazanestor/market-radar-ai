@@ -1,0 +1,7 @@
+yfinance
+pandas
+numpy
+requests
+openai
+pyyaml
+python-telegram-bot==20.7

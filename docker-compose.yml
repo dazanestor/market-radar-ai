@@ -5,12 +5,14 @@ services:
     restart: unless-stopped
 
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
-      MODEL: gpt-4o-mini
+      MODEL: claude-haiku-4-5-20251001
+      REPORT_HOUR: 8
+      TIMEZONE: Europe/Madrid
 
     volumes:
       - ./output:/app/output
-      - ./radar.db:/app/radar.db
+      - ./data:/app/data
       - ./tickers.yaml:/app/tickers.yaml

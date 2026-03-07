@@ -1,7 +1,8 @@
 yfinance
 pandas
-numpy
 requests
-openai
+anthropic
 pyyaml
-python-telegram-bot==20.7
+matplotlib
+pytz
+python-telegram-bot[job-queue]==20.7

@@ -9,7 +9,7 @@ def _format_news(news_by_ticker):
     sections = []
     for ticker, headlines in news_by_ticker.items():
         if headlines:
-            sections.append(f"**{ticker}**\n" + "\n".join(headlines))
+            sections.append(f"*{ticker}*\n" + "\n".join(headlines))
     if not sections:
         return ""
     return "## NOTICIAS RECIENTES\n" + "\n\n".join(sections)

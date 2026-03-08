@@ -125,16 +125,16 @@ def _chart_price(ticker, hist):
 
     high_52w = close.max()
     ax.axhline(high_52w, color="#4CAF50", linestyle="--", linewidth=1,
-               label=f"Máx 52s: ${high_52w:.2f}")
+               label=f"Máx 52s: {high_52w:.2f}")
 
     current = close.iloc[-1]
-    ax.scatter([dates[-1]], [current], color="#FF5722", zorder=5, s=60, label=f"Actual: ${current:.2f}")
+    ax.scatter([dates[-1]], [current], color="#FF5722", zorder=5, s=60, label=f"Actual: {current:.2f}")
 
     ax.fill_between(dates, close.values, high_52w,
                     where=close.values < high_52w, alpha=0.08, color="#F44336")
 
     ax.set_title(f"{ticker} — Precio último año", fontsize=13)
-    ax.set_ylabel("Precio ($)")
+    ax.set_ylabel("Precio")
     ax.legend(fontsize=9)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
@@ -341,7 +341,7 @@ async def cmd_rebalanceo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     total = sum(r["value"] for r in rows_data)
-    lines = [f"*REBALANCEO* (valor total: ${total:,.0f})\n"]
+    lines = [f"*REBALANCEO* (valor total: {_fmt(total)})\n"]
 
     for r in sorted(rows_data, key=lambda x: -x["value"]):
         current_w = r["value"] / total * 100
@@ -454,7 +454,7 @@ async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for date, price, drawdown, score, opp in rows[:10]:
         opp_icon = "🟢" if opp == "ALTA" else "🟡" if opp == "MEDIA" else "🔴"
         score_str = f"{score}" if score is not None else "—"
-        price_str = f"${price:.2f}" if price is not None else "—"
+        price_str = _fmt(price) if price is not None else "—"
         dd_str = f"{drawdown:.1f}%" if drawdown is not None else "—"
         lines.append(f"`{date}`  {price_str}  DD: {dd_str}  Score: {score_str}  {opp_icon}")
 
@@ -506,7 +506,7 @@ async def cmd_posicion(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _save_tickers(tickers)
             added_to_radar = True
 
-        msg = f"✅ Posición guardada: *{ticker}* — {shares} acc @ ${avg_price:.2f}"
+        msg = f"✅ Posición guardada: *{ticker}* — {shares} acc @ {_fmt(avg_price)}"
         if added_to_radar:
             msg += f"\n📡 Añadido al radar: *{name}* | {block} | {region}"
         await update.message.reply_text(msg, parse_mode="Markdown")
@@ -544,12 +544,12 @@ async def cmd_alerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not row.empty:
                 current = row.iloc[0]["price"]
                 direction = "below" if target < current else "above"
-                current_str = f" (actual: ${current:.2f})"
+                current_str = f" (actual: {_fmt(current)})"
 
         add_price_alert(ticker, target, direction)
         dir_text = "baje a" if direction == "below" else "suba a"
         await update.message.reply_text(
-            f"🔔 Alerta creada: avísame cuando *{ticker}* {dir_text} ${target:.2f}{current_str}.",
+            f"🔔 Alerta creada: avísame cuando *{ticker}* {dir_text} {_fmt(target)}{current_str}.",
             parse_mode="Markdown"
         )
     except ValueError:
@@ -566,7 +566,7 @@ async def cmd_mis_alertas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for alert_id, ticker, target, direction, created in alerts:
         icon = "📉" if direction == "below" else "📈"
         dir_text = "baje a" if direction == "below" else "suba a"
-        lines.append(f"`#{alert_id}` {icon} *{ticker}* — {dir_text} ${target:.2f}  _{created}_")
+        lines.append(f"`#{alert_id}` {icon} *{ticker}* — {dir_text} {_fmt(target)}  _{created}_")
 
     lines.append("\nUsa /borrar\\_alerta `<id>` para eliminar.")
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
@@ -672,7 +672,7 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
             msg = (
                 f"{icon} *Alerta disparada*\n"
                 f"*{ticker}* ha {'bajado a' if direction == 'below' else 'subido a'} "
-                f"${current:.2f} (objetivo: ${target:.2f})"
+                f"{_fmt(current)} (objetivo: {_fmt(target)})"
             )
             await context.bot.send_message(
                 chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"

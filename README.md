@@ -71,7 +71,7 @@ database.py           ← persistencia SQLite (historial, posiciones, alertas, r
 ### 1. Clonar el repositorio
 
 ```bash
-git clone <repo>
+git clone https://github.com/dazanestor/market-radar-ai.git
 cd market-radar-ai
 ```
 
@@ -128,7 +128,7 @@ docker compose logs -f
 | `TELEGRAM_CHAT_ID` | Sí | — | Tu chat ID (único autorizado a usar el bot) |
 | `MODEL` | No | `claude-haiku-4-5-20251001` | Modelo de Claude a usar |
 | `REPORT_HOUR` | No | `8` | Hora del reporte diario (formato 24h) |
-| `TIMEZONE` | No | `UTC` | Zona horaria del reporte (`Europe/Madrid`, `America/New_York`, etc.) |
+| `TIMEZONE` | No | `Europe/Madrid` | Zona horaria del reporte (`Europe/Madrid`, `America/New_York`, etc.) |
 
 ### Tickers (`tickers.yaml`)
 
@@ -160,7 +160,7 @@ watchlist:
 
 El bot solo responde a mensajes del `TELEGRAM_CHAT_ID` configurado.
 
-### Analisis
+### Análisis
 
 | Comando | Descripción |
 |---|---|
@@ -202,7 +202,7 @@ Ejemplo:
 
 Las alertas se comprueban cada hora automáticamente. Una vez disparada, se desactiva.
 
-### Configuracion
+### Configuración
 
 | Comando | Descripción |
 |---|---|
@@ -331,7 +331,7 @@ Clasificación final:
 
 ---
 
-## Ejecucion standalone
+## Ejecución standalone
 
 Si quieres ejecutar un análisis sin el bot:
 

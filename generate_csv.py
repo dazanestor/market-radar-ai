@@ -54,7 +54,7 @@ def generate():
     rows = []
     errors = []
 
-    for category, assets in tickers.items():
+    for category, assets in (tickers or {}).items():
         for ticker, meta in assets.items():
             try:
                 hist, dividends, info = fetch_stock_data(ticker)
@@ -86,7 +86,8 @@ def generate():
                     position = get_portfolio_position(ticker)
                     if position:
                         shares, avg_price = position
-                        pnl = (price - avg_price) / avg_price * 100
+                        if avg_price:
+                            pnl = (price - avg_price) / avg_price * 100
 
                 rows.append({
                     "category": category,

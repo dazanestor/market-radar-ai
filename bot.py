@@ -64,7 +64,10 @@ def _save_tickers(data):
 def _read_last_csv():
     path = f"{OUTPUT_DIR}/precios_global.csv"
     if os.path.exists(path):
-        return pd.read_csv(path)
+        try:
+            return pd.read_csv(path)
+        except Exception:
+            return None
     return None
 
 def _build_alerts(df):
@@ -232,8 +235,10 @@ async def cmd_cartera(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         if ticker in positions:
             shares, avg = positions[ticker]
-            pnl = (row["price"] - avg) / avg * 100
-            line += f"\n  Posición: {shares} acc @ ${avg:.2f}   P&L: {pnl:+.1f}%"
+            line += f"\n  Posición: {shares} acc @ ${avg:.2f}"
+            if avg:
+                pnl = (row["price"] - avg) / avg * 100
+                line += f"   P&L: {pnl:+.1f}%"
         lines.append(line)
 
     await update.message.reply_text("\n\n".join(lines), parse_mode="Markdown")

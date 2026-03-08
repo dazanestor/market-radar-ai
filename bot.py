@@ -43,15 +43,28 @@ def _fmt(price):
 TELEGRAM_MAX_CHARS = 4096
 
 
+def _split_text(text, limit=TELEGRAM_MAX_CHARS):
+    """Divide texto en bloques respetando saltos de línea."""
+    chunks = []
+    while len(text) > limit:
+        split_at = text.rfind('\n', 0, limit)
+        if split_at == -1:
+            split_at = limit
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip('\n')
+    if text:
+        chunks.append(text)
+    return chunks
+
 async def _send_long(bot, chat_id, text, parse_mode="Markdown"):
     """Envía texto dividiéndolo en bloques si supera el límite de Telegram."""
-    for i in range(0, len(text), TELEGRAM_MAX_CHARS):
-        await bot.send_message(chat_id=chat_id, text=text[i:i + TELEGRAM_MAX_CHARS], parse_mode=parse_mode)
+    for chunk in _split_text(text):
+        await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=parse_mode)
 
 async def _reply_long(update, text, parse_mode="Markdown"):
     """reply_text con soporte de mensajes largos."""
-    for i in range(0, len(text), TELEGRAM_MAX_CHARS):
-        await update.message.reply_text(text[i:i + TELEGRAM_MAX_CHARS], parse_mode=parse_mode)
+    for chunk in _split_text(text):
+        await update.message.reply_text(chunk, parse_mode=parse_mode)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────

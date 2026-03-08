@@ -154,7 +154,8 @@ async def _run_report(bot, chat_id):
     df, errors = generate()
 
     if df.empty:
-        await bot.send_message(chat_id=chat_id, text="❌ No se pudo obtener datos de ningún ticker.")
+        detail = f"\n\n⚠️ {', '.join(errors)}" if errors else ""
+        await bot.send_message(chat_id=chat_id, text=f"❌ No se pudo obtener datos de ningún ticker.{detail}")
         return
 
     df = score_watchlist(df)

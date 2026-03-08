@@ -1,8 +1,19 @@
 services:
+  init:
+    image: alpine
+    command: >-
+      sh -c "[ -f /workspace/tickers.yaml ] ||
+      printf 'portfolio: {}\nwatchlist: {}\n' > /workspace/tickers.yaml"
+    volumes:
+      - .:/workspace
+
   market-radar:
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-ai
     restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
 
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}

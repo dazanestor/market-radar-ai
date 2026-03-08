@@ -62,7 +62,7 @@ Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, d
 
     response = client.messages.create(
         model=MODEL,
-        max_tokens=1500,
+        max_tokens=4096,
         temperature=0,
         messages=[{"role": "user", "content": prompt}]
     )

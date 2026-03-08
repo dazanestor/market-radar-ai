@@ -466,10 +466,21 @@ async def cmd_posicion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         shares = float(context.args[1])
         avg_price = float(context.args[2])
         upsert_position(ticker, shares, avg_price)
-        await update.message.reply_text(
-            f"✅ Posición guardada: *{ticker}* — {shares} acc @ ${avg_price:.2f}",
-            parse_mode="Markdown"
-        )
+
+        # Añadir automáticamente al radar si no está ya
+        tickers = _load_tickers()
+        added_to_radar = False
+        if ticker not in tickers.get("portfolio", {}) and ticker not in tickers.get("watchlist", {}):
+            if "portfolio" not in tickers:
+                tickers["portfolio"] = {}
+            tickers["portfolio"][ticker] = {"name": ticker, "block": "—", "region": "—"}
+            _save_tickers(tickers)
+            added_to_radar = True
+
+        msg = f"✅ Posición guardada: *{ticker}* — {shares} acc @ ${avg_price:.2f}"
+        if added_to_radar:
+            msg += f"\n📡 *{ticker}* añadido al radar. Usa `/agregar` para completar nombre, bloque y región."
+        await update.message.reply_text(msg, parse_mode="Markdown")
     except ValueError:
         await update.message.reply_text("❌ Acciones y precio deben ser números.")
 

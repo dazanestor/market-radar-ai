@@ -40,8 +40,9 @@ Eres un analista de inversiones disciplinado, estilo Buffett. Sé breve y estruc
 
 {news_str}
 
-Columnas de precio/técnico: drawdown_52w (% caída desde máx anual), momentum_3m/6m (% rendimiento), \
-volatility (volatilidad anualizada %), dividend_yield (%), trend (mejorando/empeorando), pnl (% vs precio compra).
+Todos los precios están en EUR. Columnas de precio/técnico: price (EUR), drawdown_52w (% caída desde máx anual), \
+momentum_3m/6m (% rendimiento), volatility (volatilidad anualizada %), dividend_yield (%), \
+trend (mejorando/empeorando), pnl (% vs precio compra en EUR).
 
 Columnas fundamentales: pe_ratio (PER), pb_ratio (P/B), profit_margin (%), roe (%), \
 debt_equity (D/E), revenue_growth (% YoY), market_cap_b (capitalización en miles de millones).

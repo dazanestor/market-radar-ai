@@ -50,7 +50,7 @@ debt_equity (D/E), revenue_growth (% YoY), market_cap_b (capitalización en mile
 Responde en este formato exacto:
 
 **CARTERA**
-Para cada posición: acción recomendada (mantener/recortar/añadir), motivo basado en fundamentales + técnico.
+Para cada posición: acción recomendada (mantener/recortar X%/añadir X%), motivo basado en fundamentales + técnico. Si recomiendas recortar o añadir, especifica el porcentaje aproximado de la posición actual.
 
 **WATCHLIST — TOP OPORTUNIDADES**
 Los 3 activos con mejor relación calidad/precio ahora y por qué.

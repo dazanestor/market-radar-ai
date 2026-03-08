@@ -28,6 +28,7 @@ def _extract_fundamentals(info):
 
     market_cap = info.get("marketCap")
     return {
+        "currency":       info.get("currency", "USD"),
         "pe_ratio":       val(info.get("trailingPE")),
         "pb_ratio":       val(info.get("priceToBook")),
         "profit_margin":  pct(info.get("profitMargins")),

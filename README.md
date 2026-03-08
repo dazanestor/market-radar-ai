@@ -60,9 +60,35 @@ database.py           ← persistencia SQLite (historial, posiciones, alertas, r
 ## Requisitos
 
 - Docker y Docker Compose
-- Token de bot de Telegram ([crear con @BotFather](https://t.me/BotFather))
+- Token de bot de Telegram (ver instrucciones abajo)
 - Chat ID de Telegram (el tuyo, para autorización y notificaciones)
 - API key de Anthropic
+
+---
+
+## Crear el bot de Telegram
+
+### 1. Crear el bot con @BotFather
+
+1. Abre Telegram y busca [@BotFather](https://t.me/BotFather)
+2. Envía `/newbot`
+3. Elige un nombre visible (ej: `Market Radar`)
+4. Elige un username único acabado en `bot` (ej: `mi_market_radar_bot`)
+5. BotFather te devolverá el **token**: `123456789:ABC-xyz...`
+
+Guárdalo — es tu `TELEGRAM_BOT_TOKEN`.
+
+### 2. Obtener tu Chat ID
+
+1. Busca [@userinfobot](https://t.me/userinfobot) en Telegram
+2. Envía cualquier mensaje
+3. Te responderá con tu **Id** numérico (ej: `987654321`)
+
+Ese número es tu `TELEGRAM_CHAT_ID`. El bot solo responderá a mensajes de este ID.
+
+### 3. Activar el bot
+
+Busca tu bot por su username en Telegram y envía `/start` para activarlo.
 
 ---
 

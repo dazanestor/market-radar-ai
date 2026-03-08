@@ -152,7 +152,7 @@ No hace falta crear nada manualmente. El init container se encarga de crear `tic
 - Pega el contenido de `docker-compose.yml`
 - En **Environment variables** añade: `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 
-**2. Deploy the stack.**
+**2. Despliega el stack.**
 
 > El `tickers.yaml` inicial estará vacío. Usa `/agregar` desde el bot para añadir tickers.
 
@@ -215,7 +215,7 @@ El bot solo responde a mensajes del `TELEGRAM_CHAT_ID` configurado.
 | `/cartera` | Muestra portfolio con precio, drawdown, momentum, volatilidad y P&L |
 | `/watchlist` | Muestra watchlist ordenada por score con indicador de oportunidad (alta/media/baja) |
 | `/rebalanceo` | Muestra peso actual vs objetivo de cada posición con acción recomendada |
-| `/grafico <ticker>` | Envia chart de precio del último año con máximo de 52 semanas |
+| `/grafico <ticker>` | Envía chart de precio del último año con máximo de 52 semanas |
 | `/fundamentos <ticker>` | Muestra PER, P/B, ROE, margen neto, deuda y noticias recientes de cualquier ticker |
 | `/historial <ticker>` | Muestra evolución de drawdown y score de los últimos 30 días + gráfico |
 | `/reportes` | Lista los últimos 5 análisis de Claude con fecha |

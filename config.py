@@ -11,8 +11,10 @@ OUTPUT_DIR = "output"
 
 try:
     REPORT_HOUR = int(os.getenv("REPORT_HOUR", "8"))
+    if not 0 <= REPORT_HOUR <= 23:
+        raise ValueError
 except ValueError:
-    print("ERROR: REPORT_HOUR debe ser un número entero (0-23).", file=sys.stderr)
+    print("ERROR: REPORT_HOUR debe ser un número entero entre 0 y 23.", file=sys.stderr)
     sys.exit(1)
 
 TIMEZONE = os.getenv("TIMEZONE", "UTC")

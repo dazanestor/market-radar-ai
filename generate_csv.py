@@ -1,3 +1,4 @@
+import math
 import os
 from datetime import date
 import pandas as pd
@@ -8,7 +9,6 @@ from database import get_trend, get_portfolio_position
 from config import OUTPUT_DIR
 
 def _safe_round(v, n=2):
-    import math
     return round(v, n) if v is not None and not math.isnan(v) else None
 
 def _dividend_yield(dividends, price):

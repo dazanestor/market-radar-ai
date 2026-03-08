@@ -45,6 +45,11 @@ async def _send_long(bot, chat_id, text, parse_mode="Markdown"):
     for i in range(0, len(text), TELEGRAM_MAX_CHARS):
         await bot.send_message(chat_id=chat_id, text=text[i:i + TELEGRAM_MAX_CHARS], parse_mode=parse_mode)
 
+async def _reply_long(update, text, parse_mode="Markdown"):
+    """reply_text con soporte de mensajes largos."""
+    for i in range(0, len(text), TELEGRAM_MAX_CHARS):
+        await update.message.reply_text(text[i:i + TELEGRAM_MAX_CHARS], parse_mode=parse_mode)
+
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -248,7 +253,7 @@ async def cmd_cartera(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 line += f"   P&L: {pnl:+.1f}%"
         lines.append(line)
 
-    await update.message.reply_text("\n\n".join(lines), parse_mode="Markdown")
+    await _reply_long(update, "\n\n".join(lines))
 
 @authorized
 async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -276,7 +281,7 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         lines.append(line)
 
-    await update.message.reply_text("\n\n".join(lines), parse_mode="Markdown")
+    await _reply_long(update, "\n\n".join(lines))
 
 @authorized
 async def cmd_rebalanceo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -328,7 +333,7 @@ async def cmd_rebalanceo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         lines.append(f"*{r['ticker']}* — {r['name']}\n  Valor: ${r['value']:,.0f}   {weight_line}")
 
-    await update.message.reply_text("\n\n".join(lines), parse_mode="Markdown")
+    await _reply_long(update, "\n\n".join(lines))
 
 @authorized
 async def cmd_grafico(update: Update, context: ContextTypes.DEFAULT_TYPE):

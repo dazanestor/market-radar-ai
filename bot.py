@@ -596,8 +596,8 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
             hist = yf.Ticker(ticker).history(period="2d")
             if not hist.empty:
                 prices[ticker] = hist["Close"].iloc[-1]
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Error obteniendo precio de {ticker} para alertas: {e}")
 
     for alert_id, ticker, target, direction, _ in alerts:
         current = prices.get(ticker)

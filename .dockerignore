@@ -2,6 +2,7 @@
 *.env
 .git/
 .gitignore
+.github/
 data/
 output/
 __pycache__/

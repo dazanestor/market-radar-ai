@@ -47,8 +47,11 @@ def _detect_trend(ticker):
 def generate():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    with open("tickers.yaml") as f:
-        tickers = yaml.safe_load(f)
+    try:
+        with open("tickers.yaml") as f:
+            tickers = yaml.safe_load(f)
+    except FileNotFoundError:
+        return pd.DataFrame(), ["tickers.yaml no encontrado"]
 
     today = date.today().isoformat()
     rows = []

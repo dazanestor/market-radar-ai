@@ -147,6 +147,44 @@ Docker descargará automáticamente la imagen publicada en `ghcr.io/dazanestor/m
 docker compose down
 ```
 
+---
+
+### Despliegue con Portainer (Stacks)
+
+Los directorios `data/` y `output/` los crea Docker automáticamente al arrancar el stack, no hace falta crearlos manualmente.
+
+El único paso previo obligatorio es crear `tickers.yaml` en el servidor, porque si no existe Docker crea un directorio con ese nombre en su lugar y el bot falla.
+
+**1. Conecta al servidor por SSH y crea el archivo:**
+
+```bash
+mkdir -p /ruta/a/tu/stack
+cat > /ruta/a/tu/stack/tickers.yaml << 'EOF'
+portfolio:
+  V:
+    name: Visa
+    target_weight: 7
+    block: Redes
+    region: USA
+
+watchlist:
+  COST:
+    name: Costco
+    block: Consumo
+    region: USA
+EOF
+```
+
+**2. En Portainer → Stacks → Add stack:**
+
+- Pega el contenido de `docker-compose.yml`
+- En **Environment variables** añade: `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- En **working directory** (o ajusta los volúmenes) apunta a la carpeta donde creaste `tickers.yaml`
+
+**3. Deploy the stack.**
+
+> Desde el bot puedes gestionar los tickers con `/agregar` y `/eliminar` sin necesidad de editar el archivo a mano.
+
 ### Ver logs
 
 ```bash

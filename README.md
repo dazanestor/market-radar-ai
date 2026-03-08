@@ -92,6 +92,18 @@ Busca tu bot por su username en Telegram y envía `/start` para activarlo.
 
 ---
 
+## Obtener la API key de Anthropic
+
+1. Crea una cuenta en [console.anthropic.com](https://console.anthropic.com)
+2. Ve a **API Keys** en el menú lateral
+3. Pulsa **Create Key**, dale un nombre (ej: `market-radar`) y cópiala
+
+Es tu `ANTHROPIC_API_KEY`. Empieza por `sk-ant-...`
+
+> El modelo por defecto es `claude-haiku-4-5-20251001`, el más económico. Puedes cambiarlo con la variable `MODEL` en el `.env`.
+
+---
+
 ## Instalación y despliegue
 
 ### 1. Clonar el repositorio

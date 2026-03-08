@@ -419,7 +419,9 @@ async def cmd_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for date, price, drawdown, score, opp in rows[:10]:
         opp_icon = "🟢" if opp == "ALTA" else "🟡" if opp == "MEDIA" else "🔴"
         score_str = f"{score}" if score is not None else "—"
-        lines.append(f"`{date}`  ${price:.2f}  DD: {drawdown:.1f}%  Score: {score_str}  {opp_icon}")
+        price_str = f"${price:.2f}" if price is not None else "—"
+        dd_str = f"{drawdown:.1f}%" if drawdown is not None else "—"
+        lines.append(f"`{date}`  {price_str}  DD: {dd_str}  Score: {score_str}  {opp_icon}")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 

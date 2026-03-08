@@ -10,12 +10,15 @@ from fetch_data import get_macro_context, get_news
 import requests
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
+TELEGRAM_MAX_CHARS = 4096
+
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    try:
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}, timeout=15)
-    except requests.RequestException as e:
-        print(f"Error enviando mensaje a Telegram: {e}")
+    for i in range(0, len(text), TELEGRAM_MAX_CHARS):
+        try:
+            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text[i:i + TELEGRAM_MAX_CHARS], "parse_mode": "Markdown"}, timeout=15)
+        except requests.RequestException as e:
+            print(f"Error enviando mensaje a Telegram: {e}")
 
 def run():
     print("Ejecutando radar de mercado...")

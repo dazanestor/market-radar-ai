@@ -37,6 +37,13 @@ logging.basicConfig(
 )
 
 DRAWDOWN_ALERT_THRESHOLD = -20
+TELEGRAM_MAX_CHARS = 4096
+
+
+async def _send_long(bot, chat_id, text, parse_mode="Markdown"):
+    """Envía texto dividiéndolo en bloques si supera el límite de Telegram."""
+    for i in range(0, len(text), TELEGRAM_MAX_CHARS):
+        await bot.send_message(chat_id=chat_id, text=text[i:i + TELEGRAM_MAX_CHARS], parse_mode=parse_mode)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -170,7 +177,7 @@ async def _run_report(bot, chat_id):
     if errors:
         message += f"\n\n⚠️ *Tickers con error:* {', '.join(errors)}"
 
-    await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+    await _send_long(bot, chat_id, message)
 
 
 # ── Comandos ──────────────────────────────────────────────────────────────────

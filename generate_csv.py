@@ -8,7 +8,8 @@ from database import get_trend, get_portfolio_position
 from config import OUTPUT_DIR
 
 def _safe_round(v, n=2):
-    return round(v, n) if v is not None else None
+    import math
+    return round(v, n) if v is not None and not math.isnan(v) else None
 
 def _dividend_yield(dividends, price):
     if dividends.empty or price == 0:
@@ -42,6 +43,8 @@ def _detect_trend(ticker):
         return None
     newest_dd = history[0][1]
     oldest_dd = history[-1][1]
+    if newest_dd is None or oldest_dd is None:
+        return None
     return "empeorando" if newest_dd < oldest_dd else "mejorando"
 
 def generate():

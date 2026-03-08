@@ -8,9 +8,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
-      MODEL: claude-haiku-4-5-20251001
-      REPORT_HOUR: 8
-      TIMEZONE: Europe/Madrid
+      MODEL: ${MODEL:-claude-haiku-4-5-20251001}
+      REPORT_HOUR: ${REPORT_HOUR:-8}
+      TIMEZONE: ${TIMEZONE:-Europe/Madrid}
 
     healthcheck:
       test: ["CMD", "python", "-c", "import os; exit(0 if os.path.isdir('/app/data') else 1)"]

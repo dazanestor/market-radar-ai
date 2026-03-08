@@ -12,6 +12,13 @@ services:
       REPORT_HOUR: 8
       TIMEZONE: Europe/Madrid
 
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; open('/app/data/radar.db')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
     volumes:
       - ./output:/app/output
       - ./data:/app/data

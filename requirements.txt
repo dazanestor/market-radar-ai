@@ -1,8 +1,10 @@
-yfinance
-pandas
-requests
-anthropic
-pyyaml
-matplotlib
-pytz
+anthropic==0.84.0
+APScheduler==3.10.4
+matplotlib==3.10.8
+numpy==2.4.2
+pandas==3.0.1
 python-telegram-bot[job-queue]==20.7
+pytz==2026.1.post1
+PyYAML==6.0.3
+requests==2.32.5
+yfinance==1.2.0

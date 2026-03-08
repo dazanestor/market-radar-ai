@@ -3,10 +3,25 @@ import os
 from datetime import date
 import pandas as pd
 import yaml
+import yfinance as yf
 
 from fetch_data import fetch_stock_data
 from database import get_trend, get_portfolio_position
 from config import OUTPUT_DIR
+
+_fx_cache = {}
+
+def _to_eur(price, currency):
+    """Convierte un precio a EUR usando el tipo de cambio de yfinance."""
+    if currency == "EUR" or not currency:
+        return price
+    if currency not in _fx_cache:
+        try:
+            hist = yf.Ticker(f"{currency}EUR=X").history(period="2d")
+            _fx_cache[currency] = float(hist["Close"].iloc[-1]) if not hist.empty else 1.0
+        except Exception:
+            _fx_cache[currency] = 1.0
+    return price * _fx_cache[currency]
 
 def _safe_round(v, n=2):
     return round(v, n) if v is not None and not math.isnan(v) else None
@@ -27,15 +42,16 @@ def _extract_fundamentals(info):
         return round(v, decimals) if v is not None else None
 
     market_cap = info.get("marketCap")
+    currency = info.get("currency", "USD")
+    market_cap_eur = round(_to_eur(market_cap, currency) / 1e9, 1) if market_cap else None
     return {
-        "currency":       info.get("currency", "USD"),
         "pe_ratio":       val(info.get("trailingPE")),
         "pb_ratio":       val(info.get("priceToBook")),
         "profit_margin":  pct(info.get("profitMargins")),
         "roe":            pct(info.get("returnOnEquity")),
         "debt_equity":    val(info.get("debtToEquity")),
         "revenue_growth": pct(info.get("revenueGrowth")),
-        "market_cap_b":   round(market_cap / 1e9, 1) if market_cap else None,
+        "market_cap_b":   market_cap_eur,
     }
 
 def _detect_trend(ticker):
@@ -50,6 +66,7 @@ def _detect_trend(ticker):
 
 def generate():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    _fx_cache.clear()
 
     try:
         with open("tickers.yaml") as f:
@@ -76,17 +93,19 @@ def generate():
                     errors.append(f"{ticker}: serie de precios vacía")
                     continue
 
-                price = close.iloc[-1]
-                high_52w = close.tail(252).max()
+                currency = info.get("currency", "USD")
+                price_orig = close.iloc[-1]
+                price = _to_eur(price_orig, currency)
+                high_52w = _to_eur(close.tail(252).max(), currency)
                 drawdown = (price / high_52w - 1) * 100
 
-                momentum_3m = (price / close.iloc[-63] - 1) * 100 if len(close) >= 63 else None
-                momentum_6m = (price / close.iloc[-126] - 1) * 100 if len(close) >= 126 else None
+                momentum_3m = (price_orig / close.iloc[-63] - 1) * 100 if len(close) >= 63 else None
+                momentum_6m = (price_orig / close.iloc[-126] - 1) * 100 if len(close) >= 126 else None
 
                 daily_returns = close.pct_change().dropna()
                 volatility = daily_returns.tail(252).std() * (252 ** 0.5) * 100 if not daily_returns.empty else None
 
-                div_yield = _dividend_yield(dividends, price)
+                div_yield = _dividend_yield(dividends, price_orig)
                 fundamentals = _extract_fundamentals(info)
                 trend = _detect_trend(ticker)
 

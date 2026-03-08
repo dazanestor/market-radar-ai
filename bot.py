@@ -38,15 +38,8 @@ logging.basicConfig(
 
 DRAWDOWN_ALERT_THRESHOLD = -20
 
-_CURRENCY_SYMBOLS = {
-    "USD": "$", "EUR": "€", "GBP": "£", "CHF": "CHF ",
-    "CAD": "CA$", "JPY": "¥", "SEK": "kr ", "NOK": "kr ",
-    "DKK": "kr ", "HKD": "HK$", "AUD": "A$", "NZD": "NZ$",
-}
-
-def _fmt(price, currency="USD"):
-    sym = _CURRENCY_SYMBOLS.get(currency, f"{currency} ")
-    return f"{sym}{price:.2f}"
+def _fmt(price):
+    return f"€{price:.2f}"
 TELEGRAM_MAX_CHARS = 4096
 
 
@@ -251,15 +244,14 @@ async def cmd_cartera(update: Update, context: ContextTypes.DEFAULT_TYPE):
         trend_icon = "📉" if row.get("trend") == "empeorando" else "📈" if row.get("trend") == "mejorando" else "➡️"
         mom = f"{row['momentum_3m']:.1f}%" if pd.notna(row.get("momentum_3m")) else "—"
         vol = f"{row['volatility']:.1f}%" if pd.notna(row.get("volatility")) else "—"
-        cur = row.get("currency", "USD")
         line = (
             f"{trend_icon} *{ticker}* — {row['name']}\n"
-            f"  Precio: {_fmt(row['price'], cur)}   Drawdown: {row['drawdown_52w']:.1f}%\n"
+            f"  Precio: {_fmt(row['price'])}   Drawdown: {row['drawdown_52w']:.1f}%\n"
             f"  Mom 3m: {mom}   Volatilidad: {vol}"
         )
         if ticker in positions:
             shares, avg = positions[ticker]
-            line += f"\n  Posición: {shares} acc @ {_fmt(avg, cur)}"
+            line += f"\n  Posición: {shares} acc @ {_fmt(avg)}"
             if avg:
                 pnl = (row["price"] - avg) / avg * 100
                 line += f"   P&L: {pnl:+.1f}%"
@@ -286,10 +278,9 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         opp = row.get("opportunity", "—")
         emoji = "🟢" if opp == "ALTA" else "🟡" if opp == "MEDIA" else "🔴"
         mom = f"{row['momentum_3m']:.1f}%" if pd.notna(row.get("momentum_3m")) else "—"
-        cur = row.get("currency", "USD")
         line = (
             f"{emoji} *{row['ticker']}* — {row['name']}  `{opp}`\n"
-            f"  Precio: {_fmt(row['price'], cur)}   Drawdown: {row['drawdown_52w']:.1f}%\n"
+            f"  Precio: {_fmt(row['price'])}   Drawdown: {row['drawdown_52w']:.1f}%\n"
             f"  Mom 3m: {mom}   Dividendo: {row['dividend_yield']:.1f}%   Score: {row['score']}"
         )
         lines.append(line)
@@ -324,7 +315,6 @@ async def cmd_rebalanceo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "name": row["name"],
                 "value": value,
                 "target_weight": row.get("target_weight"),
-                "currency": row.get("currency", "USD"),
             })
 
     if not rows_data:
@@ -345,7 +335,7 @@ async def cmd_rebalanceo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             weight_line = f"Actual: {current_w:.1f}%   (sin objetivo definido)"
 
-        lines.append(f"*{r['ticker']}* — {r['name']}\n  Valor: {_fmt(r['value'], r.get('currency', 'USD'))}   {weight_line}")
+        lines.append(f"*{r['ticker']}* — {r['name']}\n  Valor: {_fmt(r['value'])}   {weight_line}")
 
     await _reply_long(update, "\n\n".join(lines))
 

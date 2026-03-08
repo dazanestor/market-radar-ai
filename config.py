@@ -16,6 +16,12 @@ except ValueError:
     sys.exit(1)
 
 TIMEZONE = os.getenv("TIMEZONE", "UTC")
+try:
+    import pytz
+    pytz.timezone(TIMEZONE)
+except Exception:
+    print(f"ERROR: TIMEZONE inválido: '{TIMEZONE}'. Ejemplo válido: Europe/Madrid", file=sys.stderr)
+    sys.exit(1)
 
 _missing = [v for v in ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID") if not os.getenv(v)]
 if _missing:

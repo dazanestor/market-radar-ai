@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import date, datetime
 from config import DATABASE
 
 
@@ -48,6 +49,8 @@ def init_db():
             content TEXT
         )
         """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_price_alerts_active ON price_alerts(active)")
 
 
 @contextmanager
@@ -135,7 +138,6 @@ def get_all_positions():
 # ── price alerts ──────────────────────────────────────────────────────────────
 
 def add_price_alert(ticker, target_price, direction):
-    from datetime import date
     with _db() as conn:
         conn.cursor().execute("""
             INSERT INTO price_alerts (ticker, target_price, direction, active, created)
@@ -161,7 +163,6 @@ def deactivate_alert(alert_id):
 # ── reports ───────────────────────────────────────────────────────────────────
 
 def save_report(content):
-    from datetime import datetime
     with _db() as conn:
         conn.cursor().execute(
             "INSERT INTO reports (date, content) VALUES (?, ?)",

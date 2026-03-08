@@ -1,0 +1,25 @@
+# Entorno
+.env
+*.env
+
+# Base de datos
+data/
+*.db
+
+# Salida del radar
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Docker
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db

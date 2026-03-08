@@ -37,10 +37,10 @@ logging.basicConfig(
 )
 
 DRAWDOWN_ALERT_THRESHOLD = -20
+TELEGRAM_MAX_CHARS = 4096
 
 def _fmt(price):
     return f"€{price:.2f}"
-TELEGRAM_MAX_CHARS = 4096
 
 
 def _split_text(text, limit=TELEGRAM_MAX_CHARS):

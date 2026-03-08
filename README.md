@@ -27,12 +27,14 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 
 - Monitoreo de cartera personal y watchlist de acciones
 - Descarga de precios históricos, dividendos y fundamentales via yfinance
+- **Todos los precios convertidos automáticamente a EUR** con tipos de cambio en tiempo real
 - Scoring multi-factor (drawdown, momentum, volatilidad, dividendos, ROE, PER)
 - Análisis diario automatizado con Claude (Anthropic) incluyendo contexto macro
 - Noticias recientes por ticker en el análisis
 - Alertas automáticas de precio configurables
 - Gráficos de precio e historial de drawdown enviados por Telegram
 - Control completo desde Telegram: añadir/eliminar tickers, registrar posiciones, ver rebalanceo
+- `/posicion` añade el ticker al radar automáticamente obteniendo nombre, sector y país de yfinance
 - Historial persistente en SQLite
 - Despliegue con Docker usando imagen pre-compilada de GitHub Container Registry (GHCR)
 - CI/CD con GitHub Actions: build automático multi-arquitectura (amd64 + arm64) en cada push a `main`
@@ -158,7 +160,7 @@ No hace falta crear nada manualmente. El init container se encarga de crear `tic
 
 **2. Despliega el stack.**
 
-> El `tickers.yaml` inicial estará vacío. Usa `/agregar` desde el bot para añadir tickers.
+> El `tickers.yaml` inicial estará vacío. Usa `/posicion` para añadir posiciones (se añaden al radar automáticamente) o `/agregar` para añadir a la watchlist.
 
 ### Ver logs
 
@@ -239,13 +241,13 @@ El bot solo responde a mensajes del `TELEGRAM_CHAT_ID` configurado.
 
 | Comando | Descripción |
 |---|---|
-| `/posicion <ticker> <acciones> <precio>` | Registra o actualiza posición en cartera |
+| `/posicion <ticker> <acciones> <precio>` | Registra posición en cartera (precio en EUR). Si el ticker no está en el radar lo añade automáticamente obteniendo nombre, sector y país de yfinance |
 | `/eliminar_posicion <ticker>` | Elimina posición de la cartera |
 
 Ejemplo:
 ```
-/posicion V 10 220.50
-/posicion MA 5 380.00
+/posicion NESN.SW 10 95.50
+/posicion V 5 240.00
 ```
 
 ### Alertas de precio
@@ -319,11 +321,11 @@ Posiciones registradas manualmente.
 |---|---|---|
 | `ticker` | TEXT PK | Símbolo del activo |
 | `shares` | REAL | Número de acciones |
-| `avg_price` | REAL | Precio medio de compra |
+| `avg_price` | REAL | Precio medio de compra en EUR |
 
 Poblar con `/posicion` o directamente:
 ```sql
-INSERT INTO portfolio (ticker, shares, avg_price) VALUES ('V', 10, 220.50);
+INSERT INTO portfolio (ticker, shares, avg_price) VALUES ('NESN.SW', 10, 95.50);
 ```
 
 ### `price_history`
@@ -332,7 +334,7 @@ Snapshot diario de cada ticker. Se guarda una entrada por ticker por día.
 | Campo | Descripción |
 |---|---|
 | `ticker` / `date` | Clave única |
-| `price` | Precio de cierre |
+| `price` | Precio de cierre en EUR (convertido automáticamente) |
 | `drawdown_52w` | Caída desde máximo 52 semanas (%) |
 | `momentum_3m` / `momentum_6m` | Rendimiento 3 y 6 meses (%) |
 | `volatility` | Volatilidad anualizada (%) |
@@ -373,7 +375,7 @@ Clasificación final:
 
 ```
 1. get_macro_context()     → S&P500, VIX, bono 10Y
-2. generate()              → descarga precios, fundamentales y calcula métricas
+2. generate()              → descarga precios, obtiene tipos de cambio y convierte a EUR
 3. score_watchlist()       → puntúa todos los activos
 4. save_snapshot()         → guarda en price_history
 5. get_news()              → últimas noticias por ticker

@@ -473,13 +473,20 @@ async def cmd_posicion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ticker not in tickers.get("portfolio", {}) and ticker not in tickers.get("watchlist", {}):
             if "portfolio" not in tickers:
                 tickers["portfolio"] = {}
-            tickers["portfolio"][ticker] = {"name": ticker, "block": "—", "region": "—"}
+            try:
+                info = yf.Ticker(ticker).info or {}
+                name = info.get("longName") or info.get("shortName") or ticker
+                block = info.get("sector") or "—"
+                region = info.get("country") or "—"
+            except Exception:
+                name, block, region = ticker, "—", "—"
+            tickers["portfolio"][ticker] = {"name": name, "block": block, "region": region}
             _save_tickers(tickers)
             added_to_radar = True
 
         msg = f"✅ Posición guardada: *{ticker}* — {shares} acc @ ${avg_price:.2f}"
         if added_to_radar:
-            msg += f"\n📡 *{ticker}* añadido al radar. Usa `/agregar` para completar nombre, bloque y región."
+            msg += f"\n📡 Añadido al radar: *{name}* | {block} | {region}"
         await update.message.reply_text(msg, parse_mode="Markdown")
     except ValueError:
         await update.message.reply_text("❌ Acciones y precio deben ser números.")

@@ -31,6 +31,7 @@ def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
 
     prompt = f"""
 Eres un analista de inversiones disciplinado, estilo Buffett. Sé breve y estructurado.
+IMPORTANTE: El texto se enviará por Telegram. NO uses tablas markdown (|), NO uses ## o ### para cabeceras, NO uses **negrita** con doble asterisco. Usa *negrita* con asterisco simple, guiones para listas y texto plano.
 {macro_str}
 ## CARTERA ACTUAL
 {portfolio_str}

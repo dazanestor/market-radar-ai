@@ -57,14 +57,20 @@ def _split_text(text, limit=TELEGRAM_MAX_CHARS):
     return chunks
 
 async def _send_long(bot, chat_id, text, parse_mode="Markdown"):
-    """Envía texto dividiéndolo en bloques si supera el límite de Telegram."""
+    """Envía texto dividiéndolo en bloques. Si un bloque falla por Markdown inválido lo reenvía como texto plano."""
     for chunk in _split_text(text):
-        await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=parse_mode)
+        try:
+            await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=parse_mode)
+        except Exception:
+            await bot.send_message(chat_id=chat_id, text=chunk)
 
 async def _reply_long(update, text, parse_mode="Markdown"):
-    """reply_text con soporte de mensajes largos."""
+    """reply_text con soporte de mensajes largos. Fallback a texto plano si Markdown falla."""
     for chunk in _split_text(text):
-        await update.message.reply_text(chunk, parse_mode=parse_mode)
+        try:
+            await update.message.reply_text(chunk, parse_mode=parse_mode)
+        except Exception:
+            await update.message.reply_text(chunk)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────

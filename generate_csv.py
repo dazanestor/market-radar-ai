@@ -55,6 +55,8 @@ def generate():
             tickers = yaml.safe_load(f)
     except FileNotFoundError:
         return pd.DataFrame(), ["tickers.yaml no encontrado"]
+    except yaml.YAMLError as e:
+        return pd.DataFrame(), [f"tickers.yaml inválido: {e}"]
 
     today = date.today().isoformat()
     rows = []

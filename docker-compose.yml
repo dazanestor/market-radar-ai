@@ -2,9 +2,10 @@ services:
   init:
     image: alpine
     restart: "no"
-    command: >-
-      sh -c "[ -f /workspace/tickers.yaml ] ||
-      printf 'portfolio: {}\nwatchlist: {}\n' > /workspace/tickers.yaml"
+    command:
+      - sh
+      - -c
+      - "[ -f /workspace/tickers.yaml ] || printf 'portfolio: {}\\nwatchlist: {}\\n' > /workspace/tickers.yaml"
     volumes:
       - .:/workspace
 

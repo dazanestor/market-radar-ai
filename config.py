@@ -1,6 +1,8 @@
 import os
 import sys
 
+import pytz
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -19,7 +21,6 @@ except ValueError:
 
 TIMEZONE = os.getenv("TIMEZONE", "UTC")
 try:
-    import pytz
     pytz.timezone(TIMEZONE)
 except Exception:
     print(f"ERROR: TIMEZONE inválido: '{TIMEZONE}'. Ejemplo válido: Europe/Madrid", file=sys.stderr)

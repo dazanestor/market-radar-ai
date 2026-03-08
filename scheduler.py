@@ -2,12 +2,13 @@
 Ejecución standalone sin bot de Telegram.
 Uso: python scheduler.py
 """
+import requests
+
 from generate_csv import generate
 from scoring import score_watchlist
 from ai_analysis import analyze
 from database import init_db, save_snapshot, save_report
 from fetch_data import get_macro_context, get_news
-import requests
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 TELEGRAM_MAX_CHARS = 4096

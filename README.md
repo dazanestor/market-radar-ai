@@ -9,13 +9,17 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - [Características](#características)
 - [Arquitectura](#arquitectura)
 - [Requisitos](#requisitos)
+- [Crear el bot de Telegram](#crear-el-bot-de-telegram)
+- [Obtener la API key de Anthropic](#obtener-la-api-key-de-anthropic)
 - [Instalación y despliegue](#instalación-y-despliegue)
+- [Despliegue con Portainer](#despliegue-con-portainer-stacks)
 - [Configuración](#configuración)
 - [Comandos del bot](#comandos-del-bot)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Base de datos](#base-de-datos)
 - [Scoring](#scoring)
 - [Flujo de datos](#flujo-de-datos)
+- [Ejecución standalone](#ejecución-standalone)
 
 ---
 
@@ -199,7 +203,18 @@ watchlist:
 - **`portfolio`**: posiciones que ya tienes. Muestra P&L si tienes precio de compra registrado.
 - **`watchlist`**: activos que sigues para posibles entradas.
 - **`target_weight`**: peso objetivo en % para el análisis de rebalanceo (solo portfolio).
-- Los tickers son los símbolos de yfinance (`OR.PA` para Paris, `SAN.MC` para Madrid, etc.).
+- Los tickers son los símbolos de yfinance. Bolsas europeas requieren sufijo:
+
+| Bolsa | Sufijo | Ejemplo |
+|---|---|---|
+| Suiza (SIX) | `.SW` | `NESN.SW` |
+| París (Euronext) | `.PA` | `OR.PA` |
+| Madrid (BME) | `.MC` | `SAN.MC` |
+| Frankfurt (XETRA) | `.DE` | `BMW.DE` |
+| Milán | `.MI` | `ENI.MI` |
+| Amsterdam | `.AS` | `ASML.AS` |
+| Estocolmo | `.ST` | `EQT.ST` |
+| Londres | `.L` | `SHEL.L` |
 
 ---
 

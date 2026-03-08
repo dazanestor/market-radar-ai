@@ -30,7 +30,8 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - Gráficos de precio e historial de drawdown enviados por Telegram
 - Control completo desde Telegram: añadir/eliminar tickers, registrar posiciones, ver rebalanceo
 - Historial persistente en SQLite
-- Despliegue con Docker
+- Despliegue con Docker usando imagen pre-compilada de GitHub Container Registry (GHCR)
+- CI/CD con GitHub Actions: build automático multi-arquitectura (amd64 + arm64) en cada push a `main`
 
 ---
 
@@ -97,10 +98,10 @@ mkdir -p data output
 ### 4. Arrancar
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
-El bot arranca inmediatamente y queda escuchando. El reporte diario se ejecuta a las 08:00 (Europe/Madrid por defecto).
+Docker descargará automáticamente la imagen publicada en `ghcr.io/dazanestor/market-radar-ai:latest`. El bot arranca inmediatamente y queda escuchando. El reporte diario se ejecuta a las 08:00 (Europe/Madrid por defecto).
 
 ### Parar
 
@@ -234,6 +235,9 @@ market-radar-ai/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
+├── .github/
+│   └── workflows/
+│       └── docker-publish.yml  # CI/CD: build y push a GHCR en cada push a main
 ├── data/               # base de datos SQLite (creado en runtime)
 │   └── radar.db
 └── output/             # CSV con último snapshot (creado en runtime)

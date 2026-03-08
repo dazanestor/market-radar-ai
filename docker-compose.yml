@@ -1,6 +1,6 @@
 services:
   market-radar:
-    build: .
+    image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-ai
     restart: unless-stopped
 

@@ -22,7 +22,7 @@ def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
     if macro:
         macro_str = f"""
 ## CONTEXTO MACRO
-- S&P 500: ${macro.get('sp500_price', '—')} | YTD: {macro.get('sp500_ytd', '—')}% | Drawdown: {macro.get('sp500_drawdown', '—')}%
+- S&P 500 (USD): {macro.get('sp500_price', '—')} | YTD: {macro.get('sp500_ytd', '—')}% | Drawdown: {macro.get('sp500_drawdown', '—')}%
 - VIX (volatilidad de mercado): {macro.get('vix', '—')}
 - Bono EE.UU. 10 años: {macro.get('treasury_10y', '—')}%
 """

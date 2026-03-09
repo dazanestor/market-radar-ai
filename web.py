@@ -282,7 +282,7 @@ async def chart_precio(ticker: str, session: Optional[str] = Cookie(default=None
     def _fetch():
         return yf.Ticker(ticker).history(period="1y")
 
-    hist = await asyncio.get_event_loop().run_in_executor(_executor, _fetch)
+    hist = await asyncio.get_running_loop().run_in_executor(_executor, _fetch)
     if hist.empty:
         raise HTTPException(404, "Sin datos")
     fig = _make_price_chart(ticker, hist)
@@ -379,7 +379,7 @@ async def dashboard(request: Request, session: Optional[str] = Cookie(default=No
 async def generar_reporte(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    await asyncio.get_event_loop().run_in_executor(_executor, _do_generate_report)
+    await asyncio.get_running_loop().run_in_executor(_executor, _do_generate_report)
     return RedirectResponse("/", status_code=303)
 
 
@@ -466,7 +466,7 @@ async def noticias_page(request: Request, session: Optional[str] = Cookie(defaul
                 result.append({"ticker": ticker, "name": name, "category": cat, "items": items})
         return result
 
-    news_data = await asyncio.get_event_loop().run_in_executor(_executor, _fetch_all)
+    news_data = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_all)
     portfolio_news  = [n for n in news_data if n["category"] == "portfolio"]
     watchlist_news  = [n for n in news_data if n["category"] == "watchlist"]
 
@@ -497,7 +497,7 @@ async def ticker_detalle(ticker: str, request: Request,
         news = get_news(ticker, n=8, translate=True)
         return info, news
 
-    info, news = await asyncio.get_event_loop().run_in_executor(_executor, _fetch)
+    info, news = await asyncio.get_running_loop().run_in_executor(_executor, _fetch)
 
     rows        = get_ticker_history(ticker, days=30)
     has_history = len(rows) >= 2

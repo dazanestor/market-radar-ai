@@ -426,14 +426,14 @@ async def cmd_fundamentos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"*{ticker}* — {name}",
             f"Sector: {sector}   Cap: {cap_str}\n",
             "*Valoración*",
-            f"  PER: {fmt(round(pe,1) if pe else None)}   P/B: {fmt(round(pb,2) if pb else None)}",
+            f"  PER: {fmt(round(pe,1) if pe is not None else None)}   P/B: {fmt(round(pb,2) if pb is not None else None)}",
             "",
             "*Rentabilidad*",
-            f"  Margen neto: {fmt(round(margin*100,1) if margin else None, '%')}   ROE: {fmt(round(roe*100,1) if roe else None, '%')}",
-            f"  Crec. ingresos: {fmt(round(rev_growth*100,1) if rev_growth else None, '%')}",
+            f"  Margen neto: {fmt(round(margin*100,1) if margin is not None else None, '%')}   ROE: {fmt(round(roe*100,1) if roe is not None else None, '%')}",
+            f"  Crec. ingresos: {fmt(round(rev_growth*100,1) if rev_growth is not None else None, '%')}",
             "",
             "*Deuda*",
-            f"  D/E: {fmt(round(de,2) if de else None)}",
+            f"  D/E: {fmt(round(de,2) if de is not None else None)}",
         ]
 
         if desc_str:

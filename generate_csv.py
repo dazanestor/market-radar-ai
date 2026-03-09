@@ -89,8 +89,10 @@ def generate():
                     continue
                 drawdown = (price / high_52w - 1) * 100
 
-                momentum_3m = (price_orig / close.iloc[-63] - 1) * 100 if len(close) >= 63 else None
-                momentum_6m = (price_orig / close.iloc[-126] - 1) * 100 if len(close) >= 126 else None
+                base_3m = close.iloc[-63] if len(close) >= 63 else None
+                base_6m = close.iloc[-126] if len(close) >= 126 else None
+                momentum_3m = (price_orig / base_3m - 1) * 100 if base_3m else None
+                momentum_6m = (price_orig / base_6m - 1) * 100 if base_6m else None
 
                 daily_returns = close.pct_change().dropna()
                 volatility = daily_returns.tail(252).std() * (252 ** 0.5) * 100 if not daily_returns.empty else None

@@ -10,8 +10,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
-import pytz
 import yaml
+from zoneinfo import ZoneInfo
 import yfinance as yf
 
 from telegram import Update
@@ -20,7 +20,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from generate_csv import generate
 from scoring import score_watchlist
 from ai_analysis import analyze
-from fetch_data import get_macro_context, get_news
+from fetch_data import get_macro_context, get_news, to_eur, clear_fx_cache
 from database import (
     init_db, save_snapshot, save_report, get_recent_reports,
     upsert_position, delete_position, get_all_positions,
@@ -49,7 +49,7 @@ def _split_text(text, limit=TELEGRAM_MAX_CHARS):
     chunks = []
     while len(text) > limit:
         split_at = text.rfind('\n', 0, limit)
-        if split_at == -1:
+        if split_at <= 0:
             split_at = limit
         chunks.append(text[:split_at])
         text = text[split_at:].lstrip('\n')
@@ -91,8 +91,12 @@ def authorized(func):
 def _load_tickers():
     try:
         with open("tickers.yaml") as f:
-            return yaml.safe_load(f) or {}
+            data = yaml.safe_load(f) or {}
+        return {k: (v or {}) for k, v in data.items()}
     except FileNotFoundError:
+        return {}
+    except yaml.YAMLError as e:
+        logging.error(f"tickers.yaml inválido: {e}")
         return {}
 
 def _save_tickers(data):
@@ -129,16 +133,16 @@ def _chart_price(ticker, hist):
 
     high_52w = close.max()
     ax.axhline(high_52w, color="#4CAF50", linestyle="--", linewidth=1,
-               label=f"Máx 52s: {high_52w:.2f}")
+               label=f"Máx 52s: €{high_52w:.2f}")
 
     current = close.iloc[-1]
-    ax.scatter([dates[-1]], [current], color="#FF5722", zorder=5, s=60, label=f"Actual: {current:.2f}")
+    ax.scatter([dates[-1]], [current], color="#FF5722", zorder=5, s=60, label=f"Actual: €{current:.2f}")
 
     ax.fill_between(dates, close.values, high_52w,
                     where=close.values < high_52w, alpha=0.08, color="#F44336")
 
-    ax.set_title(f"{ticker} — Precio último año", fontsize=13)
-    ax.set_ylabel("Precio")
+    ax.set_title(f"{ticker} — Precio último año (€)", fontsize=13)
+    ax.set_ylabel("Precio (€)")
     ax.legend(fontsize=9)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
@@ -158,16 +162,16 @@ def _chart_drawdown_history(ticker, rows):
     drawdowns = [r[2] for r in rows][::-1]
     dates = pd.to_datetime(dates_raw)
 
+    x = list(range(len(dates)))
     fig, ax = plt.subplots(figsize=(10, 3))
-    ax.plot(dates, drawdowns, color="#F44336", linewidth=1.5, marker="o", markersize=4)
+    ax.plot(x, drawdowns, color="#F44336", linewidth=1.5, marker="o", markersize=4)
     ax.axhline(0, color="#888", linewidth=0.8, linestyle="--")
-    ax.fill_between(dates, drawdowns, 0,
+    ax.fill_between(x, drawdowns, 0,
                     where=[d is not None and d < 0 for d in drawdowns], alpha=0.15, color="#F44336")
     ax.set_title(f"{ticker} — Drawdown desde máximo 52s (historial radar)", fontsize=12)
     ax.set_ylabel("Drawdown (%)")
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
-    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-    fig.autofmt_xdate(rotation=45)
+    ax.set_xticks(x)
+    ax.set_xticklabels(dates, rotation=45, fontsize=7)
     ax.grid(alpha=0.25)
     fig.tight_layout()
 
@@ -382,10 +386,17 @@ async def cmd_grafico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⏳ Generando gráfico de *{ticker}*...", parse_mode="Markdown")
 
     try:
-        hist = yf.Ticker(ticker).history(period="1y")
+        t = yf.Ticker(ticker)
+        hist = t.history(period="1y")
         if hist.empty:
             await update.message.reply_text(f"❌ No se encontraron datos para *{ticker}*.", parse_mode="Markdown")
             return
+        try:
+            currency = (t.info or {}).get("currency", "USD")
+        except Exception:
+            currency = "USD"
+        hist = hist.copy()
+        hist["Close"] = hist["Close"].apply(lambda p: to_eur(p, currency))
         buf = _chart_price(ticker, hist)
         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=buf)
     except Exception as e:
@@ -414,11 +425,16 @@ async def cmd_fundamentos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         de = info.get("debtToEquity")
         rev_growth = info.get("revenueGrowth")
         market_cap = info.get("marketCap")
-        name = info.get("longName", ticker)
-        sector = info.get("sector", "—")
+        currency = info.get("currency", "USD")
+        def _sanitize(s):
+            return s.replace("*", "").replace("_", " ").replace("`", "").replace("[", "").replace("]", "")
+
+        name = _sanitize(info.get("longName", ticker))
+        sector = _sanitize(info.get("sector", "—"))
         description = info.get("longBusinessSummary", "")
 
-        cap_str = f"{market_cap/1e9:.1f}B" if market_cap else "—"
+        cap_eur = to_eur(market_cap, currency) if market_cap else None
+        cap_str = f"€{cap_eur/1e9:.1f}B" if cap_eur else "—"
         raw_desc = (description[:300] + "...") if len(description) > 300 else description
         desc_str = raw_desc.replace("*", "").replace("_", " ").replace("`", "").replace("[", "").replace("]", "")
 
@@ -442,7 +458,7 @@ async def cmd_fundamentos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if news:
             lines += ["", "*Noticias recientes*"] + news
 
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await _reply_long(update, "\n".join(lines))
 
     except Exception as e:
         await update.message.reply_text(f"❌ Error al obtener datos de *{ticker}*: {e}", parse_mode="Markdown")
@@ -552,14 +568,30 @@ async def cmd_alerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target = float(context.args[1])
 
         df = _read_last_csv()
-        direction = "below"
+        direction = None
         current_str = ""
+        current = None
+
         if df is not None:
             row = df[df["ticker"] == ticker]
             if not row.empty:
                 current = row.iloc[0]["price"]
-                direction = "below" if target < current else "above"
-                current_str = f" (actual: {_fmt(current)})"
+
+        if current is None:
+            try:
+                t = yf.Ticker(ticker)
+                hist = t.history(period="2d")
+                if not hist.empty:
+                    cur = (t.info or {}).get("currency", "USD")
+                    current = to_eur(hist["Close"].iloc[-1], cur)
+            except Exception:
+                pass
+
+        if current is not None:
+            direction = "below" if target < current else "above"
+            current_str = f" (actual: {_fmt(current)})"
+        else:
+            direction = "below" if target < 0 else "above"
 
         add_price_alert(ticker, target, direction)
         dir_text = "baje a" if direction == "below" else "suba a"
@@ -666,11 +698,18 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
 
     tickers_needed = list({a[1] for a in alerts})
     prices = {}
+    clear_fx_cache()
     for ticker in tickers_needed:
         try:
-            hist = yf.Ticker(ticker).history(period="2d")
+            t = yf.Ticker(ticker)
+            hist = t.history(period="2d")
             if not hist.empty:
-                prices[ticker] = hist["Close"].iloc[-1]
+                price_raw = hist["Close"].iloc[-1]
+                try:
+                    currency = (t.info or {}).get("currency", "USD")
+                except Exception:
+                    currency = "USD"
+                prices[ticker] = to_eur(price_raw, currency)
         except Exception as e:
             logging.warning(f"Error obteniendo precio de {ticker} para alertas: {e}")
 
@@ -720,7 +759,7 @@ def main():
     app.add_handler(CommandHandler("agregar", cmd_agregar))
     app.add_handler(CommandHandler("eliminar", cmd_eliminar_ticker))
 
-    tz = pytz.timezone(TIMEZONE)
+    tz = ZoneInfo(TIMEZONE)
     report_time = datetime.time(hour=REPORT_HOUR, minute=0, tzinfo=tz)
     app.job_queue.run_daily(job_daily_report, time=report_time)
     app.job_queue.run_repeating(job_check_price_alerts, interval=3600, first=60)

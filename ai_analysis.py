@@ -22,7 +22,7 @@ def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
     if macro:
         macro_str = f"""
 ## CONTEXTO MACRO
-- S&P 500 (USD): {macro.get('sp500_price', '—')} | YTD: {macro.get('sp500_ytd', '—')}% | Drawdown: {macro.get('sp500_drawdown', '—')}%
+- S&P 500: €{macro.get('sp500_price', '—')} | YTD (año actual): {macro.get('sp500_ytd', '—')}% | Drawdown 52s: {macro.get('sp500_drawdown', '—')}%
 - VIX (volatilidad de mercado): {macro.get('vix', '—')}
 - Bono EE.UU. 10 años: {macro.get('treasury_10y', '—')}%
 """
@@ -64,9 +64,11 @@ Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, d
         model=MODEL,
         max_tokens=4096,
         temperature=0,
+        timeout=120,
         messages=[{"role": "user", "content": prompt}]
     )
 
-    if not response.content:
-        raise ValueError("La API de Claude devolvió una respuesta vacía.")
-    return response.content[0].text
+    for block in response.content:
+        if block.type == "text":
+            return block.text
+    return ""

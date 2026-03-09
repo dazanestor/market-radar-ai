@@ -1,7 +1,6 @@
 import os
 import sys
-
-import pytz
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -21,8 +20,8 @@ except ValueError:
 
 TIMEZONE = os.getenv("TIMEZONE", "UTC")
 try:
-    pytz.timezone(TIMEZONE)
-except Exception:
+    ZoneInfo(TIMEZONE)
+except (ZoneInfoNotFoundError, KeyError):
     print(f"ERROR: TIMEZONE inválido: '{TIMEZONE}'. Ejemplo válido: Europe/Madrid", file=sys.stderr)
     sys.exit(1)
 

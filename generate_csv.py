@@ -3,25 +3,10 @@ import os
 from datetime import date
 import pandas as pd
 import yaml
-import yfinance as yf
 
-from fetch_data import fetch_stock_data
+from fetch_data import fetch_stock_data, to_eur, clear_fx_cache
 from database import get_trend, get_portfolio_position
 from config import OUTPUT_DIR
-
-_fx_cache = {}
-
-def _to_eur(price, currency):
-    """Convierte un precio a EUR usando el tipo de cambio de yfinance."""
-    if currency == "EUR" or not currency:
-        return price
-    if currency not in _fx_cache:
-        try:
-            hist = yf.Ticker(f"{currency}EUR=X").history(period="2d")
-            _fx_cache[currency] = float(hist["Close"].iloc[-1]) if not hist.empty else 1.0
-        except Exception:
-            _fx_cache[currency] = 1.0
-    return price * _fx_cache[currency]
 
 def _safe_round(v, n=2):
     return round(v, n) if v is not None and not math.isnan(v) else None
@@ -45,7 +30,7 @@ def _extract_fundamentals(info):
 
     market_cap = info.get("marketCap")
     currency = info.get("currency", "USD")
-    market_cap_eur = round(_to_eur(market_cap, currency) / 1e9, 1) if market_cap else None
+    market_cap_eur = round(to_eur(market_cap, currency) / 1e9, 1) if market_cap else None
     return {
         "pe_ratio":       val(info.get("trailingPE")),
         "pb_ratio":       val(info.get("priceToBook")),
@@ -68,7 +53,7 @@ def _detect_trend(ticker):
 
 def generate():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    _fx_cache.clear()
+    clear_fx_cache()
 
     try:
         with open("tickers.yaml") as f:
@@ -83,7 +68,7 @@ def generate():
     errors = []
 
     for category, assets in (tickers or {}).items():
-        for ticker, meta in assets.items():
+        for ticker, meta in (assets or {}).items():
             try:
                 hist, dividends, info = fetch_stock_data(ticker)
                 if hist.empty:
@@ -97,9 +82,12 @@ def generate():
 
                 currency = info.get("currency", "USD")
                 price_orig = close.iloc[-1]
-                price = _to_eur(price_orig, currency)
-                high_52w = _to_eur(close.tail(252).max(), currency)
-                drawdown = (price / high_52w - 1) * 100 if high_52w else 0.0
+                price = to_eur(price_orig, currency)
+                high_52w = to_eur(close.tail(252).max(), currency)
+                if not high_52w:
+                    errors.append(f"{ticker}: precio máximo 52s es 0, datos corruptos")
+                    continue
+                drawdown = (price / high_52w - 1) * 100
 
                 momentum_3m = (price_orig / close.iloc[-63] - 1) * 100 if len(close) >= 63 else None
                 momentum_6m = (price_orig / close.iloc[-126] - 1) * 100 if len(close) >= 126 else None
@@ -122,9 +110,9 @@ def generate():
                 rows.append({
                     "category": category,
                     "ticker": ticker,
-                    "name": meta["name"],
-                    "block": meta["block"],
-                    "region": meta["region"],
+                    "name": meta.get("name", ticker),
+                    "block": meta.get("block", "—"),
+                    "region": meta.get("region", "—"),
                     "target_weight": meta.get("target_weight"),
                     "price": round(price, 2),
                     "drawdown_52w": round(drawdown, 2),
@@ -143,6 +131,6 @@ def generate():
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df.to_csv(f"{OUTPUT_DIR}/precios_global.csv", index=False)
+        df.to_csv(f"{OUTPUT_DIR}/precios_global.csv", index=False, encoding="utf-8")
 
     return df, errors

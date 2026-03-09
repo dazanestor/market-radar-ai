@@ -7,4 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+RUN useradd -m appuser && chown -R appuser /app
+USER appuser
+
 CMD ["python", "bot.py"]

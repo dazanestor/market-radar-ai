@@ -139,7 +139,7 @@ TELEGRAM_CHAT_ID=987654321
 docker compose up -d
 ```
 
-Docker descargará automáticamente la imagen publicada en `ghcr.io/dazanestor/market-radar-ai:latest`. Un init container creará `tickers.yaml`, `data/` y `output/` si no existen, y luego arrancará el bot. El reporte diario se ejecuta a las 08:00 (Europe/Madrid por defecto).
+Docker descargará automáticamente la imagen publicada en `ghcr.io/dazanestor/market-radar-ai:latest`. Un init container creará `tickers.yaml` vacío si no existe, y luego arrancará el bot. Los directorios `data/` y `output/` los crea Docker Compose automáticamente al montar los volúmenes. El reporte diario se ejecuta a las 08:00 (Europe/Madrid por defecto).
 
 ### Parar
 
@@ -151,7 +151,7 @@ docker compose down
 
 ### Despliegue con Portainer (Stacks)
 
-No hace falta crear nada manualmente. El init container se encarga de crear `tickers.yaml` (vacío), `data/` y `output/` si no existen antes de arrancar el bot.
+El init container crea automáticamente `tickers.yaml` (vacío), `data/` y `output/` con los permisos correctos para que el bot pueda escribir en ellos.
 
 **1. En Portainer → Stacks → Add stack:**
 
@@ -228,6 +228,7 @@ El bot solo responde a mensajes del `TELEGRAM_CHAT_ID` configurado.
 
 | Comando | Descripción |
 |---|---|
+| `/start` | Muestra el menú de ayuda con todos los comandos disponibles |
 | `/reporte` | Genera análisis completo con Claude ahora mismo (macro + cartera + watchlist + noticias) |
 | `/cartera` | Muestra portfolio con precio, drawdown, momentum, volatilidad y P&L |
 | `/watchlist` | Muestra watchlist ordenada por score con indicador de oportunidad (alta/media/baja) |
@@ -328,6 +329,8 @@ Poblar con `/posicion` o directamente:
 INSERT INTO portfolio (ticker, shares, avg_price) VALUES ('NESN.SW', 10, 95.50);
 ```
 
+> **Importante:** `avg_price` debe introducirse siempre en **EUR**, independientemente de la bolsa del ticker. El P&L se calcula comparando este valor con el precio actual convertido a EUR automáticamente por el sistema.
+
 ### `price_history`
 Snapshot diario de cada ticker. Se guarda una entrada por ticker por día.
 
@@ -351,7 +354,7 @@ Historial de análisis generados por Claude.
 
 ## Scoring
 
-Cada activo recibe un score numérico calculado con 6 factores:
+Cada activo recibe un score numérico calculado con 6 factores. El score se calcula tanto para portfolio como para watchlist:
 
 | Factor | Peso | Lógica |
 |---|---|---|

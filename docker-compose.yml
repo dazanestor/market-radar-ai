@@ -1,11 +1,14 @@
 services:
   init:
-    image: alpine
+    image: alpine:3.21
     restart: "no"
     command:
       - sh
       - -c
-      - "[ -f /workspace/tickers.yaml ] || printf 'portfolio: {}\\nwatchlist: {}\\n' > /workspace/tickers.yaml"
+      - |
+        [ -f /workspace/tickers.yaml ] || printf 'portfolio: {}\nwatchlist: {}\n' > /workspace/tickers.yaml
+        mkdir -p /workspace/data /workspace/output
+        chmod 777 /workspace/data /workspace/output
     volumes:
       - .:/workspace
 
@@ -26,7 +29,7 @@ services:
       TIMEZONE: ${TIMEZONE:-Europe/Madrid}
 
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.isdir('/app/data') else 1)"]
+      test: ["CMD", "python", "-c", "import sqlite3, os; db='/app/data/radar.db'; sqlite3.connect(db).execute('SELECT 1') if os.path.exists(db) else None"]
       interval: 60s
       timeout: 10s
       retries: 3

@@ -24,7 +24,7 @@ def _split_text(text, limit=TELEGRAM_MAX_CHARS):
     chunks = []
     while len(text) > limit:
         split_at = text.rfind('\n', 0, limit)
-        if split_at == -1:
+        if split_at <= 0:
             split_at = limit
         chunks.append(text[:split_at])
         text = text[split_at:].lstrip('\n')

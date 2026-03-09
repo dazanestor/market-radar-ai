@@ -84,8 +84,8 @@ def generate():
                 price_orig = close.iloc[-1]
                 price = to_eur(price_orig, currency)
                 high_52w = to_eur(close.tail(252).max(), currency)
-                if not high_52w:
-                    errors.append(f"{ticker}: precio máximo 52s es 0, datos corruptos")
+                if not high_52w or math.isnan(high_52w):
+                    errors.append(f"{ticker}: precio máximo 52s es 0 o NaN, datos corruptos")
                     continue
                 drawdown = (price / high_52w - 1) * 100
 

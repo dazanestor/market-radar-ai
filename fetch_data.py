@@ -1,5 +1,6 @@
 import anthropic
 import logging
+import math
 import yfinance as yf
 from datetime import datetime, timezone
 
@@ -17,7 +18,8 @@ def to_eur(price, currency):
     if currency not in _fx_cache:
         try:
             hist = yf.Ticker(f"{currency}EUR=X").history(period="2d")
-            _fx_cache[currency] = float(hist["Close"].iloc[-1]) if not hist.empty else 1.0
+            rate = float(hist["Close"].iloc[-1]) if not hist.empty else 1.0
+            _fx_cache[currency] = rate if not math.isnan(rate) else 1.0
         except Exception:
             logging.warning(f"No se pudo obtener tipo de cambio {currency}EUR=X, usando 1.0 como fallback")
             _fx_cache[currency] = 1.0

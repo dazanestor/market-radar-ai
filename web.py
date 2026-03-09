@@ -345,7 +345,7 @@ async def dashboard(request: Request, session: Optional[str] = Cookie(default=No
         for _, row in df_s[df_s["category"] == "portfolio"].iterrows():
             d     = row.to_dict()
             price = d.get("price")
-            pnl   = value = None
+            pnl   = value = shares = avg = None
             if d["ticker"] in positions:
                 shares, avg = positions[d["ticker"]]
                 if price and not _is_nan(price):
@@ -353,8 +353,10 @@ async def dashboard(request: Request, session: Optional[str] = Cookie(default=No
                     total_value += value
                 if avg and price and not _is_nan(price):
                     pnl = (price - avg) / avg * 100
-            d["value"]   = value
-            d["pnl_pct"] = pnl
+            d["shares"]   = shares
+            d["avg_price"] = avg
+            d["value"]    = value
+            d["pnl_pct"]  = pnl
             portfolio.append(d)
 
         for _, row in df_s[df_s["category"] == "watchlist"] \

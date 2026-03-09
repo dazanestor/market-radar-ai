@@ -10,6 +10,8 @@ _fx_cache: dict = {}
 
 def to_eur(price, currency):
     """Convierte un precio a EUR usando el tipo de cambio de yfinance."""
+    if price is None:
+        return None
     if currency == "EUR" or not currency:
         return price
     if currency not in _fx_cache:

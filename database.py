@@ -56,6 +56,7 @@ def init_db():
 @contextmanager
 def _db():
     conn = sqlite3.connect(DATABASE)
+    conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
         conn.commit()

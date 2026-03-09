@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block page_title %}Noticias{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom:18px;display:flex;align-items:center;gap:10px">
+  <span style="font-size:13px;color:#8b949e">Noticias recientes de <strong style="color:#e6edf3">{{ total_tickers }}</strong> tickers seguidos</span>
+  <span class="badge badge-gray">Portfolio + Watchlist</span>
+</div>
+
+{% if not portfolio_news and not watchlist_news %}
+<div class="card">
+  <div class="empty-state">
+    <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+    No hay noticias disponibles. Añade tickers en <a href="/tickers" class="text-accent">Tickers</a>.
+  </div>
+</div>
+{% endif %}
+
+{% if portfolio_news %}
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">💼 Cartera</h2>
+    <span class="badge badge-blue">{{ portfolio_news | length }} tickers</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
+    {% for entry in portfolio_news %}
+    <div class="card">
+      <div class="card-header" style="padding:12px 16px">
+        <div>
+          <a href="/ticker/{{ entry.ticker }}" class="ticker-cell" style="font-size:14px">{{ entry.ticker }}</a>
+          <span class="text-muted" style="font-size:12px;margin-left:6px">{{ entry.name }}</span>
+        </div>
+      </div>
+      <div style="padding:14px 16px">
+        <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+          {% for item in entry.items %}
+          <li style="font-size:12px;color:#c9d1d9;line-height:1.5;padding-bottom:8px;border-bottom:1px solid #21262d">
+            {{ item }}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if watchlist_news %}
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">👀 Watchlist</h2>
+    <span class="badge badge-blue">{{ watchlist_news | length }} tickers</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
+    {% for entry in watchlist_news %}
+    <div class="card">
+      <div class="card-header" style="padding:12px 16px">
+        <div>
+          <a href="/ticker/{{ entry.ticker }}" class="ticker-cell" style="font-size:14px">{{ entry.ticker }}</a>
+          <span class="text-muted" style="font-size:12px;margin-left:6px">{{ entry.name }}</span>
+        </div>
+      </div>
+      <div style="padding:14px 16px">
+        <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+          {% for item in entry.items %}
+          <li style="font-size:12px;color:#c9d1d9;line-height:1.5;padding-bottom:8px;border-bottom:1px solid #21262d">
+            {{ item }}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

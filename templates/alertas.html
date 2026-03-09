@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block page_title %}Alertas de precio{% endblock %}
+
+{% block content %}
+
+<!-- ── Tabla ──────────────────────────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">Alertas activas</h2>
+    <span class="badge {% if alerts %}badge-yellow{% else %}badge-gray{% endif %}">{{ alerts | length }}</span>
+  </div>
+  <div class="card">
+    {% if alerts %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Ticker</th>
+            <th>Precio objetivo</th>
+            <th>Dirección</th>
+            <th>Creada</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for alert_id, ticker, target, direction, created in alerts %}
+          <tr>
+            <td class="text-muted">{{ alert_id }}</td>
+            <td class="ticker-cell">{{ ticker }}</td>
+            <td>{{ target | eur }}</td>
+            <td>
+              {% if direction == 'below' %}
+                <span class="text-negative">↓ baja a</span>
+              {% else %}
+                <span class="text-positive">↑ sube a</span>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ created }}</td>
+            <td style="text-align:right">
+              <form method="post" action="/alertas/delete" style="display:inline">
+                <input type="hidden" name="alert_id" value="{{ alert_id }}">
+                <button type="submit" class="btn btn-danger">Borrar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5" style="margin:0 auto 12px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+      Sin alertas activas.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Formulario ─────────────────────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">Crear alerta</h2>
+  </div>
+  <div class="form-section">
+    <p style="font-size:12px;color:#8b949e;margin-bottom:16px">
+      Si el precio objetivo es menor al actual → alerta al bajar. Si es mayor → alerta al subir.
+    </p>
+    <form method="post" action="/alertas/add">
+      <div class="form-row" style="grid-template-columns: 1fr 1fr auto">
+        <div>
+          <label class="form-label">Ticker *</label>
+          {% if tickers_disponibles %}
+          <select name="ticker" class="form-input" required>
+            <option value="">Selecciona un ticker</option>
+            {% for t in tickers_disponibles %}
+            <option value="{{ t }}">{{ t }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="text" name="ticker" class="form-input" placeholder="AAPL" required style="text-transform:uppercase">
+          {% endif %}
+        </div>
+        <div>
+          <label class="form-label">Precio objetivo (€) *</label>
+          <input type="number" name="target_price" class="form-input" placeholder="150.00" min="0.01" step="any" required>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button type="submit" class="btn btn-primary btn-sm">Crear alerta</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

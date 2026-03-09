@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block page_title %}Tickers{% endblock %}
+
+{% block content %}
+
+{% for cat_key, cat_items in [('portfolio', portfolio), ('watchlist', watchlist)] %}
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">{% if cat_key == 'portfolio' %}💼 Portfolio{% else %}👀 Watchlist{% endif %}</h2>
+    <span class="badge badge-gray">{{ cat_items | length }} activos</span>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    {% if cat_items %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Nombre</th>
+            <th>Bloque</th>
+            <th>Región</th>
+            {% if cat_key == 'portfolio' %}<th>Peso objetivo</th>{% endif %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ticker, meta in cat_items.items() %}
+          <tr>
+            <td class="ticker-cell">{{ ticker }}</td>
+            <td>{{ meta.name }}</td>
+            <td class="text-muted">{{ meta.block or "—" }}</td>
+            <td class="text-muted">{{ meta.region or "—" }}</td>
+            {% if cat_key == 'portfolio' %}
+            <td class="text-muted">{{ meta.target_weight ~ "%" if meta.target_weight else "—" }}</td>
+            {% endif %}
+            <td style="text-align:right">
+              <form method="post" action="/tickers/delete" style="display:inline" onsubmit="return confirm('¿Eliminar {{ ticker }}?')">
+                <input type="hidden" name="ticker" value="{{ ticker }}">
+                <input type="hidden" name="categoria" value="{{ cat_key }}">
+                <button type="submit" class="btn btn-danger">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">Sin activos en {{ cat_key }}.</div>
+    {% endif %}
+  </div>
+
+  <!-- Add form -->
+  <div class="form-section" x-data="{ open: false }">
+    <button @click="open = !open" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:#8b949e;font-size:13px;padding:0">
+      <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:16px;height:16px;transition:transform 0.15s" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+      Añadir a {{ cat_key }}
+    </button>
+    <form method="post" action="/tickers/add" x-show="open" x-transition x-cloak style="margin-top:16px">
+      <input type="hidden" name="categoria" value="{{ cat_key }}">
+      <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))">
+        <div>
+          <label class="form-label">Ticker *</label>
+          <input type="text" name="ticker" class="form-input" placeholder="AAPL" required style="text-transform:uppercase">
+        </div>
+        <div>
+          <label class="form-label">Nombre *</label>
+          <input type="text" name="nombre" class="form-input" placeholder="Apple Inc." required>
+        </div>
+        <div>
+          <label class="form-label">Bloque *</label>
+          <input type="text" name="bloque" class="form-input" placeholder="Tecnología" required>
+        </div>
+        <div>
+          <label class="form-label">Región *</label>
+          <input type="text" name="region" class="form-input" placeholder="USA" required>
+        </div>
+        {% if cat_key == 'portfolio' %}
+        <div>
+          <label class="form-label">Peso obj. (%)</label>
+          <input type="number" name="target_weight" class="form-input" placeholder="10" min="0" max="100" step="0.1">
+        </div>
+        {% else %}
+        <input type="hidden" name="target_weight" value="">
+        {% endif %}
+      </div>
+      <div style="margin-top:12px">
+        <button type="submit" class="btn btn-primary btn-sm">Añadir ticker</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+
+{% endblock %}

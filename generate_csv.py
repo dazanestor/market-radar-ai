@@ -27,11 +27,13 @@ def _safe_round(v, n=2):
     return round(v, n) if v is not None and not math.isnan(v) else None
 
 def _dividend_yield(dividends, price):
-    if dividends.empty or price == 0:
+    if dividends.empty or not price:
         return 0.0
     one_year_ago = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=1)
     if dividends.index.tz is None:
         dividends.index = dividends.index.tz_localize("UTC")
+    else:
+        dividends.index = dividends.index.tz_convert("UTC")
     annual = dividends[dividends.index >= one_year_ago].sum()
     return (annual / price) * 100
 
@@ -97,7 +99,7 @@ def generate():
                 price_orig = close.iloc[-1]
                 price = _to_eur(price_orig, currency)
                 high_52w = _to_eur(close.tail(252).max(), currency)
-                drawdown = (price / high_52w - 1) * 100
+                drawdown = (price / high_52w - 1) * 100 if high_52w else 0.0
 
                 momentum_3m = (price_orig / close.iloc[-63] - 1) * 100 if len(close) >= 63 else None
                 momentum_6m = (price_orig / close.iloc[-126] - 1) * 100 if len(close) >= 126 else None

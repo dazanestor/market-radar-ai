@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+{% block page_title %}{{ ticker }} — Detalle{% endblock %}
+
+{% block topbar_actions %}
+<a href="javascript:history.back()" class="btn btn-ghost btn-sm">← Volver</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Header ── -->
+<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+  <div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <h2 style="font-size:22px;font-weight:700;color:#e6edf3;margin:0">{{ ticker }}</h2>
+      <span class="badge badge-gray">{{ fundamentals.currency }}</span>
+      {% if csv_row %}
+        {% if csv_row.opportunity == 'ALTA' %}<span class="badge badge-green">ALTA oportunidad</span>
+        {% elif csv_row.opportunity == 'MEDIA' %}<span class="badge badge-yellow">MEDIA oportunidad</span>
+        {% else %}<span class="badge badge-red">BAJA oportunidad</span>{% endif %}
+      {% endif %}
+    </div>
+    <p style="font-size:14px;color:#8b949e;margin:0">{{ fundamentals.name }}</p>
+    <p style="font-size:12px;color:#484f58;margin:4px 0 0">{{ fundamentals.sector }} · {{ fundamentals.country }}</p>
+  </div>
+
+  {% if csv_row %}
+  <div style="display:flex;gap:16px;flex-wrap:wrap">
+    <div style="text-align:right">
+      <div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Precio</div>
+      <div style="font-size:20px;font-weight:700;color:#e6edf3">{{ csv_row.price | eur }}</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Drawdown 52s</div>
+      <div style="font-size:20px;font-weight:700" class="{{ csv_row.drawdown_52w | dd_class }}">{{ csv_row.drawdown_52w | pct }}</div>
+    </div>
+    {% if csv_row.score is not none and csv_row.score == csv_row.score %}
+    <div style="text-align:right">
+      <div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Score</div>
+      <div style="font-size:20px;font-weight:700;color:#58a6ff">{{ "%.1f" % csv_row.score }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Precio chart ── -->
+<div class="section">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📈 Precio último año</span>
+    </div>
+    <div style="padding:16px">
+      <img src="/chart/precio/{{ ticker }}" class="chart-img" loading="lazy"
+           alt="Gráfico de precio {{ ticker }}"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <div style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">
+        No hay datos de precio disponibles para {{ ticker }}.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Fundamentos + Métricas técnicas ── -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px">
+
+  <!-- Valoración y rentabilidad -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">📊 Fundamentos</span></div>
+    <div class="card-body">
+      <div class="kv-grid">
+        <div class="kv-item">
+          <span class="kv-label">Cap. mercado</span>
+          <span class="kv-value">{{ "%.1f" % fundamentals.cap_b ~ "B" if fundamentals.cap_b else "—" }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">PER</span>
+          <span class="kv-value">{{ "%.1f" % fundamentals.pe_ratio if fundamentals.pe_ratio else "—" }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">P/B</span>
+          <span class="kv-value">{{ "%.2f" % fundamentals.pb_ratio if fundamentals.pb_ratio else "—" }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">ROE</span>
+          <span class="kv-value">{{ fundamentals.roe ~ "%" if fundamentals.roe else "—" }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Margen neto</span>
+          <span class="kv-value">{{ fundamentals.profit_margin ~ "%" if fundamentals.profit_margin else "—" }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Crec. ingresos</span>
+          <span class="kv-value {% if fundamentals.revenue_growth and fundamentals.revenue_growth > 0 %}text-positive{% elif fundamentals.revenue_growth %}text-negative{% endif %}">
+            {{ fundamentals.revenue_growth ~ "%" if fundamentals.revenue_growth else "—" }}
+          </span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Deuda/Equity</span>
+          <span class="kv-value">{{ "%.2f" % fundamentals.debt_equity if fundamentals.debt_equity else "—" }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Métricas técnicas del radar -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">📉 Métricas radar</span></div>
+    <div class="card-body">
+      {% if csv_row %}
+      <div class="kv-grid">
+        <div class="kv-item">
+          <span class="kv-label">Precio (EUR)</span>
+          <span class="kv-value">{{ csv_row.price | eur }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Drawdown 52s</span>
+          <span class="kv-value {{ csv_row.drawdown_52w | dd_class }}">{{ csv_row.drawdown_52w | pct }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Momentum 3m</span>
+          <span class="kv-value {{ csv_row.momentum_3m | pnl_class }}">{{ csv_row.momentum_3m | pct }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Momentum 6m</span>
+          <span class="kv-value {{ csv_row.momentum_6m | pnl_class }}">{{ csv_row.momentum_6m | pct }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Volatilidad</span>
+          <span class="kv-value text-muted">{{ csv_row.volatility | num }}%</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Div. Yield</span>
+          <span class="kv-value text-muted">{{ csv_row.dividend_yield | pct }}</span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Tendencia</span>
+          <span class="kv-value">
+            {% if csv_row.trend == 'mejorando' %}<span class="text-positive">↑ Mejorando</span>
+            {% elif csv_row.trend == 'empeorando' %}<span class="text-negative">↓ Empeorando</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </span>
+        </div>
+        <div class="kv-item">
+          <span class="kv-label">Score</span>
+          <span class="kv-value text-accent">
+            {% if csv_row.score is not none and csv_row.score == csv_row.score %}{{ "%.1f" % csv_row.score }}{% else %}—{% endif %}
+          </span>
+        </div>
+      </div>
+      {% else %}
+      <div class="empty-state" style="padding:20px">
+        Sin datos en el radar. <a href="/" class="text-accent">Genera un reporte →</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Descripción ── -->
+{% if fundamentals.description %}
+<div class="section">
+  <div class="card">
+    <div class="card-header"><span class="card-title">🏢 Descripción</span></div>
+    <div class="card-body">
+      <p style="font-size:13px;color:#c9d1d9;line-height:1.7;margin:0">{{ fundamentals.description }}</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Historial drawdown ── -->
+{% if has_history %}
+<div class="section">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📅 Historial drawdown (últimos 30 días radar)</span>
+    </div>
+    <div style="padding:16px">
+      <img src="/chart/historial/{{ ticker }}" class="chart-img" loading="lazy"
+           alt="Historial drawdown {{ ticker }}"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <div style="display:none;padding:20px;text-align:center;color:#8b949e;font-size:13px">
+        No hay suficientes datos históricos aún.
+      </div>
+    </div>
+    {% if hist_rows %}
+    <div style="padding:0 16px 16px">
+      <table>
+        <thead>
+          <tr><th>Fecha</th><th>Precio</th><th>Drawdown</th><th>Score</th><th>Oportunidad</th></tr>
+        </thead>
+        <tbody>
+          {% for date, price, drawdown, score, opp in hist_rows %}
+          <tr>
+            <td class="text-muted" style="font-family:monospace;font-size:12px">{{ date }}</td>
+            <td>{{ price | eur }}</td>
+            <td class="{{ drawdown | dd_class }}">{{ drawdown | pct }}</td>
+            <td class="text-accent">{{ score if score else "—" }}</td>
+            <td>
+              {% if opp == 'ALTA' %}<span class="badge badge-green">ALTA</span>
+              {% elif opp == 'MEDIA' %}<span class="badge badge-yellow">MEDIA</span>
+              {% elif opp %}<span class="badge badge-red">{{ opp }}</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Noticias ── -->
+<div class="section">
+  <div class="card">
+    <div class="card-header"><span class="card-title">📰 Noticias recientes</span></div>
+    <div class="card-body">
+      {% if news %}
+      <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px">
+        {% for item in news %}
+        <li style="font-size:13px;color:#c9d1d9;padding-bottom:10px;border-bottom:1px solid #21262d">
+          {{ item }}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p style="color:#8b949e;font-size:13px;margin:0">No hay noticias recientes disponibles.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}

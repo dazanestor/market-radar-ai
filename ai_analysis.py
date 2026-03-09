@@ -67,4 +67,6 @@ Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, d
         messages=[{"role": "user", "content": prompt}]
     )
 
+    if not response.content:
+        raise ValueError("La API de Claude devolvió una respuesta vacía.")
     return response.content[0].text

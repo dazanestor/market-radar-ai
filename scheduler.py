@@ -13,11 +13,35 @@ from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 TELEGRAM_MAX_CHARS = 4096
 
+
+def _split_text(text, limit=TELEGRAM_MAX_CHARS):
+    chunks = []
+    while len(text) > limit:
+        split_at = text.rfind('\n', 0, limit)
+        if split_at == -1:
+            split_at = limit
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip('\n')
+    if text:
+        chunks.append(text)
+    return chunks
+
+
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    for i in range(0, len(text), TELEGRAM_MAX_CHARS):
+    for chunk in _split_text(text):
         try:
-            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text[i:i + TELEGRAM_MAX_CHARS], "parse_mode": "Markdown"}, timeout=15)
+            resp = requests.post(
+                url,
+                json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "parse_mode": "Markdown"},
+                timeout=15,
+            )
+            if not resp.ok:
+                requests.post(
+                    url,
+                    json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk},
+                    timeout=15,
+                )
         except requests.RequestException as e:
             print(f"Error enviando mensaje a Telegram: {e}")
 

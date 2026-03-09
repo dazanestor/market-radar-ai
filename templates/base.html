@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Market Radar AI{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://unpkg.com/alpinejs@3/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    * { box-sizing: border-box; }
+    body { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin: 0; }
+
+    /* Layout */
+    .layout { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar { width: 220px; background: #161b22; border-right: 1px solid #30363d; display: flex; flex-direction: column; flex-shrink: 0; height: 100vh; overflow-y: auto; }
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+    .topbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 13px 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+    .topbar-title { font-size: 15px; font-weight: 600; color: #e6edf3; margin: 0; }
+    .content { flex: 1; overflow-y: auto; padding: 24px; }
+
+    /* Sidebar */
+    .sidebar-logo { padding: 14px 16px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+    .sidebar-logo-text { font-size: 13px; font-weight: 600; color: #e6edf3; }
+    .sidebar-nav { padding: 10px 8px; }
+    .sidebar-section { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #484f58; padding: 8px 12px 4px; margin-top: 4px; }
+    .sidebar-footer { padding: 10px 8px; border-top: 1px solid #30363d; margin-top: auto; }
+
+    /* Nav links */
+    .nav-link { display: flex; align-items: center; gap: 9px; padding: 7px 12px; border-radius: 6px; color: #8b949e; text-decoration: none; font-size: 13px; font-weight: 500; transition: background 0.12s, color 0.12s; margin-bottom: 1px; }
+    .nav-link:hover { background: #21262d; color: #e6edf3; }
+    .nav-link.active { background: #21262d; color: #e6edf3; }
+    .nav-link svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+    /* Ticker search */
+    .ticker-search { padding: 8px; border-bottom: 1px solid #30363d; }
+    .ticker-search-form { display: flex; gap: 4px; }
+    .ticker-search input { background: #21262d; border: 1px solid #30363d; color: #e6edf3; border-radius: 5px; padding: 6px 10px; font-size: 12px; flex: 1; outline: none; min-width: 0; }
+    .ticker-search input:focus { border-color: #388bfd; }
+    .ticker-search button { background: #21262d; border: 1px solid #30363d; color: #8b949e; border-radius: 5px; padding: 6px 10px; font-size: 12px; cursor: pointer; transition: all 0.12s; white-space: nowrap; }
+    .ticker-search button:hover { background: #388bfd; border-color: #388bfd; color: white; }
+
+    /* Cards */
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+    .card-header { padding: 13px 20px; border-bottom: 1px solid #30363d; display: flex; align-items: center; justify-content: space-between; }
+    .card-title { font-size: 13px; font-weight: 600; color: #e6edf3; margin: 0; }
+    .card-body { padding: 20px; }
+
+    /* Stat cards */
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 14px; margin-bottom: 22px; }
+    .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px 18px; }
+    .stat-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8b949e; margin-bottom: 7px; }
+    .stat-value { font-size: 21px; font-weight: 700; color: #e6edf3; }
+    .stat-sub { font-size: 11px; color: #8b949e; margin-top: 3px; }
+
+    /* Tables */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { background: #21262d; padding: 9px 14px; text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; white-space: nowrap; }
+    thead th:first-child { border-radius: 4px 0 0 4px; }
+    thead th:last-child  { border-radius: 0 4px 4px 0; }
+    tbody td { padding: 10px 14px; border-top: 1px solid #21262d; font-size: 13px; white-space: nowrap; }
+    tbody tr:hover td { background: rgba(255,255,255,0.02); }
+    .ticker-cell { font-weight: 600; color: #58a6ff; font-size: 13px; text-decoration: none; }
+    .ticker-cell:hover { text-decoration: underline; }
+    .name-cell { color: #8b949e; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Badges */
+    .badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+    .badge-green  { background: rgba(63,185,80,0.12);   color: #3fb950; }
+    .badge-yellow { background: rgba(210,153,34,0.12);  color: #d29922; }
+    .badge-red    { background: rgba(248,81,73,0.12);   color: #f85149; }
+    .badge-blue   { background: rgba(88,166,255,0.12);  color: #58a6ff; }
+    .badge-gray   { background: rgba(139,148,158,0.12); color: #8b949e; }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; text-decoration: none; transition: all 0.12s; line-height: 1; }
+    .btn-primary { background: #1f6feb; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #388bfd; }
+    .btn-primary:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: #8b949e; border: 1px solid #30363d; }
+    .btn-ghost:hover { background: #21262d; color: #e6edf3; }
+    .btn-danger { background: transparent; color: #f85149; border: 1px solid rgba(248,81,73,0.3); padding: 4px 9px; font-size: 12px; }
+    .btn-danger:hover { background: #f85149; color: white; border-color: #f85149; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-full { width: 100%; justify-content: center; }
+
+    /* Forms */
+    .form-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px 20px; }
+    .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+    .form-label { display: block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; margin-bottom: 5px; }
+    .form-input { background: #21262d; border: 1px solid #30363d; color: #e6edf3; border-radius: 6px; padding: 7px 11px; font-size: 13px; width: 100%; outline: none; transition: border-color 0.12s; }
+    .form-input:focus { border-color: #388bfd; box-shadow: 0 0 0 3px rgba(56,139,253,0.1); }
+    select.form-input { cursor: pointer; }
+
+    /* Text utilities */
+    .text-positive { color: #3fb950; }
+    .text-negative { color: #f85149; }
+    .text-warning  { color: #d29922; }
+    .text-muted    { color: #8b949e; }
+    .text-accent   { color: #58a6ff; }
+
+    /* Report body */
+    .report-body { font-size: 13px; line-height: 1.75; color: #c9d1d9; }
+    .report-body strong { color: #e6edf3; }
+    .tg-code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: 'SFMono-Regular', Consolas, monospace; color: #e6edf3; }
+
+    /* Section */
+    .section { margin-bottom: 22px; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .section-title { font-size: 13px; font-weight: 600; color: #e6edf3; margin: 0; }
+
+    /* Collapsible */
+    .collapse-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 13px 20px; background: none; border: none; color: #e6edf3; cursor: pointer; text-align: left; transition: background 0.12s; }
+    .collapse-btn:hover { background: rgba(255,255,255,0.02); }
+    .collapse-body { padding: 20px; border-top: 1px solid #30363d; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 36px 20px; color: #8b949e; font-size: 13px; }
+    .empty-state svg { margin: 0 auto 12px; display: block; }
+
+    /* Chart image */
+    .chart-img { width: 100%; border-radius: 6px; display: block; background: #161b22; min-height: 180px; }
+
+    /* Key-value list */
+    .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+    .kv-item { display: flex; flex-direction: column; gap: 2px; }
+    .kv-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; }
+    .kv-value { font-size: 14px; font-weight: 600; color: #e6edf3; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #444c56; }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>
+      </svg>
+      <span class="sidebar-logo-text">Market Radar AI</span>
+    </div>
+
+    <!-- Ticker search -->
+    <div class="ticker-search">
+      <form class="ticker-search-form" onsubmit="event.preventDefault(); var t=this.querySelector('input').value.trim().toUpperCase(); if(t) window.location='/ticker/'+t;">
+        <input type="text" placeholder="Buscar ticker…" style="text-transform:uppercase" autocomplete="off">
+        <button type="submit">→</button>
+      </form>
+    </div>
+
+    <nav class="sidebar-nav">
+      {% set path = request.url.path %}
+      <div class="sidebar-section">Análisis</div>
+      <a href="/"          class="nav-link {% if path == '/' %}active{% endif %}">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </a>
+      <a href="/rebalanceo" class="nav-link {% if path == '/rebalanceo' %}active{% endif %}">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/></svg>
+        Rebalanceo
+      </a>
+      <a href="/noticias"  class="nav-link {% if path == '/noticias' %}active{% endif %}">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+        Noticias
+      </a>
+      <a href="/reportes"  class="nav-link {% if path == '/reportes' %}active{% endif %}">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        Reportes
+      </a>
+
+      <div class="sidebar-section" style="margin-top:10px">Gestión</div>
+      <a href="/tickers"   class="nav-link {% if path == '/tickers' %}active{% endif %}">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+        Tickers
+      </a>
+      <a href="/posiciones" class="nav-link {% if path == '/posiciones' %}active{% endif %}">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        Posiciones
+      </a>
+      <a href="/alertas"   class="nav-link {% if path == '/alertas' %}active{% endif %}">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        Alertas
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <form method="post" action="/generar-reporte" x-data="{ loading: false }" @submit="loading = true">
+        <button type="submit" class="btn btn-primary btn-full btn-sm" :disabled="loading" style="margin-bottom:8px">
+          <template x-if="!loading">
+            <span style="display:flex;align-items:center;gap:5px">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              Generar reporte
+            </span>
+          </template>
+          <template x-if="loading">
+            <span x-cloak style="display:flex;align-items:center;gap:5px">
+              <svg class="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Generando…
+            </span>
+          </template>
+        </button>
+      </form>
+      <a href="/logout" class="nav-link" style="font-size:12px">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        Cerrar sesión
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <header class="topbar">
+      <h1 class="topbar-title">{% block page_title %}{% endblock %}</h1>
+      {% block topbar_actions %}{% endblock %}
+    </header>
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

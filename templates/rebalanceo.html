@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block page_title %}Rebalanceo{% endblock %}
+
+{% block content %}
+
+{% if not has_data %}
+<div class="card">
+  <div class="empty-state">
+    <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    Sin datos de precios. Pulsa <strong>Generar reporte</strong> primero.
+  </div>
+</div>
+
+{% elif not has_positions %}
+<div class="card">
+  <div class="empty-state">
+    Sin posiciones registradas. Ve a <a href="/posiciones" class="text-accent">Posiciones</a> para añadirlas.
+  </div>
+</div>
+
+{% elif not rows %}
+<div class="card">
+  <div class="empty-state">
+    Ninguna posición registrada coincide con los tickers del portfolio.
+    Revisa <a href="/posiciones" class="text-accent">Posiciones</a> y <a href="/tickers" class="text-accent">Tickers</a>.
+  </div>
+</div>
+
+{% else %}
+
+<!-- Total -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:20px">
+  <div class="stat-card">
+    <div class="stat-label">Valor total cartera</div>
+    <div class="stat-value">{{ total | eur }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Posiciones</div>
+    <div class="stat-value">{{ rows | length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Con objetivo definido</div>
+    <div class="stat-value">{{ rows | selectattr('target_w') | list | length }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Nombre</th>
+          <th>Acciones</th>
+          <th>Precio</th>
+          <th>Valor</th>
+          <th>Peso actual</th>
+          <th>Peso objetivo</th>
+          <th>Diferencia</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a></td>
+          <td class="name-cell text-muted" title="{{ r.name }}">{{ r.name }}</td>
+          <td class="text-muted">{{ "%.4g" % r.shares }}</td>
+          <td>{{ r.price | eur }}</td>
+          <td style="font-weight:600">{{ r.value | eur }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;max-width:80px;height:6px;background:#21262d;border-radius:3px;overflow:hidden">
+                <div style="height:100%;background:#58a6ff;border-radius:3px;width:{{ [r.current_w, 100] | min | round(1) }}%"></div>
+              </div>
+              <span style="font-size:13px;font-weight:600;color:#e6edf3">{{ "%.1f" % r.current_w }}%</span>
+            </div>
+          </td>
+          <td class="text-muted">{{ r.target_w ~ "%" if r.target_w else "—" }}</td>
+          <td>
+            {% if r.diff is not none %}
+              <span class="{{ 'text-negative' if r.diff > 2 else ('text-positive' if r.diff < -2 else 'text-muted') }}">
+                {{ "%+.1f" % r.diff }}%
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge {{ r.action[2] }}">{{ r.action[1] }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div style="margin-top:14px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
+  <p style="font-size:12px;color:#8b949e;margin:0">
+    ℹ️ La acción se calcula comparando el peso actual con el objetivo. <strong>±2%</strong> de margen → OK.
+    Configura el peso objetivo editando <code style="background:#21262d;padding:1px 5px;border-radius:3px">tickers.yaml</code>
+    o desde <a href="/tickers" class="text-accent">Tickers</a>.
+  </p>
+</div>
+
+{% endif %}
+{% endblock %}

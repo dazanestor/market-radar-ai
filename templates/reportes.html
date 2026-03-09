@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block page_title %}Reportes{% endblock %}
+
+{% block content %}
+
+{% if not reports %}
+<div class="card">
+  <div class="empty-state">
+    <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5" style="margin:0 auto 12px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    Sin reportes guardados. Pulsa <strong>Generar reporte</strong> para crear el primero.
+  </div>
+</div>
+{% else %}
+
+{% for report_id, report_date, content in reports %}
+<div class="card section" x-data="{ open: {{ 'true' if loop.first else 'false' }} }">
+  <button class="collapse-btn" @click="open = !open">
+    <span style="display:flex;align-items:center;gap:10px">
+      <span class="badge badge-blue">#{{ report_id }}</span>
+      <span style="font-size:13px;font-weight:600">Análisis</span>
+      <span class="text-muted" style="font-size:12px;font-weight:400">{{ report_date }}</span>
+    </span>
+    <svg :style="open ? 'transform:rotate(180deg)' : ''"
+         style="width:16px;height:16px;color:#8b949e;transition:transform 0.2s;flex-shrink:0"
+         fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+    </svg>
+  </button>
+  <div class="collapse-body report-body" x-show="open" x-transition x-cloak>
+    {{ content | tg }}
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+
+{% endblock %}

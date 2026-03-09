@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acceso — Market Radar AI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 40px; width: 100%; max-width: 380px; }
+    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .logo-text { font-size: 16px; font-weight: 600; color: #e6edf3; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; color: #e6edf3; }
+    p.sub { font-size: 13px; color: #8b949e; margin-bottom: 28px; }
+    label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; margin-bottom: 6px; }
+    input[type="password"] { background: #21262d; border: 1px solid #30363d; color: #e6edf3; border-radius: 6px; padding: 10px 14px; font-size: 14px; width: 100%; outline: none; transition: border-color 0.12s; margin-bottom: 16px; }
+    input[type="password"]:focus { border-color: #388bfd; box-shadow: 0 0 0 3px rgba(56,139,253,0.1); }
+    button { background: #1f6feb; color: white; border: none; border-radius: 6px; padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; width: 100%; transition: background 0.12s; }
+    button:hover { background: #388bfd; }
+    .error { background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.3); color: #f85149; border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>
+      </svg>
+      <span class="logo-text">Market Radar AI</span>
+    </div>
+    <h1>Acceso</h1>
+    <p class="sub">Introduce la contraseña para continuar.</p>
+
+    {% if error %}
+    <div class="error">Contraseña incorrecta. Inténtalo de nuevo.</div>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <label for="password">Contraseña</label>
+      <input type="password" id="password" name="password" placeholder="••••••••" autofocus>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>

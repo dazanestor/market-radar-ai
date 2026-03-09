@@ -1,6 +1,7 @@
 import logging
 import datetime
 import io
+import math
 import os
 from functools import wraps
 
@@ -88,8 +89,11 @@ def authorized(func):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_tickers():
-    with open("tickers.yaml") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with open("tickers.yaml") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
 
 def _save_tickers(data):
     with open("tickers.yaml", "w") as f:
@@ -150,18 +154,20 @@ def _chart_price(ticker, hist):
 
 def _chart_drawdown_history(ticker, rows):
     """Genera chart de evolución de drawdown desde price_history."""
-    dates = [r[0] for r in rows][::-1]
+    dates_raw = [r[0] for r in rows][::-1]
     drawdowns = [r[2] for r in rows][::-1]
+    dates = pd.to_datetime(dates_raw)
 
     fig, ax = plt.subplots(figsize=(10, 3))
     ax.plot(dates, drawdowns, color="#F44336", linewidth=1.5, marker="o", markersize=4)
     ax.axhline(0, color="#888", linewidth=0.8, linestyle="--")
-    ax.fill_between(range(len(drawdowns)), drawdowns, 0,
+    ax.fill_between(dates, drawdowns, 0,
                     where=[d is not None and d < 0 for d in drawdowns], alpha=0.15, color="#F44336")
     ax.set_title(f"{ticker} — Drawdown desde máximo 52s (historial radar)", fontsize=12)
     ax.set_ylabel("Drawdown (%)")
-    ax.set_xticks(range(len(dates)))
-    ax.set_xticklabels(dates, rotation=45, fontsize=7)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    fig.autofmt_xdate(rotation=45)
     ax.grid(alpha=0.25)
     fig.tight_layout()
 
@@ -341,16 +347,24 @@ async def cmd_rebalanceo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     total = sum(r["value"] for r in rows_data)
+    if not total:
+        await update.message.reply_text("El valor total de la cartera es 0. Revisa los precios o las posiciones.")
+        return
     lines = [f"*REBALANCEO* (valor total: {_fmt(total)})\n"]
 
     for r in sorted(rows_data, key=lambda x: -x["value"]):
         current_w = r["value"] / total * 100
         target_w = r["target_weight"]
 
-        if pd.notna(target_w) and target_w:
-            diff = current_w - float(target_w)
+        try:
+            target_w_float = float(target_w) if pd.notna(target_w) and target_w else None
+        except (ValueError, TypeError):
+            target_w_float = None
+
+        if target_w_float:
+            diff = current_w - target_w_float
             action = "✅ OK" if abs(diff) < 2 else ("✂️ RECORTAR" if diff > 0 else "➕ AÑADIR")
-            weight_line = f"Actual: {current_w:.1f}%   Objetivo: {target_w}%   {action}"
+            weight_line = f"Actual: {current_w:.1f}%   Objetivo: {target_w_float}%   {action}"
         else:
             weight_line = f"Actual: {current_w:.1f}%   (sin objetivo definido)"
 
@@ -388,7 +402,7 @@ async def cmd_fundamentos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         info = yf.Ticker(ticker).info or {}
-        news = get_news(ticker, n=5)
+        news = get_news(ticker, n=5, translate=True)
 
         def fmt(v, suffix=""):
             return f"{v}{suffix}" if v is not None else "—"
@@ -404,7 +418,7 @@ async def cmd_fundamentos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sector = info.get("sector", "—")
         description = info.get("longBusinessSummary", "")
 
-        cap_str = f"${market_cap/1e9:.1f}B" if market_cap else "—"
+        cap_str = f"{market_cap/1e9:.1f}B" if market_cap else "—"
         raw_desc = (description[:300] + "...") if len(description) > 300 else description
         desc_str = raw_desc.replace("*", "").replace("_", " ").replace("`", "").replace("[", "").replace("]", "")
 
@@ -474,9 +488,7 @@ async def cmd_reportes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for report_id, report_date, content in reports:
         header = f"📋 *Reporte #{report_id}* — {report_date}\n\n"
-        # Truncate if too long
-        body = content[:3800] + "..." if len(content) > 3800 else content
-        await update.message.reply_text(header + body, parse_mode="Markdown")
+        await _reply_long(update, header + content)
 
 @authorized
 async def cmd_posicion(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -487,6 +499,9 @@ async def cmd_posicion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ticker = context.args[0].upper()
         shares = float(context.args[1])
         avg_price = float(context.args[2])
+        if shares <= 0 or avg_price <= 0:
+            await update.message.reply_text("❌ Acciones y precio deben ser mayores que 0.")
+            return
         upsert_position(ticker, shares, avg_price)
 
         # Añadir automáticamente al radar si no está ya
@@ -661,7 +676,7 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
 
     for alert_id, ticker, target, direction, _ in alerts:
         current = prices.get(ticker)
-        if current is None:
+        if current is None or (isinstance(current, float) and math.isnan(current)):
             continue
 
         triggered = (direction == "below" and current <= target) or \

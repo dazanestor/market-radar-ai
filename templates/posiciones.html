@@ -11,7 +11,7 @@
       <table>
         <thead>
           <tr>
-            <th>Ticker</th>
+            <th>Activo</th>
             <th>Acciones</th>
             <th>Precio medio</th>
             <th>Precio actual</th>
@@ -22,10 +22,17 @@
           </tr>
         </thead>
         <tbody>
+          {% set total_value = [] %}
+          {% set total_pnl   = [] %}
           {% for pos in positions %}
           {% set pnl_eur = (pos.price - pos.avg_price) * pos.shares if pos.price and pos.avg_price else none %}
+          {% if pos.value %}{% set _ = total_value.append(pos.value) %}{% endif %}
+          {% if pnl_eur %}{% set _ = total_pnl.append(pnl_eur) %}{% endif %}
           <tr>
-            <td class="ticker-cell">{{ pos.ticker }}</td>
+            <td>
+              <a href="/ticker/{{ pos.ticker }}" class="ticker-cell">{{ pos.ticker }}</a>
+              <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ pos.name }}</div>
+            </td>
             <td>{{ "%.4g" % pos.shares }}</td>
             <td>{{ pos.avg_price | eur }}</td>
             <td>{{ pos.price | eur }}</td>
@@ -41,6 +48,15 @@
           </tr>
           {% endfor %}
         </tbody>
+        <tfoot>
+          <tr style="border-top:2px solid #30363d;font-weight:600">
+            <td colspan="4" style="color:#8b949e;font-size:12px">Total</td>
+            <td>{{ total_value | sum | eur }}</td>
+            {% set pnl_sum = total_pnl | sum %}
+            <td class="{{ pnl_sum | pnl_class }}">{{ pnl_sum | eur }}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
     {% else %}
@@ -190,14 +206,29 @@ TR_COOKIES_FILE=data/tr_cookies.txt</pre>
     {% if tr_unmatched %}
     <div style="margin-top:16px;border-top:1px solid #30363d;padding-top:14px">
       <p style="font-size:12px;color:#d29922;margin:0 0 8px;font-weight:600">
-        ⚠️ {{ tr_unmatched | length }} posición(es) sin ticker mapeado
+        ⚠️ {{ tr_unmatched | length }} posición(es) no resueltas automáticamente
       </p>
       <p style="font-size:12px;color:#8b949e;margin:0 0 10px">
-        Añade la siguiente sección a <code>tickers.yaml</code> para mapear cada ISIN a su ticker de yfinance:
+        OpenFIGI no encontró ticker para estos ISINs. Edita <code>tickers.yaml</code> y sustituye <code>null</code> por el ticker correcto de yfinance, luego vuelve a sincronizar.
       </p>
-      <pre style="background:#21262d;border-radius:6px;padding:12px;font-size:12px;color:#e6edf3;margin:0;overflow-x:auto">tr_isin_map:
-{% for p in tr_unmatched %}  {{ p.isin }}: TICKER  # {{ p.name }}
-{% endfor %}</pre>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead>
+          <tr style="color:#8b949e">
+            <th style="text-align:left;padding:4px 8px">ISIN</th>
+            <th style="text-align:left;padding:4px 8px">Nombre en TR</th>
+            <th style="text-align:right;padding:4px 8px">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in tr_unmatched %}
+          <tr style="border-top:1px solid #21262d">
+            <td style="padding:4px 8px;font-family:monospace;color:#e6edf3">{{ p.isin }}</td>
+            <td style="padding:4px 8px;color:#8b949e">{{ p.name }}</td>
+            <td style="padding:4px 8px;text-align:right;color:#8b949e">{{ "%.4g" % p.shares }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
     {% endif %}
   </div>

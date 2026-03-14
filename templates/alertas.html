@@ -72,9 +72,9 @@
           <label class="form-label">Ticker *</label>
           {% if tickers_disponibles %}
           <select name="ticker" class="form-input" required>
-            <option value="">Selecciona un ticker</option>
+            <option value="">Selecciona un activo</option>
             {% for t in tickers_disponibles %}
-            <option value="{{ t }}">{{ t }}</option>
+            <option value="{{ t.ticker }}">{{ t.ticker }} — {{ t.name }}</option>
             {% endfor %}
           </select>
           {% else %}

@@ -49,8 +49,7 @@
     <table>
       <thead>
         <tr>
-          <th>Ticker</th>
-          <th>Nombre</th>
+          <th>Activo</th>
           <th>Acciones</th>
           <th>Precio</th>
           <th>Valor</th>
@@ -63,8 +62,10 @@
       <tbody>
         {% for r in rows %}
         <tr>
-          <td><a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a></td>
-          <td class="name-cell text-muted" title="{{ r.name }}">{{ r.name }}</td>
+          <td>
+            <a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a>
+            <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ r.name }}</div>
+          </td>
           <td class="text-muted">{{ "%.4g" % r.shares }}</td>
           <td>{{ r.price | eur }}</td>
           <td style="font-weight:600">{{ r.value | eur }}</td>

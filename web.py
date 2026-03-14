@@ -637,16 +637,18 @@ async def posiciones_page(request: Request, session: Optional[str] = Cookie(defa
     df       = _read_csv()
     pos_data = []
     for ticker, shares, avg_price in get_all_positions():
-        price = pnl = value = None
+        price = pnl = value = name = None
         if df is not None:
             row = df[df["ticker"] == ticker]
             if not row.empty:
-                price = row.iloc[0].get("price")
+                r     = row.iloc[0]
+                price = r.get("price")
+                name  = r.get("name")
                 if price and not _is_nan(price) and avg_price:
                     pnl   = (price - avg_price) / avg_price * 100
                     value = shares * price
         pos_data.append({
-            "ticker": ticker, "shares": shares,
+            "ticker": ticker, "name": name or ticker, "shares": shares,
             "avg_price": avg_price, "price": price,
             "pnl": pnl, "value": value,
         })
@@ -699,8 +701,11 @@ async def posiciones_delete(
 async def alertas_page(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    df                   = _read_csv()
-    tickers_disponibles  = sorted(df["ticker"].tolist()) if df is not None else []
+    df = _read_csv()
+    tickers_disponibles = []
+    if df is not None:
+        for _, r in df.sort_values("ticker").iterrows():
+            tickers_disponibles.append({"ticker": r["ticker"], "name": r.get("name", r["ticker"])})
     return templates.TemplateResponse("alertas.html", {
         "request":             request,
         "alerts":              get_active_alerts(),

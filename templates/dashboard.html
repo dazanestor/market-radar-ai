@@ -55,7 +55,7 @@
       <table>
         <thead>
           <tr>
-            <th>Ticker</th><th>Nombre</th><th>Precio</th>
+            <th>Activo</th><th>Precio</th>
             <th>Drawdown 52s</th><th>Mom 3m</th><th>Volatilidad</th>
             <th>Acciones</th><th>P. Medio</th><th>Valor</th><th>P&amp;L</th><th>Tend.</th>
           </tr>
@@ -65,8 +65,8 @@
           <tr x-data="{ chartOpen: false }">
             <td>
               <a href="/ticker/{{ row.ticker }}" class="ticker-cell">{{ row.ticker }}</a>
+              <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ row.name }}</div>
             </td>
-            <td class="name-cell text-muted" title="{{ row.name }}">{{ row.name }}</td>
             <td>{{ row.price | eur }}</td>
             <td class="{{ row.drawdown_52w | dd_class }}">{{ row.drawdown_52w | pct }}</td>
             <td class="{{ row.momentum_3m | pnl_class }}">{{ row.momentum_3m | pct }}</td>
@@ -85,7 +85,7 @@
           </tr>
           <!-- Chart row (expandable) -->
           <tr x-data="{ chartOpen: false }">
-            <td colspan="11" style="padding:0;border-top:none">
+            <td colspan="10" style="padding:0;border-top:none">
               <div>
                 <button @click="chartOpen = !chartOpen"
                         style="background:none;border:none;cursor:pointer;font-size:11px;color:#8b949e;padding:4px 14px;width:100%;text-align:left;transition:color 0.12s"
@@ -123,15 +123,17 @@
       <table>
         <thead>
           <tr>
-            <th>Ticker</th><th>Nombre</th><th>Score</th><th>Oportunidad</th>
+            <th>Activo</th><th>Score</th><th>Oportunidad</th>
             <th>Precio</th><th>Drawdown 52s</th><th>Mom 3m</th><th>Div Yield</th><th>PER</th><th>Tend.</th>
           </tr>
         </thead>
         <tbody>
           {% for row in watchlist %}
           <tr>
-            <td><a href="/ticker/{{ row.ticker }}" class="ticker-cell">{{ row.ticker }}</a></td>
-            <td class="name-cell text-muted" title="{{ row.name }}">{{ row.name }}</td>
+            <td>
+              <a href="/ticker/{{ row.ticker }}" class="ticker-cell">{{ row.ticker }}</a>
+              <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ row.name }}</div>
+            </td>
             <td class="text-accent">
               {{ row.score | num if row.score is not none else "—" }}
             </td>

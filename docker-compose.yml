@@ -28,9 +28,9 @@ services:
       REPORT_HOUR: ${REPORT_HOUR:-8}
       TIMEZONE: ${TIMEZONE:-Europe/Madrid}
       MPLCONFIGDIR: /app/output/.matplotlib
-      TR_PHONE:   ${TR_PHONE:-}
-      TR_PIN:     ${TR_PIN:-}
-      TR_KEYFILE: ${TR_KEYFILE:-data/tr_keyfile.pem}
+      TR_PHONE:        ${TR_PHONE:-}
+      TR_PIN:          ${TR_PIN:-}
+      TR_COOKIES_FILE: ${TR_COOKIES_FILE:-data/tr_cookies.txt}
 
     healthcheck:
       test: ["CMD", "python", "-c", "import sqlite3, os; db='/app/data/radar.db'; sqlite3.connect(db).execute('SELECT 1') if os.path.exists(db) else None"]
@@ -63,9 +63,9 @@ services:
       TIMEZONE: ${TIMEZONE:-Europe/Madrid}
       WEB_PASSWORD: ${WEB_PASSWORD:-}
       MPLCONFIGDIR: /app/output/.matplotlib
-      TR_PHONE:   ${TR_PHONE:-}
-      TR_PIN:     ${TR_PIN:-}
-      TR_KEYFILE: ${TR_KEYFILE:-data/tr_keyfile.pem}
+      TR_PHONE:        ${TR_PHONE:-}
+      TR_PIN:          ${TR_PIN:-}
+      TR_COOKIES_FILE: ${TR_COOKIES_FILE:-data/tr_cookies.txt}
 
     ports:
       - "${WEB_PORT:-8589}:8589"

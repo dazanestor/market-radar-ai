@@ -2,9 +2,9 @@
 Integración con Trade Republic via pytr.
 Librería enlazada al repo oficial: https://github.com/pytr-org/pytr
 
-Autenticación en dos pasos:
-  1. setup_device()       → genera clave ECDSA, solicita SMS a TR
-  2. complete_setup(code) → confirma con el código SMS, guarda keyfile
+Autenticación via web login (User-Agent Chrome, no versión de app Android):
+  1. setup_device()       → solicita código de 4 dígitos en la app TR
+  2. complete_setup(code) → confirma con el código, guarda cookies de sesión
 
 Sincronización (una sola conexión WebSocket):
   sync_positions() → (positions, cash_eur, transactions)
@@ -14,7 +14,6 @@ Historial del depósito (conexión independiente):
 """
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
@@ -25,9 +24,9 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-TR_PHONE   = os.getenv("TR_PHONE", "")
-TR_PIN     = os.getenv("TR_PIN", "")
-TR_KEYFILE = os.getenv("TR_KEYFILE", "data/tr_keyfile.pem")
+TR_PHONE        = os.getenv("TR_PHONE", "")
+TR_PIN          = os.getenv("TR_PIN", "")
+TR_COOKIES_FILE = os.getenv("TR_COOKIES_FILE", "data/tr_cookies.txt")
 
 _SETUP_STATE_FILE = pathlib.Path("data/tr_setup.json")
 
@@ -35,17 +34,16 @@ _SETUP_STATE_FILE = pathlib.Path("data/tr_setup.json")
 # ── Estado del módulo ──────────────────────────────────────────────────────────
 
 def is_configured() -> bool:
-    """True si TR_PHONE y TR_PIN están definidos en el entorno."""
     return bool(TR_PHONE and TR_PIN)
 
 
 def is_setup() -> bool:
-    """True si el keyfile de TR existe (dispositivo ya vinculado)."""
-    return pathlib.Path(TR_KEYFILE).exists()
+    """True si el fichero de cookies existe (sesión web activa)."""
+    return pathlib.Path(TR_COOKIES_FILE).exists()
 
 
 def has_pending_setup() -> bool:
-    """True si hay un setup iniciado esperando el código SMS."""
+    """True si hay un setup iniciado esperando el código de la app TR."""
     return _SETUP_STATE_FILE.exists()
 
 
@@ -62,7 +60,6 @@ def _build_isin_map() -> dict:
 
     2. Auto-match via yfinance: consulta yf.Ticker(t).isin para cada ticker
        conocido en tickers.yaml en paralelo (timeout total 20 s).
-       No sobreescribe entradas manuales.
     """
     import yfinance as yf
 
@@ -71,10 +68,8 @@ def _build_isin_map() -> dict:
         with open("tickers.yaml") as f:
             data = yaml.safe_load(f) or {}
 
-        # 1. Overrides manuales
         isin_map.update(data.get("tr_isin_map", {}))
 
-        # 2. Auto-match via yfinance para tickers no cubiertos por el mapa manual
         existing_tickers = set(isin_map.values())
         candidates = [
             t for cat in ("portfolio", "watchlist")
@@ -109,34 +104,39 @@ def _build_isin_map() -> dict:
     return isin_map
 
 
+# ── Helper: crear instancia TR con web session ─────────────────────────────────
+
+def _make_tr():
+    from pytr.api import TradeRepublicApi
+    return TradeRepublicApi(
+        phone_no=TR_PHONE,
+        pin=TR_PIN,
+        save_cookies=True,
+        cookies_file=TR_COOKIES_FILE,
+    )
+
+
 # ── Core async ────────────────────────────────────────────────────────────────
 
 async def _async_fetch_portfolio() -> tuple:
     """
     Abre una sola conexión WebSocket a TR y descarga en paralelo:
-    - Portfolio compacto (posiciones: ISIN, shares, averageBuyIn)
-    - Saldo de cuenta (EUR)
-    - Últimas transacciones (timeline)
-
-    Después resuelve nombres via instrument_details para los ISINs del portfolio.
-
-    Retorna (positions, cash_eur, transactions)
+    portfolio + cash + transacciones. Usa sesión web (cookies).
     """
-    from pytr.api import TradeRepublicApi
-
-    # El mapa ISIN→ticker se construye en un executor para no bloquear el loop
     isin_map = await asyncio.get_running_loop().run_in_executor(None, _build_isin_map)
 
-    tr = TradeRepublicApi(phone_no=TR_PHONE, pin=TR_PIN, keyfile=TR_KEYFILE)
-    tr.login()
+    tr = _make_tr()
+    if not tr.resume_websession():
+        raise ValueError(
+            "Sesión TR expirada o no válida. Vuelve a vincular el dispositivo."
+        )
 
-    # Suscribirse a las 3 fuentes de datos simultáneamente
     await tr.compact_portfolio()
     await tr.cash()
     await tr.timeline_transactions()
 
-    positions_raw = []
-    cash_eur = None
+    positions_raw   = []
+    cash_eur        = None
     transactions_raw = []
     pending = 3
 
@@ -147,7 +147,6 @@ async def _async_fetch_portfolio() -> tuple:
         if stype == "compactPortfolio":
             positions_raw = response.get("positions", [])
             pending -= 1
-
         elif stype == "cash":
             items = response if isinstance(response, list) else []
             for item in items:
@@ -155,14 +154,13 @@ async def _async_fetch_portfolio() -> tuple:
                     cash_eur = float(item["amount"])
                     break
             pending -= 1
-
         elif stype == "timelineTransactions":
             transactions_raw = response.get("items", []) if isinstance(response, dict) else []
             pending -= 1
 
         await tr.unsubscribe(sub_id)
 
-    # Resolver nombre (shortName) de cada posición via instrument_details
+    # Resolver shortName para cada posición
     detail_subs: dict = {}
     for pos in positions_raw:
         sub_id = await tr.instrument_details(pos["instrumentId"])
@@ -175,11 +173,10 @@ async def _async_fetch_portfolio() -> tuple:
             pos["name"] = response.get("shortName", pos["instrumentId"])
             await tr.unsubscribe(sub_id)
 
-    # Cerrar WebSocket
     if tr._ws and tr._ws.close_code is None:
         await tr._ws.close()
 
-    # ── Construir posiciones ───────────────────────────────────────────────────
+    # Construir posiciones
     positions = []
     for pos in positions_raw:
         shares = float(pos.get("netSize", 0))
@@ -198,7 +195,7 @@ async def _async_fetch_portfolio() -> tuple:
             "matched":   ticker is not None,
         })
 
-    # ── Normalizar transacciones ───────────────────────────────────────────────
+    # Normalizar transacciones
     transactions = []
     for item in transactions_raw[:50]:
         ts = item.get("timestamp") or item.get("time")
@@ -235,16 +232,9 @@ async def _async_fetch_portfolio() -> tuple:
 
 
 async def _async_portfolio_history(timeframe: str) -> list:
-    """
-    Obtiene el historial de valor del depósito TR.
-    Abre una conexión independiente (no mezcla con sync_positions).
-
-    Retorna lista de dicts {time_ms: int, value: float}.
-    """
-    from pytr.api import TradeRepublicApi
-
-    tr = TradeRepublicApi(phone_no=TR_PHONE, pin=TR_PIN, keyfile=TR_KEYFILE)
-    tr.login()
+    tr = _make_tr()
+    if not tr.resume_websession():
+        raise ValueError("Sesión TR expirada. Vuelve a vincular el dispositivo.")
 
     await tr.portfolio_history(timeframe)
     _, _, response = await asyncio.wait_for(tr.recv(), timeout=15)
@@ -270,83 +260,60 @@ async def _async_portfolio_history(timeframe: str) -> list:
 
 def sync_positions() -> tuple:
     """
-    Sincroniza posiciones desde Trade Republic en una sola conexión WebSocket.
-
-    Retorna (positions, cash_eur, transactions):
-      - positions: list[dict]  → {isin, name, ticker, shares, avg_price, matched}
-      - cash_eur:  float|None  → saldo disponible en EUR
-      - transactions: list[dict] → últimas operaciones {id, title, body, amount, date, timestamp}
-
-    Lanza ValueError si TR no está configurado o el keyfile no existe.
+    Sincroniza posiciones desde Trade Republic.
+    Retorna (positions, cash_eur, transactions).
     """
     if not is_configured():
         raise ValueError("TR_PHONE y TR_PIN no están configurados en .env")
     if not is_setup():
         raise ValueError(
-            "Dispositivo no vinculado. Ejecuta /tr_setup o usa la sección "
-            "Trade Republic en Posiciones."
+            "Dispositivo no vinculado. Usa la sección Trade Republic en Posiciones."
         )
     return asyncio.run(_async_fetch_portfolio())
 
 
 def get_portfolio_history(timeframe: str = "1y") -> list:
     """
-    Obtiene el historial de valor del depósito en TR.
+    Historial de valor del depósito.
     timeframe: "1d" | "1w" | "1m" | "3m" | "6m" | "1y" | "max"
-
-    Retorna lista de {time_ms, value} ordenada cronológicamente.
-    Lanza ValueError si TR no está listo.
     """
     if not is_configured():
-        raise ValueError("TR_PHONE y TR_PIN no están configurados en .env")
+        raise ValueError("TR_PHONE y TR_PIN no están configurados.")
     if not is_setup():
         raise ValueError("Dispositivo no vinculado.")
     return asyncio.run(_async_portfolio_history(timeframe))
 
 
-# ── Setup inicial ─────────────────────────────────────────────────────────────
+# ── Setup inicial (web login) ──────────────────────────────────────────────────
 
 def setup_device() -> str:
     """
-    Paso 1: genera clave ECDSA y solicita SMS a TR.
-    Guarda estado en data/tr_setup.json para complete_setup().
+    Paso 1: solicita un código de verificación en la app Trade Republic.
+    El usuario verá un código de 4 dígitos en su móvil.
     """
-    from pytr.api import TradeRepublicApi
-
     if not is_configured():
         raise ValueError("TR_PHONE y TR_PIN no están configurados en .env")
 
-    tr = TradeRepublicApi(phone_no=TR_PHONE, pin=TR_PIN, keyfile=TR_KEYFILE)
+    tr = _make_tr()
     try:
-        tr.initiate_device_reset()
-    except KeyError:
-        import requests as _req
-        # Repetir la llamada para capturar la respuesta real de TR
-        r = _req.post(
-            "https://api.traderepublic.com/api/v1/auth/account/reset/device",
-            json={"phoneNumber": TR_PHONE, "pin": TR_PIN},
-            headers={"User-Agent": "TradeRepublic/Android 30/App Version 1.1.5534"},
-        )
-        raise ValueError(
-            f"Trade Republic rechazó la solicitud (HTTP {r.status_code}): {r.text[:200]}"
-        )
+        countdown = tr.initiate_weblogin()
+    except ValueError as e:
+        raise ValueError(f"Trade Republic rechazó la solicitud: {e}")
 
     _SETUP_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _SETUP_STATE_FILE.write_text(json.dumps({
-        "process_id": tr._process_id,
-        "sk_pem":     tr.sk.to_pem().decode("ascii"),
-    }))
+    _SETUP_STATE_FILE.write_text(json.dumps({"process_id": tr._process_id}))
 
-    return f"SMS enviado a {TR_PHONE}. Introduce el código para completar la vinculación."
+    return (
+        f"Abre la app Trade Republic en tu móvil. "
+        f"Verás un código de 4 dígitos para confirmar el acceso. "
+        f"Tienes {countdown} segundos para introducirlo."
+    )
 
 
 def complete_setup(code: str) -> str:
     """
-    Paso 2: confirma con el código SMS y guarda el keyfile.
+    Paso 2: confirma con el código de la app TR y guarda la sesión.
     """
-    from pytr.api import TradeRepublicApi
-    from ecdsa import SigningKey
-
     if not _SETUP_STATE_FILE.exists():
         raise ValueError(
             "No hay setup pendiente. Ejecuta primero el inicio de configuración."
@@ -354,16 +321,18 @@ def complete_setup(code: str) -> str:
 
     state = json.loads(_SETUP_STATE_FILE.read_text())
 
-    tr = TradeRepublicApi(phone_no=TR_PHONE, pin=TR_PIN, keyfile=TR_KEYFILE)
+    pathlib.Path(TR_COOKIES_FILE).parent.mkdir(parents=True, exist_ok=True)
+    tr = _make_tr()
     tr._process_id = state["process_id"]
-    tr.sk = SigningKey.from_pem(state["sk_pem"].encode(), hashfunc=hashlib.sha512)
 
-    pathlib.Path(TR_KEYFILE).parent.mkdir(parents=True, exist_ok=True)
-    tr.complete_device_reset(code)
+    try:
+        tr.complete_weblogin(code.strip())
+    except Exception as e:
+        raise ValueError(f"Código incorrecto o expirado: {e}")
 
     _SETUP_STATE_FILE.unlink(missing_ok=True)
 
-    if not pathlib.Path(TR_KEYFILE).exists():
-        raise ValueError("Código incorrecto o expirado. Reinicia el proceso de configuración.")
+    if not pathlib.Path(TR_COOKIES_FILE).exists():
+        raise ValueError("No se pudo guardar la sesión. Reinicia el proceso.")
 
-    return f"Trade Republic vinculado correctamente. Keyfile guardado en {TR_KEYFILE}."
+    return "Trade Republic vinculado correctamente. Sesión guardada."

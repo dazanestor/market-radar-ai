@@ -96,7 +96,7 @@
 
   {% if tr_msg_q == 'sms_sent' %}
   <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3fb950">
-    ✅ SMS enviado. Introduce el código para completar la vinculación.
+    ✅ Solicitud enviada. Abre la app Trade Republic y confirma el código de 4 dígitos.
   </div>
   {% elif tr_msg_q == 'setup_ok' %}
   <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3fb950">
@@ -126,7 +126,7 @@
       </p>
       <pre style="background:#21262d;border-radius:6px;padding:12px;font-size:12px;color:#e6edf3;margin:12px 0 0;overflow-x:auto">TR_PHONE=+34600000000
 TR_PIN=1234
-TR_KEYFILE=data/tr_keyfile.pem</pre>
+TR_COOKIES_FILE=data/tr_cookies.txt</pre>
 
     {% elif tr_status == 'needs_setup' %}
       <p style="font-size:13px;color:#8b949e;margin:0 0 14px">
@@ -134,23 +134,23 @@ TR_KEYFILE=data/tr_keyfile.pem</pre>
         <strong style="color:#d29922"> Atención:</strong> esto cerrará la sesión activa en el móvil.
       </p>
       <form method="post" action="/tr/setup/start">
-        <button type="submit" class="btn btn-primary btn-sm">Vincular dispositivo (enviar SMS)</button>
+        <button type="submit" class="btn btn-primary btn-sm">Vincular dispositivo (via app TR)</button>
       </form>
 
     {% elif tr_status == 'setup_pending' %}
       <p style="font-size:13px;color:#8b949e;margin:0 0 14px">
-        SMS enviado. Introduce el código de verificación:
+        Abre la app Trade Republic. Verás un código de 4 dígitos para confirmar el acceso.
       </p>
       <form method="post" action="/tr/setup/complete" style="display:flex;gap:10px;align-items:flex-end">
         <div>
-          <label class="form-label">Código SMS</label>
+          <label class="form-label">Código de la app</label>
           <input type="text" name="code" class="form-input" placeholder="1234" maxlength="10" required
                  style="width:140px;letter-spacing:0.15em;font-size:16px">
         </div>
         <button type="submit" class="btn btn-primary btn-sm">Confirmar</button>
       </form>
       <p style="font-size:12px;color:#8b949e;margin:10px 0 0">
-        ¿No recibiste el SMS?
+        ¿No aparece el código en la app?
         <form method="post" action="/tr/setup/start" style="display:inline">
           <button type="submit" style="background:none;border:none;color:#58a6ff;cursor:pointer;font-size:12px;padding:0">Reenviar →</button>
         </form>

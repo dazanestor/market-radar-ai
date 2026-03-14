@@ -275,6 +275,13 @@ _OPENFIGI_SUFFIX = {
 }
 _OPENFIGI_US = {"US", "UN", "UW", "UA", "UR"}
 
+# Prefijo de país del ISIN → exchCode preferido en OpenFIGI
+_ISIN_COUNTRY_TO_EXCH = {
+    "CH": "SW", "DK": "DC", "GB": "LN", "FR": "FP", "AU": "AT",
+    "SE": "SS", "NL": "NA", "DE": "GR", "IT": "IM", "ES": "SM",
+    "FI": "FH", "PT": "PL", "BE": "BB", "NO": "NO", "PL": "PW",
+}
+
 # ISINs propios de TR (crypto y otros) que OpenFIGI no conoce
 _TR_KNOWN_ISINS = {
     "XF000BTC0017": "BTC-EUR",
@@ -321,10 +328,15 @@ def resolve_isins_openfigi(isins: list) -> dict:
                     i for i in items
                     if i.get("securityType2") in ("Common Stock", "Equity Shares")
                 ] or items
-                # Preferir exchanges con sufijo conocido (bolsa primaria) sobre OTC/US
+                # Preferir la bolsa del país del ISIN (CH→SW, DK→DC, GB→LN, etc.)
+                preferred_exch = _ISIN_COUNTRY_TO_EXCH.get(isin[:2], "")
                 ranked = sorted(
                     equities,
-                    key=lambda i: (0 if i.get("exchCode", "") in _OPENFIGI_SUFFIX else 1)
+                    key=lambda i: (
+                        0 if i.get("exchCode", "") == preferred_exch else
+                        1 if i.get("exchCode", "") in _OPENFIGI_SUFFIX else
+                        2
+                    )
                 )
                 item   = ranked[0]
                 exch   = item.get("exchCode", "")

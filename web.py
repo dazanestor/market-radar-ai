@@ -976,9 +976,14 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
         if not ticker:
             continue
         country = isin[:2]
+        # ISINs US/CA no deben tener sufijo de bolsa europea
+        if country in ("US", "CA"):
+            if "." in ticker:
+                stale_isins.append(isin)
+            continue
         preferred_exch = _ISIN_COUNTRY_TO_EXCH.get(country)
         if not preferred_exch:
-            continue  # País desconocido o US, no validar
+            continue
         expected_suffix = _OPENFIGI_SUFFIX[preferred_exch]
         if not ticker.endswith(expected_suffix):
             stale_isins.append(isin)

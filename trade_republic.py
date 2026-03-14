@@ -317,7 +317,19 @@ def setup_device() -> str:
         raise ValueError("TR_PHONE y TR_PIN no están configurados en .env")
 
     tr = TradeRepublicApi(phone_no=TR_PHONE, pin=TR_PIN, keyfile=TR_KEYFILE)
-    tr.initiate_device_reset()
+    try:
+        tr.initiate_device_reset()
+    except KeyError:
+        import requests as _req
+        # Repetir la llamada para capturar la respuesta real de TR
+        r = _req.post(
+            "https://api.traderepublic.com/api/v1/auth/account/reset/device",
+            json={"phoneNumber": TR_PHONE, "pin": TR_PIN},
+            headers={"User-Agent": "TradeRepublic/Android 30/App Version 1.1.5534"},
+        )
+        raise ValueError(
+            f"Trade Republic rechazó la solicitud (HTTP {r.status_code}): {r.text[:200]}"
+        )
 
     _SETUP_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     _SETUP_STATE_FILE.write_text(json.dumps({

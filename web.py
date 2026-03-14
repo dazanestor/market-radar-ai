@@ -832,7 +832,7 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
         portfolio_yaml.pop(bad_ticker, None)
         delete_position(bad_ticker)
         yaml_changed = True
-        logger.info(f"TR: ticker {bad_ticker} no coincide con país del ISIN {isin}, se re-resolverá")
+        print(f"TR: ticker {bad_ticker} no coincide con país del ISIN {isin}, se re-resolverá")
 
     for pos in positions:
         if pos.get("matched") and pos.get("ticker"):

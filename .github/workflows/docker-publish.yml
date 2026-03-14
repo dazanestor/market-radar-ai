@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/**
+      - trade-republic
   workflow_dispatch:
 
 env:

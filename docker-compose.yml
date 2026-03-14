@@ -8,7 +8,7 @@ services:
       - |
         [ -f /workspace/tickers.yaml ] || printf 'portfolio: {}\nwatchlist: {}\n' > /workspace/tickers.yaml
         mkdir -p /workspace/data /workspace/output
-        chmod 777 /workspace/data /workspace/output
+        chmod -R 777 /workspace/data /workspace/output
     volumes:
       - .:/workspace
 

@@ -885,6 +885,16 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
     try:
         positions, cash_eur, transactions = await asyncio.get_running_loop().run_in_executor(_executor, _do_sync)
     except Exception as e:
+        # Si la sesión expiró, re-vincular automáticamente y pedir el código
+        if "expirada" in str(e).lower() or "expirado" in str(e).lower() or "no válida" in str(e).lower():
+            try:
+                def _relink():
+                    from trade_republic import setup_device
+                    return setup_device()
+                await asyncio.get_running_loop().run_in_executor(_executor, _relink)
+                return RedirectResponse("/posiciones?tr_msg=sms_sent", status_code=303)
+            except Exception as e2:
+                return RedirectResponse(f"/posiciones?tr_error={e2}", status_code=303)
         return RedirectResponse(f"/posiciones?tr_error={e}", status_code=303)
 
     synced    = 0

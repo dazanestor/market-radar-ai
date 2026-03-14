@@ -49,6 +49,7 @@ templates/          # Plantillas Jinja2 HTML para el dashboard web
 - `TIMEZONE` — zona horaria IANA (default: `Europe/Madrid`)
 - `WEB_PASSWORD` — contraseña del dashboard web (si está vacío, sin autenticación)
 - `WEB_PORT` — puerto del dashboard (default: `8589`)
+- `MPLCONFIGDIR` — directorio de caché de matplotlib; en Docker apunta a `/app/output/.matplotlib` para evitar fallos de permisos con el usuario `appuser`
 
 ## Cómo ejecutar
 
@@ -70,12 +71,12 @@ uvicorn web:app --host 0.0.0.0 --port 8589  # Solo dashboard web
 Tablas en `data/radar.db`:
 - **`portfolio`** — `ticker PK`, `shares`, `avg_price` (en EUR)
 - **`price_history`** — snapshots diarios con métricas: `price`, `drawdown_52w`, `momentum_3m/6m`, `volatility`, `dividend_yield`, `score`, `opportunity`; constraint UNIQUE en `(ticker, date)`
-- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (up/down), `active`
+- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `active`
 - **`reports`** — informes guardados: `date`, `content`
 
 ## Algoritmo de scoring (scoring.py)
 
-Puntuación 0-100 con 6 factores ponderados:
+Puntuación numérica con 6 factores ponderados (no normalizada a 100; el valor depende de los datos de cada activo):
 - Drawdown 52w: **30%** (señal contraria — drawdown alto = más oportunidad)
 - Momentum 3m: **15%**
 - Volatilidad: **15%**
@@ -179,6 +180,7 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 - No hay suite de tests automatizados; se valida manualmente via Telegram o `scheduler.py`
 - `generate_csv.py` continúa si falla un ticker individual (recopila errores al final)
 - El dashboard web usa un executor de hilos para no bloquear al generar informes
+- El timeout de Claude (120s) está configurado en el constructor `anthropic.Anthropic(timeout=120)`, no en `messages.create()`
 
 ## CI/CD
 

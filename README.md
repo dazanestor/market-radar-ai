@@ -182,6 +182,9 @@ docker compose logs -f
 | `MODEL` | No | `claude-haiku-4-5-20251001` | Modelo de Claude a usar |
 | `REPORT_HOUR` | No | `8` | Hora del reporte diario (formato 24h) |
 | `TIMEZONE` | No | `Europe/Madrid` | Zona horaria del reporte (`Europe/Madrid`, `America/New_York`, etc.) |
+| `WEB_PASSWORD` | No | — | Contraseña del dashboard web. Si se omite, no hay autenticación |
+| `WEB_PORT` | No | `8589` | Puerto del dashboard web |
+| `MPLCONFIGDIR` | No | `/app/output/.matplotlib` | Directorio de caché de matplotlib (configurado automáticamente en Docker) |
 
 ### Tickers (`tickers.yaml`)
 
@@ -290,6 +293,7 @@ Ejemplo:
 market-radar-ai/
 ├── bot.py              # bot de Telegram, comandos y jobs periódicos
 ├── scheduler.py        # ejecución standalone sin bot
+├── web.py              # dashboard web FastAPI (puerto 8589)
 ├── generate_csv.py     # descarga y calcula métricas por ticker
 ├── fetch_data.py       # wrappers de yfinance (datos, noticias, macro)
 ├── scoring.py          # score multi-factor de oportunidad
@@ -300,6 +304,7 @@ market-radar-ai/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
+├── templates/          # plantillas Jinja2 del dashboard web
 ├── .github/
 │   └── workflows/
 │       └── docker-publish.yml  # CI/CD: build y push a GHCR en cada push a main
@@ -395,6 +400,30 @@ Clasificación final:
 3. Comprueba condición     → below/above según dirección
 4. Si se cumple:           → notifica por Telegram y desactiva alerta
 ```
+
+---
+
+## Dashboard web
+
+El `docker-compose.yml` incluye un segundo servicio (`market-radar-web`) que arranca el dashboard web en el puerto `8589`. Se despliega junto al bot automáticamente con `docker compose up -d`.
+
+Accede desde el navegador a `http://<IP-servidor>:8589`.
+
+### Funcionalidades
+
+- **Dashboard** — cartera con P&L, watchlist por score y último informe Claude
+- **Rebalanceo** — peso actual vs. objetivo con acción recomendada (Añadir / Recortar / OK)
+- **Noticias** — titulares recientes por ticker traducidos al español
+- **Ticker detalle** — fundamentales, métricas técnicas, historial drawdown y noticias
+- **Tickers** — añadir y eliminar activos de portfolio y watchlist
+- **Posiciones** — registrar y eliminar posiciones con P&L en euros
+- **Alertas** — crear y eliminar alertas de precio
+- **Reportes** — historial de análisis Claude
+- **Generar reporte** — lanza el pipeline completo desde el navegador
+
+### Autenticación
+
+Configura `WEB_PASSWORD` en el `.env` para proteger el acceso con contraseña. Si se omite, el dashboard es accesible sin autenticación.
 
 ---
 

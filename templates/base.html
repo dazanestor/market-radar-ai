@@ -19,12 +19,15 @@
     .topbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 13px 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .topbar-title { font-size: 15px; font-weight: 600; color: #e6edf3; margin: 0; }
     .content { flex: 1; overflow-y: auto; padding: 24px; }
-    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 199; }
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 199; cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .hamburger { display: none; background: none; border: none; cursor: pointer; padding: 4px; color: #8b949e; flex-shrink: 0; }
     .hamburger:hover { color: #e6edf3; }
+    .sidebar-close { display: none; background: none; border: none; cursor: pointer; color: #8b949e; padding: 4px 6px; margin-left: auto; font-size: 18px; line-height: 1; border-radius: 4px; }
+    .sidebar-close:hover { color: #e6edf3; background: #21262d; }
 
     @media (max-width: 768px) {
       .hamburger { display: flex; align-items: center; }
+      .sidebar-close { display: flex; align-items: center; }
       .sidebar { position: fixed; top: 0; left: 0; transform: translateX(-100%); }
       .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
       .sidebar-overlay.open { display: block; }
@@ -172,6 +175,9 @@
         <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>
       </svg>
       <span class="sidebar-logo-text">Market Radar AI</span>
+      <button class="sidebar-close" @click="sidebarOpen = false" aria-label="Cerrar menú">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
 
     <!-- Ticker search -->

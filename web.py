@@ -165,6 +165,63 @@ def _save_tickers(data: dict):
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
 
 
+_SECTOR_TO_BLOCK = {
+    "Technology":             "Tecnología",
+    "Financial Services":     "Financiero",
+    "Healthcare":             "Salud",
+    "Consumer Defensive":     "Consumo básico",
+    "Consumer Cyclical":      "Consumo cíclico",
+    "Communication Services": "Comunicaciones",
+    "Industrials":            "Industrial",
+    "Basic Materials":        "Materiales",
+    "Energy":                 "Energía",
+    "Real Estate":            "Inmobiliario",
+    "Utilities":              "Utilities",
+}
+_COUNTRY_TO_REGION = {
+    "United States": "USA",
+    "Switzerland":   "Europa",
+    "Denmark":       "Europa",
+    "United Kingdom":"Europa",
+    "France":        "Europa",
+    "Germany":       "Europa",
+    "Netherlands":   "Europa",
+    "Sweden":        "Europa",
+    "Spain":         "Europa",
+    "Italy":         "Europa",
+    "Belgium":       "Europa",
+    "Finland":       "Europa",
+    "Norway":        "Europa",
+    "Portugal":      "Europa",
+    "Australia":     "Asia-Pacífico",
+    "Japan":         "Asia-Pacífico",
+    "China":         "Asia-Pacífico",
+    "Hong Kong":     "Asia-Pacífico",
+    "South Korea":   "Asia-Pacífico",
+    "India":         "Asia-Pacífico",
+    "Canada":        "América",
+    "Brazil":        "América",
+}
+
+
+def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
+    """Rellena block y region en meta usando yfinance si están vacíos."""
+    if meta.get("block") and meta.get("region"):
+        return meta
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info or {}
+        if not meta.get("block"):
+            sector = info.get("sector", "")
+            meta["block"] = _SECTOR_TO_BLOCK.get(sector, sector or None)
+        if not meta.get("region"):
+            country = info.get("country", "")
+            meta["region"] = _COUNTRY_TO_REGION.get(country, country or None)
+    except Exception:
+        pass
+    return meta
+
+
 def _read_csv() -> Optional[pd.DataFrame]:
     path = f"{OUTPUT_DIR}/precios_global.csv"
     if os.path.exists(path):
@@ -614,6 +671,29 @@ async def tickers_add(
     return RedirectResponse("/tickers", status_code=303)
 
 
+@app.post("/tickers/update")
+async def tickers_update(
+    session:       Optional[str] = Cookie(default=None),
+    ticker:        str = Form(...),
+    categoria:     str = Form(...),
+    nombre:        str = Form(""),
+    bloque:        str = Form(""),
+    region:        str = Form(""),
+    target_weight: str = Form(""),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    tickers = _load_tickers()
+    meta = (tickers.get(categoria) or {}).get(ticker, {}) or {}
+    if nombre:        meta["name"]          = nombre
+    if bloque:        meta["block"]         = bloque
+    if region:        meta["region"]        = region
+    if target_weight: meta["target_weight"] = float(target_weight)
+    tickers.setdefault(categoria, {})[ticker] = meta
+    _save_tickers(tickers)
+    return RedirectResponse("/tickers", status_code=303)
+
+
 @app.post("/tickers/delete")
 async def tickers_delete(
     session:   Optional[str] = Cookie(default=None),
@@ -834,14 +914,17 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
         yaml_changed = True
         print(f"TR: ticker {bad_ticker} no coincide con país del ISIN {isin}, se re-resolverá")
 
+    # Recoger tickers nuevos para enriquecer con yfinance al final
+    new_tickers = []
+
     for pos in positions:
         if pos.get("matched") and pos.get("ticker"):
             ticker = pos["ticker"]
             upsert_position(ticker, pos["shares"], pos["avg_price"])
             synced += 1
-            # Añadir al portfolio del yaml si no existe
             if ticker not in portfolio_yaml:
                 portfolio_yaml[ticker] = {"name": pos.get("name", ticker)}
+                new_tickers.append(ticker)
                 yaml_changed = True
         else:
             unmatched.append(pos)
@@ -859,7 +942,9 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
             ticker = resolved.get(isin)
             if ticker:
                 isin_map_yaml[isin] = ticker
-                portfolio_yaml.setdefault(ticker, {"name": pos.get("name", ticker)})
+                if ticker not in portfolio_yaml:
+                    portfolio_yaml[ticker] = {"name": pos.get("name", ticker)}
+                    new_tickers.append(ticker)
                 upsert_position(ticker, pos["shares"], pos["avg_price"])
                 synced += 1
                 yaml_changed = True
@@ -870,6 +955,18 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
                     isin_map_yaml[isin] = None
                     yaml_changed = True
         unmatched = still_unmatched
+
+    # Enriquecer tickers sin block/region con datos de yfinance
+    tickers_to_enrich = [
+        t for t, m in portfolio_yaml.items()
+        if isinstance(m, dict) and (not m.get("block") or not m.get("region"))
+    ]
+    if tickers_to_enrich:
+        def _enrich_all():
+            for t in tickers_to_enrich:
+                portfolio_yaml[t] = _enrich_ticker_meta(t, portfolio_yaml.get(t, {}))
+        await asyncio.get_running_loop().run_in_executor(_executor, _enrich_all)
+        yaml_changed = True
 
     if yaml_changed:
         _save_tickers(tickers_data)

@@ -25,7 +25,7 @@ from database import (
     init_db, save_snapshot, save_report, get_recent_reports,
     upsert_position, delete_position, get_all_positions,
     add_price_alert, get_active_alerts, deactivate_alert,
-    get_ticker_history,
+    get_ticker_history, set_tr_cache,
 )
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
@@ -244,6 +244,10 @@ async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/agregar `<cat> <ticker> <nombre> <bloque> <region>` — añade ticker\n"
         "/eliminar `<ticker>` — elimina ticker del radar\n"
         "/ayuda — este mensaje\n\n"
+        "🔗 *Trade Republic*\n"
+        "/tr\\_setup — vincula dispositivo (primera vez)\n"
+        "/tr\\_setup `<codigo>` — completa vinculación con código SMS\n"
+        "/sync\\_tr — sincroniza posiciones desde TR\n\n"
         "_Reporte automático cada día a las {hour}:00 {tz}._"
     ).format(hour=REPORT_HOUR, tz=TIMEZONE)
     await update.message.reply_text(text, parse_mode="Markdown")
@@ -638,6 +642,91 @@ async def cmd_borrar_alerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ El ID debe ser un número.")
 
 @authorized
+async def cmd_tr_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from trade_republic import setup_device, complete_setup, is_configured
+
+    if not is_configured():
+        await update.message.reply_text(
+            "❌ TR\\_PHONE y TR\\_PIN no están configurados en `.env`.",
+            parse_mode="Markdown"
+        )
+        return
+
+    if not context.args:
+        try:
+            msg = await asyncio.to_thread(setup_device)
+            await update.message.reply_text(
+                f"📱 {msg}\n\nCuando recibas el SMS usa:\n`/tr_setup <codigo>`",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+    elif len(context.args) == 1:
+        try:
+            msg = await asyncio.to_thread(complete_setup, context.args[0])
+            await update.message.reply_text(f"✅ {msg}", parse_mode="Markdown")
+        except Exception as e:
+            await update.message.reply_text(f"❌ {e}")
+    else:
+        await update.message.reply_text(
+            "Uso:\n"
+            "`/tr_setup` — inicia vinculación (envía SMS)\n"
+            "`/tr_setup <codigo>` — completa con el código del SMS",
+            parse_mode="Markdown"
+        )
+
+
+@authorized
+async def cmd_sync_tr(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from trade_republic import sync_positions
+
+    await update.message.reply_text("⏳ Conectando con Trade Republic...")
+
+    try:
+        positions, cash_eur = await asyncio.to_thread(sync_positions)
+    except ValueError as e:
+        await update.message.reply_text(f"❌ {e}")
+        return
+    except Exception as e:
+        logging.error(f"Error sync TR: {e}")
+        await update.message.reply_text(f"❌ Error al sincronizar: {e}")
+        return
+
+    synced    = [p for p in positions if p["matched"]]
+    unmatched = [p for p in positions if not p["matched"]]
+
+    for pos in synced:
+        upsert_position(pos["ticker"], pos["shares"], pos["avg_price"])
+
+    if cash_eur is not None:
+        set_tr_cache("cash_eur", str(cash_eur))
+
+    lines = ["✅ *Trade Republic — Sincronización completada*\n"]
+
+    if synced:
+        lines.append(f"*Posiciones actualizadas:* {len(synced)}")
+        for p in synced:
+            lines.append(f"  • *{p['ticker']}* — {p['shares']:.4g} acc @ €{p['avg_price']:.2f}")
+
+    if unmatched:
+        lines.append(f"\n⚠️ *Sin ticker mapeado:* {len(unmatched)} posiciones")
+        lines.append(
+            "Añade las entradas a `tr_isin_map` en `tickers.yaml`:\n"
+            "```\ntr_isin_map:\n  <ISIN>: <TICKER_YFINANCE>\n```"
+        )
+        for p in unmatched:
+            lines.append(f"  • `{p['isin']}` ({p['name']}) — {p['shares']:.4g} acc @ €{p['avg_price']:.2f}")
+
+    if cash_eur is not None:
+        lines.append(f"\n💶 Saldo en cuenta: *€{cash_eur:.2f}*")
+
+    if not positions:
+        lines.append("No se encontraron posiciones en Trade Republic.")
+
+    await _reply_long(update, "\n".join(lines))
+
+
+@authorized
 async def cmd_agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 5:
         await update.message.reply_text(
@@ -765,6 +854,8 @@ def main():
     app.add_handler(CommandHandler("borrar_alerta", cmd_borrar_alerta))
     app.add_handler(CommandHandler("agregar", cmd_agregar))
     app.add_handler(CommandHandler("eliminar", cmd_eliminar_ticker))
+    app.add_handler(CommandHandler("tr_setup", cmd_tr_setup))
+    app.add_handler(CommandHandler("sync_tr", cmd_sync_tr))
 
     tz = ZoneInfo(TIMEZONE)
     report_time = datetime.time(hour=REPORT_HOUR, minute=0, tzinfo=tz)

@@ -5,6 +5,7 @@ Uso: uvicorn web:app --host 0.0.0.0 --port 8589
 """
 import asyncio
 import io
+import json
 import math
 import os
 import re
@@ -35,9 +36,11 @@ from database import (
     get_all_positions,
     get_recent_reports,
     get_ticker_history,
+    get_tr_cache,
     init_db,
     save_report,
     save_snapshot,
+    set_tr_cache,
     upsert_position,
 )
 from fetch_data import get_macro_context, get_news
@@ -180,6 +183,27 @@ def _safe_pct(v) -> Optional[float]:
         return None if math.isnan(f) else round(f * 100, 1)
     except (TypeError, ValueError):
         return None
+
+
+def _tr_status() -> str:
+    """
+    Retorna el estado del módulo Trade Republic:
+      not_configured — faltan TR_PHONE / TR_PIN en el entorno
+      needs_setup    — credenciales OK pero keyfile no existe
+      setup_pending  — setup iniciado, esperando código SMS
+      ready          — keyfile presente, listo para sincronizar
+    """
+    try:
+        from trade_republic import is_configured, is_setup, has_pending_setup
+        if not is_configured():
+            return "not_configured"
+        if has_pending_setup():
+            return "setup_pending"
+        if is_setup():
+            return "ready"
+        return "needs_setup"
+    except ImportError:
+        return "not_configured"
 
 
 def _do_generate_report():
@@ -366,6 +390,9 @@ async def dashboard(request: Request, session: Optional[str] = Cookie(default=No
 
     reports = get_recent_reports(n=1)
 
+    tr_cash_row = get_tr_cache("cash_eur")
+    tr_cash = float(tr_cash_row[0]) if tr_cash_row else None
+
     return templates.TemplateResponse("dashboard.html", {
         "request":     request,
         "portfolio":   portfolio,
@@ -375,6 +402,7 @@ async def dashboard(request: Request, session: Optional[str] = Cookie(default=No
         "has_data":    df is not None,
         "n_alerts":    len(get_active_alerts()),
         "n_tickers":   len(portfolio) + len(watchlist),
+        "tr_cash":     tr_cash,
     })
 
 
@@ -622,8 +650,21 @@ async def posiciones_page(request: Request, session: Optional[str] = Cookie(defa
             "avg_price": avg_price, "price": price,
             "pnl": pnl, "value": value,
         })
+    tr_cash_row  = get_tr_cache("cash_eur")
+    tr_unmatched_row = get_tr_cache("tr_unmatched")
+    tr_unmatched = []
+    if tr_unmatched_row:
+        try:
+            tr_unmatched = json.loads(tr_unmatched_row[0])
+        except Exception:
+            pass
+
     return templates.TemplateResponse("posiciones.html", {
-        "request": request, "positions": pos_data,
+        "request":      request,
+        "positions":    pos_data,
+        "tr_status":    _tr_status(),
+        "tr_cash":      float(tr_cash_row[0]) if tr_cash_row else None,
+        "tr_unmatched": tr_unmatched,
     })
 
 
@@ -696,6 +737,77 @@ async def alertas_delete(
         return RedirectResponse("/login", status_code=302)
     deactivate_alert(alert_id)
     return RedirectResponse("/alertas", status_code=303)
+
+
+# ── Trade Republic ────────────────────────────────────────────────────────────
+
+@app.post("/tr/setup/start")
+async def tr_setup_start(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    def _start():
+        from trade_republic import setup_device
+        return setup_device()
+
+    try:
+        await asyncio.get_running_loop().run_in_executor(_executor, _start)
+        return RedirectResponse("/posiciones?tr_msg=sms_sent", status_code=303)
+    except Exception as e:
+        return RedirectResponse(f"/posiciones?tr_error={e}", status_code=303)
+
+
+@app.post("/tr/setup/complete")
+async def tr_setup_complete(
+    session: Optional[str] = Cookie(default=None),
+    code:    str = Form(...),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    def _complete():
+        from trade_republic import complete_setup
+        return complete_setup(code.strip())
+
+    try:
+        await asyncio.get_running_loop().run_in_executor(_executor, _complete)
+        return RedirectResponse("/posiciones?tr_msg=setup_ok", status_code=303)
+    except Exception as e:
+        return RedirectResponse(f"/posiciones?tr_error={e}", status_code=303)
+
+
+@app.post("/tr/sync")
+async def tr_sync(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    def _do_sync():
+        from trade_republic import sync_positions
+        return sync_positions()
+
+    try:
+        positions, cash_eur = await asyncio.get_running_loop().run_in_executor(_executor, _do_sync)
+    except Exception as e:
+        return RedirectResponse(f"/posiciones?tr_error={e}", status_code=303)
+
+    synced    = 0
+    unmatched = []
+    for pos in positions:
+        if pos.get("matched") and pos.get("ticker"):
+            upsert_position(pos["ticker"], pos["shares"], pos["avg_price"])
+            synced += 1
+        else:
+            unmatched.append({"isin": pos["isin"], "name": pos["name"],
+                               "shares": pos["shares"], "avg_price": pos["avg_price"]})
+
+    if cash_eur is not None:
+        set_tr_cache("cash_eur", str(cash_eur))
+    set_tr_cache("tr_unmatched", json.dumps(unmatched))
+
+    return RedirectResponse(
+        f"/posiciones?tr_synced={synced}&tr_unmatched={len(unmatched)}",
+        status_code=303,
+    )
 
 
 # ── Reportes ──────────────────────────────────────────────────────────────────

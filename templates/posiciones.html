@@ -83,4 +83,124 @@
   </div>
 </div>
 
+<!-- ── Trade Republic ─────────────────────────────────────────────────────── -->
+<div class="section" style="margin-top:28px">
+  <div class="section-header">
+    <h2 class="section-title">🔗 Trade Republic</h2>
+  </div>
+
+  {% set tr_synced   = request.query_params.get('tr_synced') %}
+  {% set tr_unm_q    = request.query_params.get('tr_unmatched') %}
+  {% set tr_msg_q    = request.query_params.get('tr_msg') %}
+  {% set tr_error_q  = request.query_params.get('tr_error') %}
+
+  {% if tr_msg_q == 'sms_sent' %}
+  <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3fb950">
+    ✅ SMS enviado. Introduce el código para completar la vinculación.
+  </div>
+  {% elif tr_msg_q == 'setup_ok' %}
+  <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3fb950">
+    ✅ Trade Republic vinculado correctamente.
+  </div>
+  {% endif %}
+
+  {% if tr_synced %}
+  <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3fb950">
+    ✅ {{ tr_synced }} posición(es) sincronizada(s) desde Trade Republic.
+    {% if tr_unm_q and tr_unm_q != '0' %}
+    <span class="text-warning"> · {{ tr_unm_q }} sin mapear (ver abajo).</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if tr_error_q %}
+  <div style="background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#f85149">
+    ❌ {{ tr_error_q }}
+  </div>
+  {% endif %}
+
+  <div class="form-section">
+    {% if tr_status == 'not_configured' %}
+      <p style="font-size:13px;color:#8b949e;margin:0">
+        Para habilitar la sincronización automática con Trade Republic, añade a tu <code>.env</code>:
+      </p>
+      <pre style="background:#21262d;border-radius:6px;padding:12px;font-size:12px;color:#e6edf3;margin:12px 0 0;overflow-x:auto">TR_PHONE=+34600000000
+TR_PIN=1234
+TR_KEYFILE=data/tr_keyfile.pem</pre>
+
+    {% elif tr_status == 'needs_setup' %}
+      <p style="font-size:13px;color:#8b949e;margin:0 0 14px">
+        Credenciales configuradas. Vincula el dispositivo para poder sincronizar.
+        <strong style="color:#d29922"> Atención:</strong> esto cerrará la sesión activa en el móvil.
+      </p>
+      <form method="post" action="/tr/setup/start">
+        <button type="submit" class="btn btn-primary btn-sm">Vincular dispositivo (enviar SMS)</button>
+      </form>
+
+    {% elif tr_status == 'setup_pending' %}
+      <p style="font-size:13px;color:#8b949e;margin:0 0 14px">
+        SMS enviado. Introduce el código de verificación:
+      </p>
+      <form method="post" action="/tr/setup/complete" style="display:flex;gap:10px;align-items:flex-end">
+        <div>
+          <label class="form-label">Código SMS</label>
+          <input type="text" name="code" class="form-input" placeholder="1234" maxlength="10" required
+                 style="width:140px;letter-spacing:0.15em;font-size:16px">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Confirmar</button>
+      </form>
+      <p style="font-size:12px;color:#8b949e;margin:10px 0 0">
+        ¿No recibiste el SMS?
+        <form method="post" action="/tr/setup/start" style="display:inline">
+          <button type="submit" style="background:none;border:none;color:#58a6ff;cursor:pointer;font-size:12px;padding:0">Reenviar →</button>
+        </form>
+      </p>
+
+    {% elif tr_status == 'ready' %}
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          {% if tr_cash is not none %}
+          <p style="font-size:13px;color:#8b949e;margin:0 0 4px">
+            Saldo disponible: <strong style="color:#3fb950">{{ tr_cash | eur }}</strong>
+          </p>
+          {% endif %}
+          <p style="font-size:12px;color:#484f58;margin:0">
+            Dispositivo vinculado. Sincroniza para importar posiciones y saldo.
+          </p>
+        </div>
+        <form method="post" action="/tr/sync" x-data="{ loading: false }" @submit="loading = true">
+          <button type="submit" class="btn btn-primary btn-sm" :disabled="loading">
+            <template x-if="!loading">
+              <span style="display:flex;align-items:center;gap:5px">
+                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Sincronizar desde TR
+              </span>
+            </template>
+            <template x-if="loading">
+              <span x-cloak style="display:flex;align-items:center;gap:5px">
+                <svg class="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                Sincronizando…
+              </span>
+            </template>
+          </button>
+        </form>
+      </div>
+    {% endif %}
+
+    {% if tr_unmatched %}
+    <div style="margin-top:16px;border-top:1px solid #30363d;padding-top:14px">
+      <p style="font-size:12px;color:#d29922;margin:0 0 8px;font-weight:600">
+        ⚠️ {{ tr_unmatched | length }} posición(es) sin ticker mapeado
+      </p>
+      <p style="font-size:12px;color:#8b949e;margin:0 0 10px">
+        Añade la siguiente sección a <code>tickers.yaml</code> para mapear cada ISIN a su ticker de yfinance:
+      </p>
+      <pre style="background:#21262d;border-radius:6px;padding:12px;font-size:12px;color:#e6edf3;margin:0;overflow-x:auto">tr_isin_map:
+{% for p in tr_unmatched %}  {{ p.isin }}: TICKER  # {{ p.name }}
+{% endfor %}</pre>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
 {% endblock %}

@@ -25,6 +25,13 @@
     <div class="stat-value {% if n_alerts > 0 %}text-warning{% endif %}">{{ n_alerts }}</div>
     <div class="stat-sub"><a href="/alertas" class="text-accent" style="text-decoration:none">ver alertas →</a></div>
   </div>
+  {% if tr_cash is not none %}
+  <div class="stat-card">
+    <div class="stat-label">Saldo TR</div>
+    <div class="stat-value text-positive">{{ tr_cash | eur }}</div>
+    <div class="stat-sub">liquidez disponible</div>
+  </div>
+  {% endif %}
 </div>
 
 {% if not has_data %}

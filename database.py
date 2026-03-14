@@ -49,6 +49,13 @@ def init_db():
             content TEXT
         )
         """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS tr_cache (
+            key     TEXT PRIMARY KEY,
+            value   TEXT,
+            updated TEXT
+        )
+        """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_alerts_active ON price_alerts(active)")
 
@@ -159,6 +166,24 @@ def deactivate_alert(alert_id):
         conn.cursor().execute(
             "UPDATE price_alerts SET active = 0 WHERE id = ?", (alert_id,)
         )
+
+
+# ── tr_cache ──────────────────────────────────────────────────────────────────
+
+def set_tr_cache(key: str, value: str):
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT INTO tr_cache (key, value, updated)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated=excluded.updated
+        """, (key, value, datetime.now().isoformat(timespec="minutes")))
+
+
+def get_tr_cache(key: str):
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT value, updated FROM tr_cache WHERE key = ?", (key,))
+        return c.fetchone()
 
 
 # ── reports ───────────────────────────────────────────────────────────────────

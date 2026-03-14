@@ -3,6 +3,11 @@ import sys
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
+# Trade Republic (opcional)
+TR_PHONE   = os.getenv("TR_PHONE", "")
+TR_PIN     = os.getenv("TR_PIN", "")
+TR_KEYFILE = os.getenv("TR_KEYFILE", "data/tr_keyfile.pem")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MODEL = os.getenv("MODEL", "claude-haiku-4-5-20251001")

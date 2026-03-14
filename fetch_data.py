@@ -15,6 +15,10 @@ def to_eur(price, currency):
         return None
     if currency == "EUR" or not currency:
         return price
+    # GBp = peniques británicos (yfinance los devuelve para .L) → convertir a GBP
+    if currency == "GBp":
+        price    = price / 100
+        currency = "GBP"
     if currency not in _fx_cache:
         try:
             hist = yf.Ticker(f"{currency}EUR=X").history(period="2d")

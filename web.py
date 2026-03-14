@@ -633,6 +633,55 @@ async def ticker_detalle(ticker: str, request: Request,
 
 # ── Tickers ───────────────────────────────────────────────────────────────────
 
+@app.get("/tickers/search")
+async def tickers_search(q: str = "", session: Optional[str] = Cookie(default=None)):
+    from fastapi.responses import JSONResponse
+    if not _is_auth(session):
+        return JSONResponse([])
+    if len(q) < 2:
+        return JSONResponse([])
+    def _do_search():
+        import yfinance as yf
+        try:
+            results = []
+            for item in yf.Search(q, max_results=10).quotes:
+                if item.get("typeDisp") not in ("Equity", "ETF", "Fund"):
+                    continue
+                results.append({
+                    "ticker": item.get("symbol", ""),
+                    "name":   item.get("longname") or item.get("shortname", ""),
+                    "type":   item.get("typeDisp", ""),
+                    "exchange": item.get("exchDisp", ""),
+                })
+            return results
+        except Exception:
+            return []
+    results = await asyncio.get_running_loop().run_in_executor(_executor, _do_search)
+    return JSONResponse(results)
+
+
+@app.get("/tickers/info")
+async def tickers_info(ticker: str = "", session: Optional[str] = Cookie(default=None)):
+    from fastapi.responses import JSONResponse
+    if not _is_auth(session) or not ticker:
+        return JSONResponse({})
+    def _do_info():
+        import yfinance as yf
+        try:
+            info = yf.Ticker(ticker).info or {}
+            sector  = info.get("sector", "")
+            country = info.get("country", "")
+            return {
+                "name":   info.get("longName") or info.get("shortName", ticker),
+                "block":  _SECTOR_TO_BLOCK.get(sector, sector),
+                "region": _COUNTRY_TO_REGION.get(country, country),
+            }
+        except Exception:
+            return {}
+    result = await asyncio.get_running_loop().run_in_executor(_executor, _do_info)
+    return JSONResponse(result)
+
+
 @app.get("/tickers", response_class=HTMLResponse)
 async def tickers_page(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):

@@ -52,43 +52,95 @@
   </div>
 
   <!-- Add form -->
-  <div class="form-section" x-data="{ open: false }">
+  <div class="form-section" x-data="{
+    open: false,
+    query: '',
+    results: [],
+    loading: false,
+    selected: false,
+    ticker: '', nombre: '', bloque: '', region: '',
+    async search() {
+      if (this.query.length < 2) { this.results = []; return; }
+      this.loading = true;
+      const r = await fetch('/tickers/search?q=' + encodeURIComponent(this.query));
+      this.results = await r.json();
+      this.loading = false;
+    },
+    async pick(item) {
+      this.ticker  = item.ticker;
+      this.nombre  = item.name;
+      this.query   = item.name + ' (' + item.ticker + ')';
+      this.results = [];
+      this.selected = true;
+      this.bloque = ''; this.region = '';
+      const r = await fetch('/tickers/info?ticker=' + encodeURIComponent(item.ticker));
+      const info = await r.json();
+      if (info.block)  this.bloque = info.block;
+      if (info.region) this.region = info.region;
+      if (info.name)   this.nombre = info.name;
+    }
+  }">
     <button @click="open = !open" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:#8b949e;font-size:13px;padding:0">
       <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:16px;height:16px;transition:transform 0.15s" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
       Añadir a {{ cat_key }}
     </button>
-    <form method="post" action="/tickers/add" x-show="open" x-transition x-cloak style="margin-top:16px">
-      <input type="hidden" name="categoria" value="{{ cat_key }}">
-      <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))">
-        <div>
-          <label class="form-label">Ticker *</label>
-          <input type="text" name="ticker" class="form-input" placeholder="AAPL" required style="text-transform:uppercase">
+    <div x-show="open" x-transition x-cloak style="margin-top:16px">
+      <!-- Buscador -->
+      <div style="position:relative;margin-bottom:14px">
+        <label class="form-label">Buscar empresa o ticker</label>
+        <input type="text" x-model="query" @input.debounce.400ms="search()"
+               class="form-input" placeholder="Ej: Nestlé, Apple, MSFT…" autocomplete="off">
+        <div x-show="loading" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#8b949e;font-size:12px">
+          Buscando…
         </div>
-        <div>
-          <label class="form-label">Nombre *</label>
-          <input type="text" name="nombre" class="form-input" placeholder="Apple Inc." required>
+        <!-- Resultados -->
+        <div x-show="results.length > 0" style="position:absolute;z-index:100;width:100%;background:#21262d;border:1px solid #30363d;border-radius:6px;margin-top:4px;max-height:260px;overflow-y:auto">
+          <template x-for="item in results" :key="item.ticker">
+            <div @click="pick(item)" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center"
+                 @mouseenter="$el.style.background='#2d333b'" @mouseleave="$el.style.background=''">
+              <div>
+                <span style="font-weight:600;color:#e6edf3;font-size:13px" x-text="item.ticker"></span>
+                <span style="color:#8b949e;font-size:12px;margin-left:8px" x-text="item.name"></span>
+              </div>
+              <span style="font-size:11px;color:#484f58" x-text="item.exchange"></span>
+            </div>
+          </template>
         </div>
-        <div>
-          <label class="form-label">Bloque *</label>
-          <input type="text" name="bloque" class="form-input" placeholder="Tecnología" required>
-        </div>
-        <div>
-          <label class="form-label">Región *</label>
-          <input type="text" name="region" class="form-input" placeholder="USA" required>
-        </div>
-        {% if cat_key == 'portfolio' %}
-        <div>
-          <label class="form-label">Peso obj. (%)</label>
-          <input type="number" name="target_weight" class="form-input" placeholder="10" min="0" max="100" step="0.1">
-        </div>
-        {% else %}
-        <input type="hidden" name="target_weight" value="">
-        {% endif %}
       </div>
-      <div style="margin-top:12px">
-        <button type="submit" class="btn btn-primary btn-sm">Añadir ticker</button>
-      </div>
-    </form>
+
+      <form method="post" action="/tickers/add">
+        <input type="hidden" name="categoria" value="{{ cat_key }}">
+        <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))">
+          <div>
+            <label class="form-label">Ticker *</label>
+            <input type="text" name="ticker" class="form-input" x-model="ticker" placeholder="AAPL" required style="text-transform:uppercase">
+          </div>
+          <div>
+            <label class="form-label">Nombre *</label>
+            <input type="text" name="nombre" class="form-input" x-model="nombre" placeholder="Apple Inc." required>
+          </div>
+          <div>
+            <label class="form-label">Bloque</label>
+            <input type="text" name="bloque" class="form-input" x-model="bloque" placeholder="Tecnología">
+          </div>
+          <div>
+            <label class="form-label">Región</label>
+            <input type="text" name="region" class="form-input" x-model="region" placeholder="USA">
+          </div>
+          {% if cat_key == 'portfolio' %}
+          <div>
+            <label class="form-label">Peso obj. (%)</label>
+            <input type="number" name="target_weight" class="form-input" placeholder="10" min="0" max="100" step="0.1">
+          </div>
+          {% else %}
+          <input type="hidden" name="target_weight" value="">
+          {% endif %}
+        </div>
+        <div style="margin-top:12px">
+          <button type="submit" class="btn btn-primary btn-sm">Añadir ticker</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endfor %}

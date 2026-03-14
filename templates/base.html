@@ -14,11 +14,33 @@
 
     /* Layout */
     .layout { display: flex; height: 100vh; overflow: hidden; }
-    .sidebar { width: 220px; background: #161b22; border-right: 1px solid #30363d; display: flex; flex-direction: column; flex-shrink: 0; height: 100vh; overflow-y: auto; }
+    .sidebar { width: 220px; background: #161b22; border-right: 1px solid #30363d; display: flex; flex-direction: column; flex-shrink: 0; height: 100vh; overflow-y: auto; transition: transform 0.22s ease; z-index: 200; }
     .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-    .topbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 13px 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+    .topbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 13px 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .topbar-title { font-size: 15px; font-weight: 600; color: #e6edf3; margin: 0; }
     .content { flex: 1; overflow-y: auto; padding: 24px; }
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 199; }
+    .hamburger { display: none; background: none; border: none; cursor: pointer; padding: 4px; color: #8b949e; flex-shrink: 0; }
+    .hamburger:hover { color: #e6edf3; }
+
+    @media (max-width: 768px) {
+      .hamburger { display: flex; align-items: center; }
+      .sidebar { position: fixed; top: 0; left: 0; transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
+      .sidebar-overlay.open { display: block; }
+      .content { padding: 16px; }
+      .topbar { padding: 11px 16px; }
+      .stat-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
+      .stat-value { font-size: 18px; }
+      .form-row { grid-template-columns: 1fr; }
+      .kv-grid { grid-template-columns: 1fr; }
+      thead th, tbody td { padding: 8px 10px; font-size: 12px; }
+    }
+
+    @media (max-width: 480px) {
+      .stat-grid { grid-template-columns: 1fr 1fr; }
+      .topbar-title { font-size: 13px; }
+    }
 
     /* Sidebar */
     .sidebar-logo { padding: 14px 16px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
@@ -137,10 +159,13 @@
   </style>
 </head>
 <body>
-<div class="layout">
+<div class="layout" x-data="{ sidebarOpen: false }">
+
+  <!-- Overlay móvil -->
+  <div class="sidebar-overlay" :class="{ open: sidebarOpen }" @click="sidebarOpen = false"></div>
 
   <!-- ── Sidebar ── -->
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ open: sidebarOpen }">
     <div class="sidebar-logo">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>
@@ -156,7 +181,7 @@
       </form>
     </div>
 
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" @click="sidebarOpen = false">
       {% set path = request.url.path %}
       <div class="sidebar-section">Análisis</div>
       <a href="/"          class="nav-link {% if path == '/' %}active{% endif %}">
@@ -224,6 +249,9 @@
   <!-- ── Main ── -->
   <div class="main">
     <header class="topbar">
+      <button class="hamburger" @click="sidebarOpen = !sidebarOpen" aria-label="Menú">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
       <h1 class="topbar-title">{% block page_title %}{% endblock %}</h1>
       {% block topbar_actions %}{% endblock %}
     </header>

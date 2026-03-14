@@ -277,7 +277,7 @@ _OPENFIGI_US = {"US", "UN", "UW", "UA", "UR"}
 
 # ISINs propios de TR (crypto y otros) que OpenFIGI no conoce
 _TR_KNOWN_ISINS = {
-    "XF000BTC0017": "BTC-USD",
+    "XF000BTC0017": "BTC-EUR",
     "XF000ETH0017": "ETH-USD",
 }
 

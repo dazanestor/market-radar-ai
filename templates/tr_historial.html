@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block page_title %}Historial Trade Republic{% endblock %}
+
+{% block content %}
+
+{% if not tr_ready %}
+<div class="card">
+  <div class="empty-state">
+    <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5" style="margin:0 auto 12px;display:block">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+    </svg>
+    Trade Republic no configurado o sin dispositivo vinculado.<br>
+    <a href="/posiciones" class="text-accent">Configura la integración en Posiciones →</a>
+  </div>
+</div>
+
+{% else %}
+
+<!-- ── Selector de periodo ── -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">📈 Valor del depósito</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      {% for t in timeframes %}
+      <a href="/tr/historial?tf={{ t }}"
+         class="btn btn-sm {% if t == timeframe %}btn-primary{% else %}btn-ghost{% endif %}">
+        {{ t }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card" style="padding:16px">
+    <img src="/chart/tr/historial/{{ timeframe }}"
+         class="chart-img"
+         style="min-height:220px"
+         alt="Historial depósito TR"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+    <div style="display:none;text-align:center;padding:40px 20px;color:#8b949e;font-size:13px">
+      No hay datos disponibles para este periodo o error al conectar con Trade Republic.
+    </div>
+  </div>
+  <p style="font-size:11px;color:#484f58;margin-top:6px">
+    El gráfico se obtiene en tiempo real desde Trade Republic al cargar la página.
+  </p>
+</div>
+
+<!-- ── Últimas transacciones ── -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">🧾 Últimas transacciones</h2>
+    <span class="text-muted" style="font-size:12px">Cacheadas del último /sync_tr</span>
+  </div>
+
+  {% if transactions %}
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Descripción</th>
+            <th>Detalle</th>
+            <th style="text-align:right">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tx in transactions %}
+          <tr>
+            <td class="text-muted" style="white-space:nowrap">{{ tx.date }}</td>
+            <td style="font-weight:500">{{ tx.title }}</td>
+            <td class="text-muted" style="font-size:12px">{{ tx.body }}</td>
+            <td style="text-align:right" class="{{ tx.amount | pnl_class if tx.amount is not none else '' }}">
+              {% if tx.amount is not none %}
+                {{ tx.amount | eur }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="empty-state">
+      Sin transacciones cacheadas. Sincroniza desde
+      <a href="/posiciones" class="text-accent">Posiciones →</a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endif %}
+
+{% endblock %}

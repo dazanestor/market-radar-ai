@@ -786,7 +786,7 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
         return sync_positions()
 
     try:
-        positions, cash_eur = await asyncio.get_running_loop().run_in_executor(_executor, _do_sync)
+        positions, cash_eur, transactions = await asyncio.get_running_loop().run_in_executor(_executor, _do_sync)
     except Exception as e:
         return RedirectResponse(f"/posiciones?tr_error={e}", status_code=303)
 
@@ -803,11 +803,114 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
     if cash_eur is not None:
         set_tr_cache("cash_eur", str(cash_eur))
     set_tr_cache("tr_unmatched", json.dumps(unmatched))
+    if transactions:
+        set_tr_cache("tr_transactions", json.dumps(transactions))
 
     return RedirectResponse(
         f"/posiciones?tr_synced={synced}&tr_unmatched={len(unmatched)}",
         status_code=303,
     )
+
+
+@app.get("/tr/historial", response_class=HTMLResponse)
+async def tr_historial_page(
+    request:  Request,
+    session:  Optional[str] = Cookie(default=None),
+    tf:       str = "1y",
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    timeframes = ["1d", "1w", "1m", "3m", "6m", "1y", "max"]
+    if tf not in timeframes:
+        tf = "1y"
+
+    try:
+        from trade_republic import is_configured, is_setup
+        tr_ready = is_configured() and is_setup()
+    except ImportError:
+        tr_ready = False
+
+    # Transacciones cacheadas del último sync
+    tx_row = get_tr_cache("tr_transactions")
+    transactions = []
+    if tx_row:
+        try:
+            transactions = json.loads(tx_row[0])
+        except Exception:
+            pass
+
+    return templates.TemplateResponse("tr_historial.html", {
+        "request":      request,
+        "tr_ready":     tr_ready,
+        "timeframe":    tf,
+        "timeframes":   timeframes,
+        "transactions": transactions,
+    })
+
+
+def _make_tr_history_chart(items: list, timeframe: str):
+    """Genera el gráfico de valor del depósito TR en el tiempo."""
+    import datetime as dt
+    times, values = [], []
+    for item in items:
+        try:
+            times.append(dt.datetime.fromtimestamp(item["time_ms"] / 1000, tz=dt.timezone.utc))
+            values.append(item["value"])
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    if len(values) < 2:
+        return None
+
+    fig, ax = plt.subplots(figsize=(9, 3.8))
+    _style_ax(ax, fig)
+
+    ax.fill_between(times, values, min(values), alpha=0.08, color=_C_GREEN)
+    ax.plot(times, values, linewidth=1.5, color=_C_GREEN)
+    ax.scatter([times[-1]], [values[-1]], color=_C_BLUE, zorder=5, s=55,
+               label=f"Actual: €{values[-1]:,.2f}")
+
+    perf = (values[-1] / values[0] - 1) * 100 if values[0] else 0
+    color_perf = _C_GREEN if perf >= 0 else _C_RED
+    ax.set_title(
+        f"Depósito Trade Republic  —  {timeframe}  ({perf:+.1f}%)",
+        fontsize=12, pad=10, color=color_perf,
+    )
+    ax.legend(fontsize=8, facecolor=_C_CARD, edgecolor=_C_GRID, labelcolor=_C_FG, framealpha=0.9)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"€{v:,.0f}"))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y" if timeframe not in ("1d", "1w") else "%d %b"))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    return fig
+
+
+@app.get("/chart/tr/historial/{timeframe}")
+async def chart_tr_historial(
+    timeframe: str,
+    session:   Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        raise HTTPException(401)
+
+    valid = {"1d", "1w", "1m", "3m", "6m", "1y", "max"}
+    if timeframe not in valid:
+        raise HTTPException(400, "timeframe inválido")
+
+    def _fetch_and_draw():
+        from trade_republic import get_portfolio_history
+        items = get_portfolio_history(timeframe)
+        return _make_tr_history_chart(items, timeframe)
+
+    try:
+        fig = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_and_draw)
+    except Exception as e:
+        raise HTTPException(503, f"Error TR: {e}")
+
+    if fig is None:
+        raise HTTPException(404, "Sin datos")
+    return _fig_to_response(fig)
 
 
 # ── Reportes ──────────────────────────────────────────────────────────────────

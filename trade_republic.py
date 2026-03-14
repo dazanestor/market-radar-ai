@@ -3,11 +3,14 @@ Integración con Trade Republic via pytr.
 Librería enlazada al repo oficial: https://github.com/pytr-org/pytr
 
 Autenticación en dos pasos:
-  1. setup_device()      → genera clave ECDSA, solicita SMS a TR
-  2. complete_setup(code)→ confirma con el código SMS, guarda keyfile
+  1. setup_device()       → genera clave ECDSA, solicita SMS a TR
+  2. complete_setup(code) → confirma con el código SMS, guarda keyfile
 
-Sincronización:
-  sync_positions() → lista de posiciones + saldo de caja
+Sincronización (una sola conexión WebSocket):
+  sync_positions() → (positions, cash_eur, transactions)
+
+Historial del depósito (conexión independiente):
+  get_portfolio_history(timeframe) → lista de puntos {time_ms, value}
 """
 
 import asyncio
@@ -16,6 +19,7 @@ import json
 import logging
 import os
 import pathlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yaml
 
@@ -45,59 +49,105 @@ def has_pending_setup() -> bool:
     return _SETUP_STATE_FILE.exists()
 
 
-# ── Construcción del mapa ISIN → ticker ───────────────────────────────────────
+# ── Mapa ISIN → ticker ────────────────────────────────────────────────────────
 
 def _build_isin_map() -> dict:
     """
-    Lee la sección `tr_isin_map` de tickers.yaml.
-    Formato:
-        tr_isin_map:
-          US0378331005: AAPL
-          DE0005140008: DBK.DE
+    Construye el mapa ISIN → ticker con dos fuentes (por orden de prioridad):
 
-    El mapeo manual es la única fuente para mantener la sincronización rápida.
-    Los ISINs sin mapeo se reportan al usuario para que los añada.
+    1. Sección `tr_isin_map` en tickers.yaml (manual, máxima prioridad):
+         tr_isin_map:
+           US0378331005: AAPL
+           DE0005140008: DBK.DE
+
+    2. Auto-match via yfinance: consulta yf.Ticker(t).isin para cada ticker
+       conocido en tickers.yaml en paralelo (timeout total 20 s).
+       No sobreescribe entradas manuales.
     """
+    import yfinance as yf
+
+    isin_map: dict = {}
     try:
         with open("tickers.yaml") as f:
             data = yaml.safe_load(f) or {}
-        return dict(data.get("tr_isin_map", {}))
+
+        # 1. Overrides manuales
+        isin_map.update(data.get("tr_isin_map", {}))
+
+        # 2. Auto-match via yfinance para tickers no cubiertos por el mapa manual
+        existing_tickers = set(isin_map.values())
+        candidates = [
+            t for cat in ("portfolio", "watchlist")
+            for t in data.get(cat, {})
+            if t not in existing_tickers
+        ]
+
+        if candidates:
+            def _get_isin(ticker: str):
+                try:
+                    isin = yf.Ticker(ticker).isin
+                    if isin and str(isin) not in ("-", "None", "nan", ""):
+                        return str(isin), ticker
+                except Exception:
+                    pass
+                return None, ticker
+
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futures = {pool.submit(_get_isin, t): t for t in candidates}
+                for fut in as_completed(futures, timeout=20):
+                    try:
+                        isin, ticker = fut.result(timeout=3)
+                        if isin and isin not in isin_map:
+                            isin_map[isin] = ticker
+                            logger.debug(f"TR auto-mapeado: {isin} → {ticker}")
+                    except Exception:
+                        pass
+
     except Exception as e:
-        logger.warning(f"No se pudo cargar tr_isin_map de tickers.yaml: {e}")
-        return {}
+        logger.warning(f"Error construyendo isin_map: {e}")
+
+    return isin_map
 
 
 # ── Core async ────────────────────────────────────────────────────────────────
 
 async def _async_fetch_portfolio() -> tuple:
     """
-    Conecta a Trade Republic vía WebSocket y descarga:
-    - Posiciones del portfolio (ISIN, nombre, acciones, precio medio)
-    - Saldo en cuenta (EUR)
+    Abre una sola conexión WebSocket a TR y descarga en paralelo:
+    - Portfolio compacto (posiciones: ISIN, shares, averageBuyIn)
+    - Saldo de cuenta (EUR)
+    - Últimas transacciones (timeline)
 
-    Retorna (positions: list[dict], cash_eur: float | None)
+    Después resuelve nombres via instrument_details para los ISINs del portfolio.
+
+    Retorna (positions, cash_eur, transactions)
     """
     from pytr.api import TradeRepublicApi
 
-    isin_map = _build_isin_map()
+    # El mapa ISIN→ticker se construye en un executor para no bloquear el loop
+    isin_map = await asyncio.get_running_loop().run_in_executor(None, _build_isin_map)
 
     tr = TradeRepublicApi(phone_no=TR_PHONE, pin=TR_PIN, keyfile=TR_KEYFILE)
     tr.login()
 
-    # Suscribirse a portfolio compacto y saldo simultáneamente
+    # Suscribirse a las 3 fuentes de datos simultáneamente
     await tr.compact_portfolio()
     await tr.cash()
+    await tr.timeline_transactions()
 
     positions_raw = []
     cash_eur = None
-    pending = 2
+    transactions_raw = []
+    pending = 3
 
     while pending > 0:
         sub_id, sub, response = await tr.recv()
         stype = sub.get("type")
+
         if stype == "compactPortfolio":
             positions_raw = response.get("positions", [])
             pending -= 1
+
         elif stype == "cash":
             items = response if isinstance(response, list) else []
             for item in items:
@@ -105,9 +155,14 @@ async def _async_fetch_portfolio() -> tuple:
                     cash_eur = float(item["amount"])
                     break
             pending -= 1
+
+        elif stype == "timelineTransactions":
+            transactions_raw = response.get("items", []) if isinstance(response, dict) else []
+            pending -= 1
+
         await tr.unsubscribe(sub_id)
 
-    # Obtener nombre de cada posición (instrument_details)
+    # Resolver nombre (shortName) de cada posición via instrument_details
     detail_subs: dict = {}
     for pos in positions_raw:
         sub_id = await tr.instrument_details(pos["instrumentId"])
@@ -124,8 +179,8 @@ async def _async_fetch_portfolio() -> tuple:
     if tr._ws and tr._ws.close_code is None:
         await tr._ws.close()
 
-    # Construir resultado
-    results = []
+    # ── Construir posiciones ───────────────────────────────────────────────────
+    positions = []
     for pos in positions_raw:
         shares = float(pos.get("netSize", 0))
         if shares <= 0:
@@ -134,7 +189,7 @@ async def _async_fetch_portfolio() -> tuple:
         avg_price = float(pos.get("averageBuyIn", 0))
         name      = pos.get("name", isin)
         ticker    = isin_map.get(isin)
-        results.append({
+        positions.append({
             "isin":      isin,
             "name":      name,
             "ticker":    ticker,
@@ -143,19 +198,84 @@ async def _async_fetch_portfolio() -> tuple:
             "matched":   ticker is not None,
         })
 
-    return results, cash_eur
+    # ── Normalizar transacciones ───────────────────────────────────────────────
+    transactions = []
+    for item in transactions_raw[:50]:
+        ts = item.get("timestamp") or item.get("time")
+        amount_obj = item.get("amount", {})
+        amount_val = None
+        try:
+            if isinstance(amount_obj, dict):
+                amount_val = float(amount_obj.get("value", 0))
+            elif amount_obj is not None:
+                amount_val = float(amount_obj)
+        except (TypeError, ValueError):
+            pass
+
+        date_str = "—"
+        if ts:
+            try:
+                import datetime
+                date_str = datetime.datetime.fromtimestamp(
+                    int(ts) / 1000, tz=datetime.timezone.utc
+                ).strftime("%d/%m/%Y")
+            except Exception:
+                pass
+
+        transactions.append({
+            "id":        item.get("id", ""),
+            "title":     item.get("title", "—"),
+            "body":      item.get("body", ""),
+            "amount":    amount_val,
+            "timestamp": int(ts) if ts else None,
+            "date":      date_str,
+        })
+
+    return positions, cash_eur, transactions
+
+
+async def _async_portfolio_history(timeframe: str) -> list:
+    """
+    Obtiene el historial de valor del depósito TR.
+    Abre una conexión independiente (no mezcla con sync_positions).
+
+    Retorna lista de dicts {time_ms: int, value: float}.
+    """
+    from pytr.api import TradeRepublicApi
+
+    tr = TradeRepublicApi(phone_no=TR_PHONE, pin=TR_PIN, keyfile=TR_KEYFILE)
+    tr.login()
+
+    await tr.portfolio_history(timeframe)
+    _, _, response = await asyncio.wait_for(tr.recv(), timeout=15)
+
+    if tr._ws and tr._ws.close_code is None:
+        await tr._ws.close()
+
+    raw_items = response.get("items", []) if isinstance(response, dict) else []
+    result = []
+    for item in raw_items:
+        try:
+            t = item.get("time")
+            v = item.get("value")
+            if t is not None and v is not None:
+                result.append({"time_ms": int(t), "value": float(v)})
+        except (TypeError, ValueError):
+            pass
+
+    return result
 
 
 # ── API pública ───────────────────────────────────────────────────────────────
 
 def sync_positions() -> tuple:
     """
-    Sincroniza posiciones desde Trade Republic.
-    Retorna (positions: list[dict], cash_eur: float | None).
+    Sincroniza posiciones desde Trade Republic en una sola conexión WebSocket.
 
-    Cada posición: {isin, name, ticker, shares, avg_price, matched}
-      - matched=True  → ticker mapeado en tr_isin_map; listo para upsert
-      - matched=False → ISIN sin mapeo; hay que añadirlo a tr_isin_map en tickers.yaml
+    Retorna (positions, cash_eur, transactions):
+      - positions: list[dict]  → {isin, name, ticker, shares, avg_price, matched}
+      - cash_eur:  float|None  → saldo disponible en EUR
+      - transactions: list[dict] → últimas operaciones {id, title, body, amount, date, timestamp}
 
     Lanza ValueError si TR no está configurado o el keyfile no existe.
     """
@@ -163,16 +283,33 @@ def sync_positions() -> tuple:
         raise ValueError("TR_PHONE y TR_PIN no están configurados en .env")
     if not is_setup():
         raise ValueError(
-            "Dispositivo no vinculado. Ejecuta /tr_setup o usa la sección Trade Republic en Posiciones."
+            "Dispositivo no vinculado. Ejecuta /tr_setup o usa la sección "
+            "Trade Republic en Posiciones."
         )
     return asyncio.run(_async_fetch_portfolio())
 
+
+def get_portfolio_history(timeframe: str = "1y") -> list:
+    """
+    Obtiene el historial de valor del depósito en TR.
+    timeframe: "1d" | "1w" | "1m" | "3m" | "6m" | "1y" | "max"
+
+    Retorna lista de {time_ms, value} ordenada cronológicamente.
+    Lanza ValueError si TR no está listo.
+    """
+    if not is_configured():
+        raise ValueError("TR_PHONE y TR_PIN no están configurados en .env")
+    if not is_setup():
+        raise ValueError("Dispositivo no vinculado.")
+    return asyncio.run(_async_portfolio_history(timeframe))
+
+
+# ── Setup inicial ─────────────────────────────────────────────────────────────
 
 def setup_device() -> str:
     """
     Paso 1: genera clave ECDSA y solicita SMS a TR.
     Guarda estado en data/tr_setup.json para complete_setup().
-    Retorna mensaje informativo.
     """
     from pytr.api import TradeRepublicApi
 
@@ -194,7 +331,6 @@ def setup_device() -> str:
 def complete_setup(code: str) -> str:
     """
     Paso 2: confirma con el código SMS y guarda el keyfile.
-    Retorna mensaje de éxito o lanza ValueError.
     """
     from pytr.api import TradeRepublicApi
     from ecdsa import SigningKey

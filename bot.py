@@ -1,3 +1,4 @@
+import json
 import logging
 import datetime
 import io
@@ -683,7 +684,7 @@ async def cmd_sync_tr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Conectando con Trade Republic...")
 
     try:
-        positions, cash_eur = await asyncio.to_thread(sync_positions)
+        positions, cash_eur, transactions = await asyncio.to_thread(sync_positions)
     except ValueError as e:
         await update.message.reply_text(f"❌ {e}")
         return
@@ -700,6 +701,8 @@ async def cmd_sync_tr(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if cash_eur is not None:
         set_tr_cache("cash_eur", str(cash_eur))
+    if transactions:
+        set_tr_cache("tr_transactions", json.dumps(transactions))
 
     lines = ["✅ *Trade Republic — Sincronización completada*\n"]
 

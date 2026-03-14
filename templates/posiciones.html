@@ -12,9 +12,9 @@
         <thead>
           <tr>
             <th>Activo</th>
-            <th>Acciones</th>
-            <th>Precio medio</th>
-            <th>Precio actual</th>
+            <th class="hide-mobile">Acciones</th>
+            <th class="hide-mobile">Precio medio</th>
+            <th class="hide-mobile">Precio actual</th>
             <th>Valor total</th>
             <th>P&amp;L €</th>
             <th>P&amp;L %</th>
@@ -35,9 +35,9 @@
               <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ pos.name }}</div>
               {% endif %}
             </td>
-            <td>{{ "%.4g" % pos.shares }}</td>
-            <td>{{ pos.avg_price | eur }}</td>
-            <td>{{ pos.price | eur }}</td>
+            <td class="hide-mobile">{{ "%.4g" % pos.shares }}</td>
+            <td class="hide-mobile">{{ pos.avg_price | eur }}</td>
+            <td class="hide-mobile">{{ pos.price | eur }}</td>
             <td>{{ pos.value | eur }}</td>
             <td class="{{ pnl_eur | pnl_class }}">{{ pnl_eur | eur }}</td>
             <td class="{{ pos.pnl | pnl_class }}">{{ pos.pnl | pct }}</td>

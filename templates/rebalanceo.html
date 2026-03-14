@@ -50,12 +50,12 @@
       <thead>
         <tr>
           <th>Activo</th>
-          <th>Acciones</th>
-          <th>Precio</th>
-          <th>Valor</th>
+          <th class="hide-mobile">Acciones</th>
+          <th class="hide-mobile">Precio</th>
+          <th class="hide-mobile">Valor</th>
           <th>Peso actual</th>
-          <th>Peso objetivo</th>
-          <th>Diferencia</th>
+          <th class="hide-mobile">Peso objetivo</th>
+          <th class="hide-mobile">Diferencia</th>
           <th>Acción</th>
         </tr>
       </thead>
@@ -66,9 +66,9 @@
             <a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a>
             <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ r.name }}</div>
           </td>
-          <td class="text-muted">{{ "%.4g" % r.shares }}</td>
-          <td>{{ r.price | eur }}</td>
-          <td style="font-weight:600">{{ r.value | eur }}</td>
+          <td class="hide-mobile text-muted">{{ "%.4g" % r.shares }}</td>
+          <td class="hide-mobile">{{ r.price | eur }}</td>
+          <td class="hide-mobile" style="font-weight:600">{{ r.value | eur }}</td>
           <td>
             <div style="display:flex;align-items:center;gap:8px">
               <div style="flex:1;max-width:80px;height:6px;background:#21262d;border-radius:3px;overflow:hidden">
@@ -77,8 +77,8 @@
               <span style="font-size:13px;font-weight:600;color:#e6edf3">{{ "%.1f" % r.current_w }}%</span>
             </div>
           </td>
-          <td class="text-muted">{{ r.target_w ~ "%" if r.target_w is not none else "—" }}</td>
-          <td>
+          <td class="hide-mobile text-muted">{{ r.target_w ~ "%" if r.target_w is not none else "—" }}</td>
+          <td class="hide-mobile">
             {% if r.diff is not none %}
               <span class="{{ 'text-negative' if r.diff > 2 else ('text-positive' if r.diff < -2 else 'text-muted') }}">
                 {{ "%+.1f" % r.diff }}%

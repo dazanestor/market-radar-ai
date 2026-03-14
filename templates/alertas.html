@@ -15,18 +15,18 @@
       <table>
         <thead>
           <tr>
-            <th>#</th>
+            <th class="hide-mobile">#</th>
             <th>Ticker</th>
             <th>Precio objetivo</th>
             <th>Dirección</th>
-            <th>Creada</th>
+            <th class="hide-mobile">Creada</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {% for alert_id, ticker, target, direction, created in alerts %}
           <tr>
-            <td class="text-muted">{{ alert_id }}</td>
+            <td class="hide-mobile text-muted">{{ alert_id }}</td>
             <td class="ticker-cell">{{ ticker }}</td>
             <td>{{ target | eur }}</td>
             <td>
@@ -36,7 +36,7 @@
                 <span class="text-positive">↑ sube a</span>
               {% endif %}
             </td>
-            <td class="text-muted">{{ created }}</td>
+            <td class="hide-mobile text-muted">{{ created }}</td>
             <td style="text-align:right">
               <form method="post" action="/alertas/delete" style="display:inline">
                 <input type="hidden" name="alert_id" value="{{ alert_id }}">

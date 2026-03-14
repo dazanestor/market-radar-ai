@@ -56,8 +56,8 @@
         <thead>
           <tr>
             <th>Activo</th><th>Precio</th>
-            <th>Drawdown 52s</th><th>Mom 3m</th><th>Volatilidad</th>
-            <th>Acciones</th><th>P. Medio</th><th>Valor</th><th>P&amp;L</th><th>Tend.</th>
+            <th class="hide-mobile">Drawdown 52s</th><th class="hide-mobile">Mom 3m</th><th class="hide-mobile">Volatilidad</th>
+            <th class="hide-mobile">Acciones</th><th class="hide-mobile">P. Medio</th><th>Valor</th><th>P&amp;L</th><th class="hide-mobile">Tend.</th>
           </tr>
         </thead>
         <tbody>
@@ -68,16 +68,16 @@
               <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ row.name }}</div>
             </td>
             <td>{{ row.price | eur }}</td>
-            <td class="{{ row.drawdown_52w | dd_class }}">{{ row.drawdown_52w | pct }}</td>
-            <td class="{{ row.momentum_3m | pnl_class }}">{{ row.momentum_3m | pct }}</td>
-            <td class="text-muted">{{ row.volatility | num }}%</td>
-            <td class="text-muted">
+            <td class="hide-mobile {{ row.drawdown_52w | dd_class }}">{{ row.drawdown_52w | pct }}</td>
+            <td class="hide-mobile {{ row.momentum_3m | pnl_class }}">{{ row.momentum_3m | pct }}</td>
+            <td class="hide-mobile text-muted">{{ row.volatility | num }}%</td>
+            <td class="hide-mobile text-muted">
               {{ row.shares | num if row.shares is not none else "—" }}
             </td>
-            <td class="text-muted">{{ row.avg_price | eur if row.avg_price else "—" }}</td>
+            <td class="hide-mobile text-muted">{{ row.avg_price | eur if row.avg_price else "—" }}</td>
             <td>{{ row.value | eur }}</td>
             <td class="{{ row.pnl_pct | pnl_class }}">{{ row.pnl_pct | pct }}</td>
-            <td>
+            <td class="hide-mobile">
               {% if row.trend == 'mejorando' %}<span class="text-positive">↑</span>
               {% elif row.trend == 'empeorando' %}<span class="text-negative">↓</span>
               {% else %}<span class="text-muted">—</span>{% endif %}
@@ -124,7 +124,7 @@
         <thead>
           <tr>
             <th>Activo</th><th>Score</th><th>Oportunidad</th>
-            <th>Precio</th><th>Drawdown 52s</th><th>Mom 3m</th><th>Div Yield</th><th>PER</th><th>Tend.</th>
+            <th class="hide-mobile">Precio</th><th>Drawdown 52s</th><th class="hide-mobile">Mom 3m</th><th class="hide-mobile">Div Yield</th><th class="hide-mobile">PER</th><th class="hide-mobile">Tend.</th>
           </tr>
         </thead>
         <tbody>
@@ -138,12 +138,12 @@
               {{ row.score | num if row.score is not none else "—" }}
             </td>
             <td><span class="{{ row.opportunity | opp_class }}">{{ row.opportunity or "—" }}</span></td>
-            <td>{{ row.price | eur }}</td>
+            <td class="hide-mobile">{{ row.price | eur }}</td>
             <td class="{{ row.drawdown_52w | dd_class }}">{{ row.drawdown_52w | pct }}</td>
-            <td class="{{ row.momentum_3m | pnl_class }}">{{ row.momentum_3m | pct }}</td>
-            <td class="text-muted">{{ row.dividend_yield | pct }}</td>
-            <td class="text-muted">{{ row.pe_ratio | num if row.pe_ratio else "—" }}</td>
-            <td>
+            <td class="hide-mobile {{ row.momentum_3m | pnl_class }}">{{ row.momentum_3m | pct }}</td>
+            <td class="hide-mobile text-muted">{{ row.dividend_yield | pct }}</td>
+            <td class="hide-mobile text-muted">{{ row.pe_ratio | num if row.pe_ratio else "—" }}</td>
+            <td class="hide-mobile">
               {% if row.trend == 'mejorando' %}<span class="text-positive">↑</span>
               {% elif row.trend == 'empeorando' %}<span class="text-negative">↓</span>
               {% else %}<span class="text-muted">—</span>{% endif %}

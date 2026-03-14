@@ -182,6 +182,34 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 - El dashboard web usa un executor de hilos para no bloquear al generar informes
 - El timeout de Claude (120s) está configurado en el constructor `anthropic.Anthropic(timeout=120)`, no en `messages.create()`
 
+## Trampas conocidas y decisiones de diseño
+
+- **Alpine.js `:style` + `style` estático**: si `:style` devuelve `''`, Alpine sobreescribe el atributo `style` completo y elimina `width`/`height`. Siempre consolidar todo en un único `:style` concatenando la parte estática + dinámica.
+- **Jinja2 y métodos dict**: `entry.items`, `cat_items.items()`, etc. resuelven al método Python `dict.items()` en lugar de la clave. Usar `entry['items']` o `dictsort` para iterar dicts en templates.
+- **NaN en Python es truthy**: `if cap_eur` pasa cuando `cap_eur` es NaN. Usar siempre `is not None` + `math.isnan()` o el helper `_is_nan()` de web.py.
+- **`avg_price` siempre en EUR**: el campo `portfolio.avg_price` debe introducirse en EUR independientemente de la bolsa del ticker. El sistema convierte el precio actual a EUR para calcular P&L.
+- **Sufijos de bolsa en yfinance**: tickers europeos requieren sufijo (`.SW`, `.PA`, `.MC`, `.DE`, `.ST`, `.L`, `.AS`, `.MI`). Sin sufijo, yfinance devuelve el ticker americano homónimo si existe, o falla. Causa posiciones duplicadas si se registran con y sin sufijo.
+- **MPLCONFIGDIR en Docker**: sin esta variable, matplotlib intenta crear `~/.config/matplotlib` dentro del contenedor como `appuser`, lo que falla si el disco está lleno o hay problemas de permisos. Configurado a `/app/output/.matplotlib` en docker-compose.yml.
+- **Templates se reconstruyen con la imagen**: los templates están embebidos en la imagen Docker. Cambios en `templates/` requieren `docker compose pull && docker compose up -d` para que surtan efecto en producción.
+
+## Mantenimiento de la base de datos
+
+La BD SQLite está en `data/radar.db` (volumen montado). Para operaciones directas desde el host:
+
+```bash
+# Sin sqlite3 instalado en el contenedor, usar Python:
+docker exec market-radar-ai python3 -c "import sqlite3; conn = sqlite3.connect('/app/data/radar.db'); [print(r) for r in conn.execute('SELECT ticker, shares, avg_price FROM portfolio')]; conn.close()"
+
+# Eliminar posiciones duplicadas o incorrectas:
+docker exec market-radar-ai python3 -c "import sqlite3; conn = sqlite3.connect('/app/data/radar.db'); conn.execute(\"DELETE FROM portfolio WHERE ticker IN ('TICKER1', 'TICKER2')\"); conn.commit(); conn.close()"
+```
+
+Nota: el contenedor `market-radar-ai` se llama así en docker-compose. El contenedor web es `market-radar-web`.
+
+## Trabajo pendiente / próximas funcionalidades
+
+- **Integración Trade Republic**: sincronizar posiciones automáticamente desde la app del broker. La librería recomendada es [`pytr`](https://github.com/pytr-org/pytr) (Python, +400 estrellas, activamente mantenida). Las alternativas evaluadas y descartadas fueron `cdamken/Trade_Republic_Connector` (TypeScript, no Python) y `guilhermehott/trapi` (abandonada desde 2022).
+
 ## CI/CD
 
 GitHub Actions en `.github/workflows/docker-publish.yml`:

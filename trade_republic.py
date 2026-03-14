@@ -210,11 +210,21 @@ async def _async_fetch_portfolio() -> tuple:
             pass
 
         date_str = "—"
+        ts_ms = None
         if ts:
             try:
                 import datetime
+                if isinstance(ts, str):
+                    # ISO format: '2026-03-10T13:47:55.620 0000' (space instead of +)
+                    ts_clean = ts.replace(" ", "+")
+                    dt = datetime.datetime.fromisoformat(ts_clean)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=datetime.timezone.utc)
+                    ts_ms = int(dt.timestamp() * 1000)
+                else:
+                    ts_ms = int(ts)
                 date_str = datetime.datetime.fromtimestamp(
-                    int(ts) / 1000, tz=datetime.timezone.utc
+                    ts_ms / 1000, tz=datetime.timezone.utc
                 ).strftime("%d/%m/%Y")
             except Exception:
                 pass
@@ -224,7 +234,7 @@ async def _async_fetch_portfolio() -> tuple:
             "title":     item.get("title", "—"),
             "body":      item.get("body", ""),
             "amount":    amount_val,
-            "timestamp": int(ts) if ts else None,
+            "timestamp": ts_ms,
             "date":      date_str,
         })
 

@@ -275,6 +275,12 @@ _OPENFIGI_SUFFIX = {
 }
 _OPENFIGI_US = {"US", "UN", "UW", "UA", "UR"}
 
+# ISINs propios de TR (crypto y otros) que OpenFIGI no conoce
+_TR_KNOWN_ISINS = {
+    "XF000BTC0017": "BTC-USD",
+    "XF000ETH0017": "ETH-USD",
+}
+
 
 def resolve_isins_openfigi(isins: list) -> dict:
     """
@@ -285,8 +291,15 @@ def resolve_isins_openfigi(isins: list) -> dict:
     import requests
 
     result = {}
-    # Filtrar ISINs que empiezan por XF (crypto TR-specific, no están en OpenFIGI)
-    lookups = [i for i in isins if not i.startswith("XF")]
+
+    # Resolver ISINs conocidos de TR (crypto) sin llamar a OpenFIGI
+    for isin in isins:
+        if isin in _TR_KNOWN_ISINS:
+            result[isin] = _TR_KNOWN_ISINS[isin]
+            logger.info(f"TR known: {isin} → {_TR_KNOWN_ISINS[isin]}")
+
+    # Resto: excluir XF (TR-specific) y los ya resueltos
+    lookups = [i for i in isins if not i.startswith("XF") and i not in result]
 
     for batch_start in range(0, len(lookups), 10):
         batch = lookups[batch_start:batch_start + 10]
@@ -303,12 +316,17 @@ def resolve_isins_openfigi(isins: list) -> dict:
                 items = entry.get("data", [])
                 if not items:
                     continue
-                # Preferir acciones (Common Stock) sobre otros tipos
-                candidates = [
+                # Filtrar a acciones (Common Stock)
+                equities = [
                     i for i in items
                     if i.get("securityType2") in ("Common Stock", "Equity Shares")
                 ] or items
-                item = candidates[0]
+                # Preferir exchanges con sufijo conocido (bolsa primaria) sobre OTC/US
+                ranked = sorted(
+                    equities,
+                    key=lambda i: (0 if i.get("exchCode", "") in _OPENFIGI_SUFFIX else 1)
+                )
+                item   = ranked[0]
                 exch   = item.get("exchCode", "")
                 ticker = item.get("ticker", "")
                 if not ticker:

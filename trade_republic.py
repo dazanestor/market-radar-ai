@@ -266,6 +266,64 @@ async def _async_portfolio_history(timeframe: str) -> list:
     return result
 
 
+# ── Resolución automática ISIN → ticker via OpenFIGI ─────────────────────────
+
+_OPENFIGI_SUFFIX = {
+    "SW": ".SW", "FP": ".PA", "LN": ".L",  "DC": ".CO", "AT": ".AX",
+    "GR": ".DE", "NA": ".AS", "IM": ".MI", "SM": ".MC", "SS": ".ST",
+    "FH": ".HE", "PL": ".LS", "BB": ".BR", "NO": ".OL", "PW": ".WA",
+}
+_OPENFIGI_US = {"US", "UN", "UW", "UA", "UR"}
+
+
+def resolve_isins_openfigi(isins: list) -> dict:
+    """
+    Consulta OpenFIGI (gratuito, sin clave) para resolver ISINs a tickers yfinance.
+    Devuelve {isin: ticker} solo para los que se resuelven correctamente.
+    Se procesan en lotes de 10 (límite de la API).
+    """
+    import requests
+
+    result = {}
+    # Filtrar ISINs que empiezan por XF (crypto TR-specific, no están en OpenFIGI)
+    lookups = [i for i in isins if not i.startswith("XF")]
+
+    for batch_start in range(0, len(lookups), 10):
+        batch = lookups[batch_start:batch_start + 10]
+        payload = [{"idType": "ID_ISIN", "idValue": isin} for isin in batch]
+        try:
+            resp = requests.post(
+                "https://api.openfigi.com/v3/mapping",
+                json=payload,
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                continue
+            for isin, entry in zip(batch, resp.json()):
+                items = entry.get("data", [])
+                if not items:
+                    continue
+                # Preferir acciones (Common Stock) sobre otros tipos
+                candidates = [
+                    i for i in items
+                    if i.get("securityType2") in ("Common Stock", "Equity Shares")
+                ] or items
+                item = candidates[0]
+                exch   = item.get("exchCode", "")
+                ticker = item.get("ticker", "")
+                if not ticker:
+                    continue
+                suffix = _OPENFIGI_SUFFIX.get(exch, "" if exch in _OPENFIGI_US else None)
+                if suffix is None:
+                    continue  # exchange desconocido
+                result[isin] = ticker + suffix
+                logger.info(f"OpenFIGI: {isin} → {ticker + suffix} (exch={exch})")
+        except Exception as e:
+            logger.warning(f"OpenFIGI error en lote: {e}")
+
+    return result
+
+
 # ── API pública ───────────────────────────────────────────────────────────────
 
 def sync_positions() -> tuple:

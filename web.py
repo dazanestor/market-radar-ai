@@ -807,13 +807,32 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
                 portfolio_yaml[ticker] = {"name": pos.get("name", ticker)}
                 yaml_changed = True
         else:
-            isin = pos["isin"]
-            unmatched.append({"isin": isin, "name": pos["name"],
-                               "shares": pos["shares"], "avg_price": pos["avg_price"]})
-            # Añadir ISIN sin mapear al yaml para que el usuario rellene el ticker
-            if isin not in isin_map_yaml:
-                isin_map_yaml[isin] = None
+            unmatched.append(pos)
+
+    # Intentar resolver ISINs sin mapear via OpenFIGI
+    if unmatched:
+        from trade_republic import resolve_isins_openfigi
+        unmatched_isins = [p["isin"] for p in unmatched]
+        resolved = await asyncio.get_running_loop().run_in_executor(
+            _executor, resolve_isins_openfigi, unmatched_isins
+        )
+        still_unmatched = []
+        for pos in unmatched:
+            isin   = pos["isin"]
+            ticker = resolved.get(isin)
+            if ticker:
+                isin_map_yaml[isin] = ticker
+                portfolio_yaml.setdefault(ticker, {"name": pos.get("name", ticker)})
+                upsert_position(ticker, pos["shares"], pos["avg_price"])
+                synced += 1
                 yaml_changed = True
+            else:
+                still_unmatched.append({"isin": isin, "name": pos["name"],
+                                        "shares": pos["shares"], "avg_price": pos["avg_price"]})
+                if isin not in isin_map_yaml:
+                    isin_map_yaml[isin] = None
+                    yaml_changed = True
+        unmatched = still_unmatched
 
     if yaml_changed:
         _save_tickers(tickers_data)

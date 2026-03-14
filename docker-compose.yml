@@ -27,6 +27,7 @@ services:
       MODEL: ${MODEL:-claude-haiku-4-5-20251001}
       REPORT_HOUR: ${REPORT_HOUR:-8}
       TIMEZONE: ${TIMEZONE:-Europe/Madrid}
+      MPLCONFIGDIR: /app/output/.matplotlib
 
     healthcheck:
       test: ["CMD", "python", "-c", "import sqlite3, os; db='/app/data/radar.db'; sqlite3.connect(db).execute('SELECT 1') if os.path.exists(db) else None"]
@@ -57,6 +58,7 @@ services:
       REPORT_HOUR: ${REPORT_HOUR:-8}
       TIMEZONE: ${TIMEZONE:-Europe/Madrid}
       WEB_PASSWORD: ${WEB_PASSWORD:-}
+      MPLCONFIGDIR: /app/output/.matplotlib
 
     ports:
       - "${WEB_PORT:-8589}:8589"

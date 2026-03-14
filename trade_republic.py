@@ -282,10 +282,16 @@ _ISIN_COUNTRY_TO_EXCH = {
     "FI": "FH", "PT": "PL", "BE": "BB", "NO": "NO", "PL": "PW",
 }
 
-# ISINs propios de TR (crypto y otros) que OpenFIGI no conoce
+# ISINs con ticker conocido — evita depender de OpenFIGI para estos casos
 _TR_KNOWN_ISINS = {
+    # Crypto TR-specific (OpenFIGI no los conoce)
     "XF000BTC0017": "BTC-EUR",
     "XF000ETH0017": "ETH-USD",
+    # Acciones europeas que OpenFIGI resuelve mal consistentemente
+    "CH0012032113": "ROG.SW",    # Roche
+    "CH0038863350": "NESN.SW",   # Nestlé
+    "DK0062498333": "NOVO-B.CO", # Novo-Nordisk B
+    "GB00B2B0DG97": "REL.L",     # RELX
 }
 
 
@@ -296,6 +302,7 @@ def resolve_isins_openfigi(isins: list) -> dict:
     Se procesan en lotes de 10 (límite de la API).
     """
     import requests
+    import yfinance as yf
 
     result = {}
 
@@ -338,16 +345,24 @@ def resolve_isins_openfigi(isins: list) -> dict:
                         2
                     )
                 )
-                item   = ranked[0]
-                exch   = item.get("exchCode", "")
-                ticker = item.get("ticker", "")
-                if not ticker:
-                    continue
-                suffix = _OPENFIGI_SUFFIX.get(exch, "" if exch in _OPENFIGI_US else None)
-                if suffix is None:
-                    continue  # exchange desconocido
-                result[isin] = ticker + suffix
-                logger.info(f"OpenFIGI: {isin} → {ticker + suffix} (exch={exch})")
+                # Probar candidatos en orden hasta que yfinance confirme el ticker
+                for item in ranked:
+                    exch   = item.get("exchCode", "")
+                    ticker = item.get("ticker", "")
+                    if not ticker:
+                        continue
+                    suffix = _OPENFIGI_SUFFIX.get(exch, "" if exch in _OPENFIGI_US else None)
+                    if suffix is None:
+                        continue
+                    candidate = ticker + suffix
+                    try:
+                        price = yf.Ticker(candidate).fast_info.get("lastPrice")
+                        if price:
+                            result[isin] = candidate
+                            logger.info(f"OpenFIGI+yf: {isin} → {candidate} (exch={exch})")
+                            break
+                    except Exception:
+                        continue
         except Exception as e:
             logger.warning(f"OpenFIGI error en lote: {e}")
 

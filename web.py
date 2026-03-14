@@ -485,9 +485,10 @@ async def noticias_page(request: Request, session: Optional[str] = Cookie(defaul
 
     tickers_yaml = _load_tickers()
     ticker_list  = []
-    for cat, items in tickers_yaml.items():
-        for ticker, meta in items.items():
-            ticker_list.append((ticker, meta.get("name", ticker), cat))
+    for cat in ("portfolio", "watchlist"):
+        for ticker, meta in (tickers_yaml.get(cat) or {}).items():
+            name = meta.get("name", ticker) if isinstance(meta, dict) else ticker
+            ticker_list.append((ticker, name, cat))
 
     def _fetch_all():
         result = []

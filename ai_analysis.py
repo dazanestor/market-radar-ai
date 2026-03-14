@@ -1,7 +1,7 @@
 import anthropic
 from config import ANTHROPIC_API_KEY, MODEL
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120)
 
 def _format_news(news_by_ticker):
     if not news_by_ticker:
@@ -64,7 +64,6 @@ Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, d
         model=MODEL,
         max_tokens=4096,
         temperature=0,
-        timeout=120,
         messages=[{"role": "user", "content": prompt}]
     )
 

@@ -5,7 +5,8 @@ def score_watchlist(df):
         score = 0
 
         # Drawdown: más caído desde máximo = más oportunidad (peso 30%)
-        score += (-row["drawdown_52w"]) * 0.3
+        if pd.notna(row.get("drawdown_52w")):
+            score += (-row["drawdown_52w"]) * 0.3
 
         # Momentum 3m inverso: caída reciente puede ser punto de entrada (peso 15%)
         if pd.notna(row.get("momentum_3m")):

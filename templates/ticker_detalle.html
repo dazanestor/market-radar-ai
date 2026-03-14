@@ -33,7 +33,7 @@
       <div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Drawdown 52s</div>
       <div style="font-size:20px;font-weight:700" class="{{ csv_row.drawdown_52w | dd_class }}">{{ csv_row.drawdown_52w | pct }}</div>
     </div>
-    {% if csv_row.score is not none and csv_row.score == csv_row.score %}
+    {% if csv_row.score is not none %}
     <div style="text-align:right">
       <div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Score</div>
       <div style="font-size:20px;font-weight:700;color:#58a6ff">{{ "%.1f" % csv_row.score }}</div>
@@ -143,7 +143,7 @@
         <div class="kv-item">
           <span class="kv-label">Score</span>
           <span class="kv-value text-accent">
-            {% if csv_row.score is not none and csv_row.score == csv_row.score %}{{ "%.1f" % csv_row.score }}{% else %}—{% endif %}
+            {% if csv_row.score is not none %}{{ "%.1f" % csv_row.score }}{% else %}—{% endif %}
           </span>
         </div>
       </div>

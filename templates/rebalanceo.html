@@ -40,7 +40,7 @@
   </div>
   <div class="stat-card">
     <div class="stat-label">Con objetivo definido</div>
-    <div class="stat-value">{{ rows | selectattr('target_w') | list | length }}</div>
+    <div class="stat-value">{{ rows | selectattr('target_w', 'ne', none) | list | length }}</div>
   </div>
 </div>
 
@@ -76,7 +76,7 @@
               <span style="font-size:13px;font-weight:600;color:#e6edf3">{{ "%.1f" % r.current_w }}%</span>
             </div>
           </td>
-          <td class="text-muted">{{ r.target_w ~ "%" if r.target_w else "—" }}</td>
+          <td class="text-muted">{{ r.target_w ~ "%" if r.target_w is not none else "—" }}</td>
           <td>
             {% if r.diff is not none %}
               <span class="{{ 'text-negative' if r.diff > 2 else ('text-positive' if r.diff < -2 else 'text-muted') }}">

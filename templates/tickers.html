@@ -25,14 +25,14 @@
           </tr>
         </thead>
         <tbody>
-          {% for ticker, meta in cat_items.items() %}
+          {% for ticker, meta in cat_items | dictsort %}
           <tr>
             <td class="ticker-cell">{{ ticker }}</td>
             <td>{{ meta.name }}</td>
             <td class="text-muted">{{ meta.block or "—" }}</td>
             <td class="text-muted">{{ meta.region or "—" }}</td>
             {% if cat_key == 'portfolio' %}
-            <td class="text-muted">{{ meta.target_weight ~ "%" if meta.target_weight else "—" }}</td>
+            <td class="text-muted">{{ meta.target_weight ~ "%" if meta.target_weight is not none else "—" }}</td>
             {% endif %}
             <td style="text-align:right">
               <form method="post" action="/tickers/delete" style="display:inline" onsubmit="return confirm('¿Eliminar {{ ticker }}?')">

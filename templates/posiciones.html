@@ -31,7 +31,9 @@
           <tr>
             <td>
               <a href="/ticker/{{ pos.ticker }}" class="ticker-cell">{{ pos.ticker }}</a>
+              {% if pos.name and pos.name != pos.ticker %}
               <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ pos.name }}</div>
+              {% endif %}
             </td>
             <td>{{ "%.4g" % pos.shares }}</td>
             <td>{{ pos.avg_price | eur }}</td>

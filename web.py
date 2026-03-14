@@ -634,7 +634,15 @@ async def tickers_delete(
 async def posiciones_page(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    df       = _read_csv()
+    df           = _read_csv()
+    tickers_yaml = _load_tickers()
+    # Construir mapa ticker → nombre desde tickers.yaml (portfolio + watchlist)
+    yaml_names = {}
+    for cat in ("portfolio", "watchlist"):
+        for t, meta in (tickers_yaml.get(cat) or {}).items():
+            if isinstance(meta, dict) and meta.get("name"):
+                yaml_names[t] = meta["name"]
+
     pos_data = []
     for ticker, shares, avg_price in get_all_positions():
         price = pnl = value = name = None
@@ -647,8 +655,11 @@ async def posiciones_page(request: Request, session: Optional[str] = Cookie(defa
                 if price and not _is_nan(price) and avg_price:
                     pnl   = (price - avg_price) / avg_price * 100
                     value = shares * price
+        # Fallback: nombre desde tickers.yaml
+        if not name or name == ticker:
+            name = yaml_names.get(ticker, ticker)
         pos_data.append({
-            "ticker": ticker, "name": name or ticker, "shares": shares,
+            "ticker": ticker, "name": name, "shares": shares,
             "avg_price": avg_price, "price": price,
             "pnl": pnl, "value": value,
         })

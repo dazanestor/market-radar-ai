@@ -1,6 +1,6 @@
 """
 Interfaz web para Market Radar AI.
-Uso: uvicorn web:app --host 0.0.0.0 --port 8080
+Uso: uvicorn web:app --host 0.0.0.0 --port 8589
      python web.py
 """
 import asyncio
@@ -176,7 +176,8 @@ def _safe_pct(v) -> Optional[float]:
     if v is None:
         return None
     try:
-        return round(float(v) * 100, 1)
+        f = float(v)
+        return None if math.isnan(f) else round(f * 100, 1)
     except (TypeError, ValueError):
         return None
 
@@ -512,7 +513,7 @@ async def ticker_detalle(ticker: str, request: Request,
             csv_row = r.iloc[0].to_dict()
 
     market_cap = info.get("marketCap")
-    cap_b      = round(market_cap / 1e9, 1) if market_cap else None
+    cap_b      = round(market_cap / 1e9, 1) if market_cap and not _is_nan(market_cap) else None
 
     description = info.get("longBusinessSummary", "")
     if len(description) > 500:
@@ -714,4 +715,4 @@ async def reportes_page(request: Request, session: Optional[str] = Cookie(defaul
 if __name__ == "__main__":
     import uvicorn
     init_db()
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("WEB_PORT", "8080")))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("WEB_PORT", "8589")))

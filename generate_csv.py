@@ -24,13 +24,14 @@ def _dividend_yield(dividends, price):
 
 def _extract_fundamentals(info):
     def pct(v):
-        return round(v * 100, 1) if v is not None else None
+        return round(v * 100, 1) if v is not None and not math.isnan(v) else None
     def val(v, decimals=2):
-        return round(v, decimals) if v is not None else None
+        return round(v, decimals) if v is not None and not math.isnan(v) else None
 
     market_cap = info.get("marketCap")
     currency = info.get("currency", "USD")
-    market_cap_eur = round(to_eur(market_cap, currency) / 1e9, 1) if market_cap else None
+    _cap_eur = to_eur(market_cap, currency) if market_cap else None
+    market_cap_eur = round(_cap_eur / 1e9, 1) if _cap_eur is not None else None
     return {
         "pe_ratio":       val(info.get("trailingPE")),
         "pb_ratio":       val(info.get("priceToBook")),

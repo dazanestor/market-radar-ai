@@ -416,7 +416,14 @@ async def cmd_fundamentos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         news = get_news(ticker, n=5, translate=True)
 
         def fmt(v, suffix=""):
-            return f"{v}{suffix}" if v is not None else "—"
+            if v is None:
+                return "—"
+            try:
+                if math.isnan(float(v)):
+                    return "—"
+            except (TypeError, ValueError):
+                pass
+            return f"{v}{suffix}"
 
         pe = info.get("trailingPE")
         pb = info.get("priceToBook")

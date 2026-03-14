@@ -643,18 +643,34 @@ async def tickers_search(q: str = "", session: Optional[str] = Cookie(default=No
     def _do_search():
         import yfinance as yf
         try:
+            search  = yf.Search(q, max_results=10)
+            quotes  = search.quotes
+            # quotes puede ser lista de dicts o DataFrame
+            if hasattr(quotes, "to_dict"):
+                quotes = quotes.to_dict("records")
             results = []
-            for item in yf.Search(q, max_results=10).quotes:
-                if item.get("typeDisp") not in ("Equity", "ETF", "Fund"):
+            for item in (quotes or []):
+                if not isinstance(item, dict):
+                    continue
+                symbol = item.get("symbol") or item.get("Symbol", "")
+                name   = (item.get("longname") or item.get("shortname")
+                          or item.get("longName") or item.get("shortName", symbol))
+                type_  = item.get("typeDisp") or item.get("quoteType", "")
+                exch   = item.get("exchDisp") or item.get("exchange", "")
+                if not symbol:
+                    continue
+                # Excluir solo derivados y divisas
+                if type_ in ("Currency", "Future", "Option"):
                     continue
                 results.append({
-                    "ticker": item.get("symbol", ""),
-                    "name":   item.get("longname") or item.get("shortname", ""),
-                    "type":   item.get("typeDisp", ""),
-                    "exchange": item.get("exchDisp", ""),
+                    "ticker":   symbol,
+                    "name":     name,
+                    "type":     type_,
+                    "exchange": exch,
                 })
             return results
-        except Exception:
+        except Exception as e:
+            print(f"tickers_search error: {e}")
             return []
     results = await asyncio.get_running_loop().run_in_executor(_executor, _do_search)
     return JSONResponse(results)

@@ -792,13 +792,31 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
 
     synced    = 0
     unmatched = []
+    tickers_data = _load_tickers()
+    portfolio_yaml = tickers_data.setdefault("portfolio", {})
+    isin_map_yaml  = tickers_data.setdefault("tr_isin_map", {})
+    yaml_changed   = False
+
     for pos in positions:
         if pos.get("matched") and pos.get("ticker"):
-            upsert_position(pos["ticker"], pos["shares"], pos["avg_price"])
+            ticker = pos["ticker"]
+            upsert_position(ticker, pos["shares"], pos["avg_price"])
             synced += 1
+            # Añadir al portfolio del yaml si no existe
+            if ticker not in portfolio_yaml:
+                portfolio_yaml[ticker] = {"name": pos.get("name", ticker)}
+                yaml_changed = True
         else:
-            unmatched.append({"isin": pos["isin"], "name": pos["name"],
+            isin = pos["isin"]
+            unmatched.append({"isin": isin, "name": pos["name"],
                                "shares": pos["shares"], "avg_price": pos["avg_price"]})
+            # Añadir ISIN sin mapear al yaml para que el usuario rellene el ticker
+            if isin not in isin_map_yaml:
+                isin_map_yaml[isin] = None
+                yaml_changed = True
+
+    if yaml_changed:
+        _save_tickers(tickers_data)
 
     if cash_eur is not None:
         set_tr_cache("cash_eur", str(cash_eur))

@@ -814,6 +814,20 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
     isin_map_yaml  = tickers_data.setdefault("tr_isin_map", {})
     yaml_changed   = False
 
+    # Detectar tickers mal resueltos (en isin_map pero sin precio en el CSV)
+    df = _read_csv()
+    csv_tickers = set(df["ticker"].tolist()) if df is not None else set()
+    stale_isins = [
+        isin for isin, ticker in isin_map_yaml.items()
+        if ticker and ticker not in csv_tickers and ticker in portfolio_yaml
+    ]
+    for isin in stale_isins:
+        bad_ticker = isin_map_yaml.pop(isin)
+        portfolio_yaml.pop(bad_ticker, None)
+        delete_position(bad_ticker)
+        yaml_changed = True
+        logger.info(f"TR: eliminado ticker mal resuelto {bad_ticker} (ISIN {isin}), se re-resolverá")
+
     for pos in positions:
         if pos.get("matched") and pos.get("ticker"):
             ticker = pos["ticker"]

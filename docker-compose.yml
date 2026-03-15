@@ -14,7 +14,7 @@ services:
       - .:/workspace
 
   market-radar:
-    image: ghcr.io/dazanestor/market-radar-ai:trade-republic
+    image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-ai
     restart: unless-stopped
     depends_on:
@@ -47,7 +47,7 @@ services:
       - ./templates:/app/templates
 
   market-radar-web:
-    image: ghcr.io/dazanestor/market-radar-ai:trade-republic
+    image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-web
     restart: unless-stopped
     command: ["uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8589"]
@@ -75,3 +75,4 @@ services:
       - ./output:/app/output
       - ./data:/app/data
       - ./tickers.yaml:/app/tickers.yaml
+      - ./templates:/app/templates

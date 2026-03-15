@@ -497,18 +497,40 @@ def _sanitize_name(s: str) -> str:
 
 
 def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
-    """Rellena block y region en meta usando yfinance si están vacíos."""
-    if meta.get("block") and meta.get("region"):
+    """Rellena block, region y horizon en meta usando yfinance si están vacíos."""
+    needs_block   = not meta.get("block")
+    needs_region  = not meta.get("region")
+    needs_horizon = not meta.get("horizon")
+    if not (needs_block or needs_region or needs_horizon):
         return meta
     try:
         import yfinance as yf
-        info = yf.Ticker(ticker).info or {}
-        if not meta.get("block"):
+        stock = yf.Ticker(ticker)
+        info  = stock.info or {}
+        if needs_block:
             sector = info.get("sector", "")
             meta["block"] = _SECTOR_TO_BLOCK.get(sector, sector or None)
-        if not meta.get("region"):
+        if needs_region:
             country = info.get("country", "")
             meta["region"] = _COUNTRY_TO_REGION.get(country, country or None)
+        if needs_horizon:
+            roe = info.get("returnOnEquity")
+            pe  = info.get("trailingPE")
+            div = info.get("dividendYield")
+            vol = None
+            try:
+                h = stock.history(period="1y")
+                if not h.empty:
+                    ret = h["Close"].pct_change().dropna()
+                    vol = float(ret.std() * (252 ** 0.5) * 100) if not ret.empty else None
+            except Exception:
+                pass
+            roe_pct = round(roe * 100, 1) if roe and not _math.isnan(roe) else None
+            div_pct = round(div * 100, 1) if div and not _math.isnan(div) else None
+            pe_val  = round(pe,  1)       if pe  and not _math.isnan(pe)  else None
+            horizon = suggest_horizon(roe_pct, pe_val, div_pct, vol, None)
+            if horizon:
+                meta["horizon"] = horizon
     except Exception:
         logger.exception("Error enriqueciendo meta de %s", ticker)
     return meta
@@ -2216,7 +2238,7 @@ async def tr_sync(
     # Enriquecer tickers sin block/region con datos de yfinance
     tickers_to_enrich = [
         t for t, m in portfolio_yaml.items()
-        if isinstance(m, dict) and (not m.get("block") or not m.get("region"))
+        if isinstance(m, dict) and (not m.get("block") or not m.get("region") or not m.get("horizon"))
     ]
     if tickers_to_enrich:
         def _enrich_all():

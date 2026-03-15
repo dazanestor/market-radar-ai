@@ -547,10 +547,7 @@ async def login(
 
 @app.get("/login/totp", response_class=HTMLResponse)
 async def totp_page(request: Request, totp_pending: Optional[str] = Cookie(default=None), error: str = ""):
-    if not _consume_pending_token(totp_pending) and totp_pending:
-        # Peek sin consumir: recréalo para mostrar la página
-        pass
-    if not totp_pending:
+    if not totp_pending or totp_pending not in _pending_tokens:
         return RedirectResponse("/login", status_code=302)
     return templates.TemplateResponse("login_totp.html", {"request": request, "error": error})
 
@@ -565,9 +562,12 @@ async def totp_verify(
     if not _consume_pending_token(totp_pending):
         return RedirectResponse("/login", status_code=303)
     if not _verify_totp(code):
-        return templates.TemplateResponse(
+        new_token = _create_pending_token(300)
+        resp = templates.TemplateResponse(
             "login_totp.html", {"request": request, "error": "1"}, status_code=200
         )
+        resp.set_cookie("totp_pending", new_token, httponly=True, samesite="strict", max_age=300)
+        return resp
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie("session", SESSION_TOKEN, httponly=True, samesite="strict", max_age=86400 * 30)
     resp.delete_cookie("totp_pending")

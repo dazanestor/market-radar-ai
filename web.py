@@ -525,9 +525,9 @@ def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
                     vol = float(ret.std() * (252 ** 0.5) * 100) if not ret.empty else None
             except Exception:
                 pass
-            roe_pct = round(roe * 100, 1) if roe and not _math.isnan(roe) else None
-            div_pct = round(div * 100, 1) if div and not _math.isnan(div) else None
-            pe_val  = round(pe,  1)       if pe  and not _math.isnan(pe)  else None
+            roe_pct = round(roe * 100, 1) if roe and not math.isnan(roe) else None
+            div_pct = round(div * 100, 1) if div and not math.isnan(div) else None
+            pe_val  = round(pe,  1)       if pe  and not math.isnan(pe)  else None
             horizon = suggest_horizon(roe_pct, pe_val, div_pct, vol, None)
             if horizon:
                 meta["horizon"] = horizon

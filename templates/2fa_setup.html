@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% block page_title %}Autenticación en dos pasos{% endblock %}
+
+{% block content %}
+<div class="section" style="max-width:560px">
+
+  {% if ok %}
+  <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#3fb950">
+    ✅ 2FA activado correctamente. A partir de ahora necesitarás el código al iniciar sesión.
+  </div>
+  {% endif %}
+
+  {% if disabled %}
+  <div style="background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.25);border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#d29922">
+    ⚠️ 2FA desactivado. El acceso solo requiere contraseña.
+  </div>
+  {% endif %}
+
+  {% if enabled %}
+  <!-- 2FA activo -->
+  <div class="card" style="padding:24px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;background:rgba(63,185,80,0.1);border-radius:10px;flex-shrink:0">
+        <svg width="20" height="20" fill="none" stroke="#3fb950" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+      </div>
+      <div>
+        <div style="font-size:14px;font-weight:600;color:#e6edf3">2FA activado</div>
+        <div style="font-size:12px;color:#8b949e;margin-top:2px">El acceso requiere contraseña + código TOTP</div>
+      </div>
+      <span class="badge badge-green" style="margin-left:auto">Activo</span>
+    </div>
+
+    <div style="background:#21262d;border-radius:6px;padding:12px 16px;margin-bottom:20px">
+      <div style="font-size:11px;color:#8b949e;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Clave secreta (backup)</div>
+      <code style="font-size:13px;color:#e6edf3;letter-spacing:0.1em;word-break:break-all">{{ secret }}</code>
+    </div>
+
+    <form method="post" action="/2fa/disable" onsubmit="return confirm('¿Desactivar el 2FA? El acceso solo requerirá contraseña.')">
+      <button type="submit" class="btn btn-danger" style="padding:8px 16px;font-size:13px">Desactivar 2FA</button>
+    </form>
+  </div>
+
+  {% else %}
+  <!-- 2FA no configurado -->
+  <div class="section-header" style="margin-bottom:14px">
+    <h2 class="section-title">Configurar autenticación en dos pasos</h2>
+  </div>
+
+  <div class="card" style="padding:24px">
+    <p style="font-size:13px;color:#8b949e;margin-bottom:20px;line-height:1.6">
+      Escanea el código QR con <strong style="color:#e6edf3">Google Authenticator</strong>, <strong style="color:#e6edf3">Authy</strong> u otra app TOTP.
+      Luego introduce el código de 6 dígitos para confirmar la activación.
+    </p>
+
+    <!-- Pasos -->
+    <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:24px">
+
+      <!-- Paso 1: QR -->
+      <div style="border:1px solid #30363d;border-radius:8px;padding:16px">
+        <div style="font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px">Paso 1 — Escanea el código QR</div>
+        <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+          <div>
+            <canvas id="qr-canvas" style="border-radius:6px;background:white;padding:8px;display:block"></canvas>
+          </div>
+          <div style="flex:1;min-width:160px">
+            <div style="font-size:11px;color:#8b949e;margin-bottom:6px">¿No puedes escanear? Introduce manualmente:</div>
+            <code style="font-size:12px;color:#e6edf3;word-break:break-all;display:block;background:#21262d;padding:8px 10px;border-radius:6px;letter-spacing:0.08em">{{ secret }}</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- Paso 2: Verificar -->
+      <div style="border:1px solid #30363d;border-radius:8px;padding:16px">
+        <div style="font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px">Paso 2 — Verifica el código</div>
+
+        {% if error %}
+        <div style="background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.3);color:#f85149;border-radius:6px;padding:10px 14px;font-size:13px;margin-bottom:14px">
+          {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/2fa/setup">
+          <input type="hidden" name="secret" value="{{ secret }}">
+          <div style="display:flex;gap:10px;align-items:flex-end">
+            <div style="flex:1">
+              <label class="form-label">Código de verificación</label>
+              <input type="text" name="code" class="form-input"
+                     placeholder="000000" maxlength="6" inputmode="numeric"
+                     pattern="[0-9]{6}" autocomplete="one-time-code" autofocus
+                     style="font-size:18px;letter-spacing:0.2em;text-align:center">
+            </div>
+            <button type="submit" class="btn btn-primary">Activar 2FA</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script>
+  var canvas = document.getElementById('qr-canvas');
+  if (canvas) {
+    QRCode.toCanvas(canvas, {{ uri | tojson }}, { width: 180, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+  }
+</script>
+{% endblock %}

@@ -13,6 +13,8 @@ import secrets
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+import pyotp
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -49,8 +51,28 @@ from scoring import score_watchlist
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-WEB_PASSWORD  = os.getenv("WEB_PASSWORD", "")
-SESSION_TOKEN = secrets.token_hex(32)
+WEB_PASSWORD     = os.getenv("WEB_PASSWORD", "")
+SESSION_TOKEN    = secrets.token_hex(32)
+TOTP_SECRET_FILE = "data/totp_secret.key"
+
+
+def _totp_secret() -> Optional[str]:
+    try:
+        s = open(TOTP_SECRET_FILE).read().strip()
+        return s or None
+    except FileNotFoundError:
+        return None
+
+
+def _totp_enabled() -> bool:
+    return bool(_totp_secret())
+
+
+def _verify_totp(code: str) -> bool:
+    secret = _totp_secret()
+    if not secret:
+        return True
+    return pyotp.TOTP(secret).verify(code.strip(), valid_window=1)
 
 app       = FastAPI(title="Market Radar AI", docs_url=None, redoc_url=None)
 templates = Jinja2Templates(directory="templates")
@@ -397,15 +419,100 @@ async def login_page(request: Request, error: str = ""):
 async def login(password: str = Form(...)):
     if WEB_PASSWORD and password != WEB_PASSWORD:
         return RedirectResponse("/login?error=1", status_code=303)
+    if _totp_enabled():
+        resp = RedirectResponse("/login/totp", status_code=303)
+        resp.set_cookie("totp_pending", "1", httponly=True, samesite="lax", max_age=300)
+        return resp
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie("session", SESSION_TOKEN, httponly=True, samesite="lax", max_age=86400 * 30)
     return resp
+
+
+@app.get("/login/totp", response_class=HTMLResponse)
+async def totp_page(request: Request, totp_pending: Optional[str] = Cookie(default=None), error: str = ""):
+    if not totp_pending:
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse("login_totp.html", {"request": request, "error": error})
+
+
+@app.post("/login/totp")
+async def totp_verify(
+    request: Request,
+    code: str = Form(...),
+    totp_pending: Optional[str] = Cookie(default=None),
+):
+    if not totp_pending:
+        return RedirectResponse("/login", status_code=303)
+    if not _verify_totp(code):
+        return templates.TemplateResponse(
+            "login_totp.html", {"request": request, "error": "1"}, status_code=200
+        )
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie("session", SESSION_TOKEN, httponly=True, samesite="lax", max_age=86400 * 30)
+    resp.delete_cookie("totp_pending")
+    return resp
+
+
+@app.get("/2fa/setup", response_class=HTMLResponse)
+async def totp_setup_page(request: Request, session: Optional[str] = Cookie(default=None), ok: str = "", disabled: str = ""):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    enabled = _totp_enabled()
+    secret = _totp_secret() if enabled else pyotp.random_base32()
+    uri = pyotp.TOTP(secret).provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
+    return templates.TemplateResponse("2fa_setup.html", {
+        "request": request,
+        "enabled": enabled,
+        "secret": secret,
+        "uri": uri,
+        "ok": ok,
+        "disabled": disabled,
+    })
+
+
+@app.post("/2fa/setup")
+async def totp_setup(
+    request: Request,
+    code: str = Form(...),
+    secret: str = Form(...),
+    session: Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    totp = pyotp.TOTP(secret)
+    if not totp.verify(code.strip(), valid_window=1):
+        uri = totp.provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
+        return templates.TemplateResponse("2fa_setup.html", {
+            "request": request,
+            "enabled": False,
+            "secret": secret,
+            "uri": uri,
+            "ok": "",
+            "disabled": "",
+            "error": "Código incorrecto. Vuelve a escanear el QR e inténtalo.",
+        })
+    os.makedirs("data", exist_ok=True)
+    with open(TOTP_SECRET_FILE, "w") as f:
+        f.write(secret)
+    return RedirectResponse("/2fa/setup?ok=1", status_code=303)
+
+
+@app.post("/2fa/disable")
+async def totp_disable(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    try:
+        os.remove(TOTP_SECRET_FILE)
+    except FileNotFoundError:
+        pass
+    return RedirectResponse("/2fa/setup?disabled=1", status_code=303)
 
 
 @app.get("/logout")
 async def logout():
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie("session")
+    resp.delete_cookie("totp_pending")
     return resp
 
 

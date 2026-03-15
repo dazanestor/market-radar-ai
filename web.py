@@ -1956,8 +1956,10 @@ async def screener_page(request: Request, session: Optional[str] = Cookie(defaul
         df_s = score_watchlist(df)
         for _, row in df_s.iterrows():
             d = row.to_dict()
-            sector = d.get("block") or ""
-            region = d.get("region") or ""
+            sector = d.get("block")
+            region = d.get("region")
+            sector = sector if isinstance(sector, str) and sector else ""
+            region = region if isinstance(region, str) and region else ""
             if sector:
                 sectors.add(sector)
             if region:

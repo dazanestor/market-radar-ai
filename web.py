@@ -497,16 +497,21 @@ def _sanitize_name(s: str) -> str:
 
 
 def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
-    """Rellena block, region y horizon en meta usando yfinance si están vacíos."""
+    """Rellena name, block, region y horizon en meta usando yfinance si están vacíos."""
+    needs_name    = not meta.get("name") or meta.get("name") == ticker
     needs_block   = not meta.get("block")
     needs_region  = not meta.get("region")
     needs_horizon = not meta.get("horizon")
-    if not (needs_block or needs_region or needs_horizon):
+    if not (needs_name or needs_block or needs_region or needs_horizon):
         return meta
     try:
         import yfinance as yf
         stock = yf.Ticker(ticker)
         info  = stock.info or {}
+        if needs_name:
+            long_name = info.get("longName") or info.get("shortName") or ""
+            if long_name:
+                meta["name"] = _sanitize_name(long_name)
         if needs_block:
             sector = info.get("sector", "")
             meta["block"] = _SECTOR_TO_BLOCK.get(sector, sector or None)
@@ -1674,6 +1679,37 @@ async def tickers_update(
     return RedirectResponse("/tickers", status_code=303)
 
 
+@app.post("/tickers/enrich")
+async def tickers_enrich(
+    request:    Request,
+    session:    Optional[str] = Cookie(default=None),
+    csrf_token: Optional[str] = Form(default=None),
+):
+    """Rellena block, region y horizon de todos los tickers que les falten usando yfinance."""
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    _require_csrf(request, csrf_token)
+    tickers_data = _load_tickers()
+    changed = False
+    def _do_enrich():
+        nonlocal changed
+        for cat in ("portfolio", "watchlist"):
+            for ticker, meta in (tickers_data.get(cat) or {}).items():
+                if not isinstance(meta, dict):
+                    continue
+                has_name = meta.get("name") and meta.get("name") != ticker
+                if has_name and meta.get("block") and meta.get("region") and meta.get("horizon"):
+                    continue
+                enriched = _enrich_ticker_meta(ticker, dict(meta))
+                if enriched != meta:
+                    tickers_data[cat][ticker] = enriched
+                    changed = True
+    await asyncio.get_running_loop().run_in_executor(_executor, _do_enrich)
+    if changed:
+        _save_tickers(tickers_data)
+    return RedirectResponse("/tickers?enriched=1", status_code=303)
+
+
 @app.post("/tickers/delete")
 async def tickers_delete(
     request:    Request,
@@ -2238,7 +2274,10 @@ async def tr_sync(
     # Enriquecer tickers sin block/region con datos de yfinance
     tickers_to_enrich = [
         t for t, m in portfolio_yaml.items()
-        if isinstance(m, dict) and (not m.get("block") or not m.get("region") or not m.get("horizon"))
+        if isinstance(m, dict) and (
+            not m.get("block") or not m.get("region") or not m.get("horizon")
+            or not m.get("name") or m.get("name") == t
+        )
     ]
     if tickers_to_enrich:
         def _enrich_all():

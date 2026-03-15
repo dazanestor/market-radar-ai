@@ -3,9 +3,12 @@
 
 {% block content %}
 
-<div style="margin-bottom:18px;display:flex;align-items:center;gap:10px">
+<div style="margin-bottom:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
   <span style="font-size:13px;color:#8b949e">Noticias recientes de <strong style="color:#e6edf3">{{ total_tickers }}</strong> tickers seguidos</span>
   <span class="badge badge-gray">Portfolio + Watchlist</span>
+  {% if fetched_at %}
+  <span style="font-size:11px;color:#484f58;margin-left:auto">Actualizado a las {{ fetched_at }}</span>
+  {% endif %}
 </div>
 
 {% if not portfolio_news and not watchlist_news %}

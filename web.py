@@ -12,6 +12,7 @@ import math
 import os
 import re
 import secrets
+import threading
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -198,12 +199,13 @@ def _verify_totp(code: str) -> bool:
     return pyotp.TOTP(secret).verify(code.strip(), valid_window=2)
 
 
-limiter   = Limiter(key_func=get_remote_address)
-app       = FastAPI(title="Market Radar AI", docs_url=None, redoc_url=None)
+limiter      = Limiter(key_func=get_remote_address)
+app          = FastAPI(title="Market Radar AI", docs_url=None, redoc_url=None)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-templates = Jinja2Templates(directory="templates")
-_executor = ThreadPoolExecutor(max_workers=4)
+templates    = Jinja2Templates(directory="templates")
+_executor    = ThreadPoolExecutor(max_workers=4)
+_chart_lock  = threading.Lock()  # matplotlib no es thread-safe
 
 # ── Chart constants (dark theme) ──────────────────────────────────────────────
 
@@ -297,9 +299,13 @@ templates.env.globals["csrf_token"] = _csrf_state["current"]
 
 @app.middleware("http")
 async def _refresh_csrf_global(request: Request, call_next):
-    """Rota el CSRF token si ha expirado antes de cada petición."""
+    """Rota el CSRF token si ha expirado; añade Cache-Control en respuestas HTML."""
     _rotate_csrf_if_needed()
-    return await call_next(request)
+    response = await call_next(request)
+    if "text/html" in response.headers.get("content-type", ""):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -355,6 +361,13 @@ def _validate_csrf(token: Optional[str]) -> bool:
         if since_rotation < _CSRF_OVERLAP and secrets.compare_digest(token, prev):
             return True
     return False
+
+
+def _require_csrf(request: Request, token: Optional[str]) -> None:
+    """Valida el token CSRF o lanza 403 con log de la IP."""
+    if not _validate_csrf(token):
+        logger.warning("CSRF inválido: ip=%s path=%s", request.client.host, request.url.path)
+        raise HTTPException(403, "Token CSRF inválido")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -521,9 +534,10 @@ def _style_ax(ax, fig):
 
 
 def _fig_to_response(fig) -> Response:
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=110, facecolor=_C_BG, bbox_inches="tight")
-    plt.close(fig)
+    with _chart_lock:
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png", dpi=110, facecolor=_C_BG, bbox_inches="tight")
+        plt.close(fig)
     buf.seek(0)
     return Response(content=buf.read(), media_type="image/png",
                     headers={"Cache-Control": "public, max-age=300"})
@@ -624,6 +638,27 @@ def _make_qr_svg(uri: str) -> str:
     segno.make_qr(uri).save(buf, kind="svg", scale=4, border=1, xmldecl=False, nl=False)
     return buf.getvalue().decode("utf-8")
 
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    import datetime as _dt
+    from fastapi.responses import JSONResponse
+    status = "ok"
+    try:
+        from database import _db
+        with _db() as conn:
+            conn.execute("SELECT 1")
+    except Exception as exc:
+        status = f"db_error: {exc}"
+    csv_path = f"{OUTPUT_DIR}/precios_global.csv"
+    return JSONResponse({
+        "status":     status,
+        "csv_exists": os.path.exists(csv_path),
+        "timestamp":  _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    })
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────
@@ -802,8 +837,7 @@ async def totp_setup(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     totp = pyotp.TOTP(secret)
     if not totp.verify(code.strip(), valid_window=2):
         uri = totp.provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
@@ -827,8 +861,7 @@ async def totp_disable(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     try:
         os.remove(TOTP_SECRET_FILE)
     except FileNotFoundError:
@@ -861,8 +894,7 @@ async def credentials_update(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     creds = _load_credentials()
     errors = []
     if not _USERNAME_RE.match(username.strip()):
@@ -896,7 +928,11 @@ async def logout(session: Optional[str] = Cookie(default=None)):
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, session: Optional[str] = Cookie(default=None)):
+async def dashboard(
+    request: Request,
+    error: Optional[str] = None,
+    session: Optional[str] = Cookie(default=None),
+):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
 
@@ -933,6 +969,8 @@ async def dashboard(request: Request, session: Optional[str] = Cookie(default=No
 
     tr_cash_row = get_tr_cache("cash_eur")
     tr_cash = float(tr_cash_row[0]) if tr_cash_row else None
+    if tr_cash and total_value is not None:
+        total_value += tr_cash
 
     # Antigüedad de datos: fecha de modificación del CSV
     csv_path = f"{OUTPUT_DIR}/precios_global.csv"
@@ -959,6 +997,7 @@ async def dashboard(request: Request, session: Optional[str] = Cookie(default=No
         "n_tickers":   len(portfolio) + len(watchlist),
         "tr_cash":     tr_cash,
         "data_age":    data_age,
+        "error":       error,
     })
 
 
@@ -971,9 +1010,12 @@ async def generar_reporte(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
-    await asyncio.get_running_loop().run_in_executor(_executor, _do_generate_report)
+    _require_csrf(request, csrf_token)
+    try:
+        await asyncio.get_running_loop().run_in_executor(_executor, _do_generate_report)
+    except Exception:
+        logger.exception("Error en /generar-reporte")
+        return RedirectResponse("/?error=reporte_fallido", status_code=303)
     return RedirectResponse("/", status_code=303)
 
 
@@ -1061,6 +1103,8 @@ async def noticias_page(request: Request, session: Optional[str] = Cookie(defaul
                 result.append({"ticker": ticker, "name": name, "category": cat, "items": items})
         return result
 
+    import datetime as _dt
+    fetch_start = _dt.datetime.now()
     news_data = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_all)
     portfolio_news  = [n for n in news_data if n["category"] == "portfolio"]
     watchlist_news  = [n for n in news_data if n["category"] == "watchlist"]
@@ -1070,6 +1114,7 @@ async def noticias_page(request: Request, session: Optional[str] = Cookie(defaul
         "portfolio_news": portfolio_news,
         "watchlist_news": watchlist_news,
         "total_tickers":  len(ticker_list),
+        "fetched_at":     fetch_start.strftime("%H:%M"),
     })
 
 
@@ -1209,10 +1254,12 @@ async def tickers_page(request: Request, session: Optional[str] = Cookie(default
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     tickers = _load_tickers()
+    tickers_with_position = {row[0] for row in get_all_positions()}
     return templates.TemplateResponse("tickers.html", {
-        "request":   request,
-        "portfolio": tickers.get("portfolio", {}),
-        "watchlist": tickers.get("watchlist", {}),
+        "request":               request,
+        "portfolio":             tickers.get("portfolio", {}),
+        "watchlist":             tickers.get("watchlist", {}),
+        "tickers_with_position": tickers_with_position,
     })
 
 
@@ -1230,8 +1277,7 @@ async def tickers_add(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     tickers = _load_tickers()
     if categoria not in tickers:
         tickers[categoria] = {}
@@ -1260,8 +1306,7 @@ async def tickers_update(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     tickers = _load_tickers()
     meta = (tickers.get(categoria) or {}).get(ticker, {}) or {}
     if nombre:        meta["name"]          = nombre
@@ -1283,8 +1328,7 @@ async def tickers_delete(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     tickers = _load_tickers()
     if categoria in tickers and ticker in tickers[categoria]:
         del tickers[categoria][ticker]
@@ -1295,7 +1339,12 @@ async def tickers_delete(
 # ── Posiciones ────────────────────────────────────────────────────────────────
 
 @app.get("/posiciones", response_class=HTMLResponse)
-async def posiciones_page(request: Request, session: Optional[str] = Cookie(default=None)):
+async def posiciones_page(
+    request: Request,
+    saved: Optional[str] = None,
+    error: Optional[str] = None,
+    session: Optional[str] = Cookie(default=None),
+):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     df           = _read_csv()
@@ -1352,6 +1401,8 @@ async def posiciones_page(request: Request, session: Optional[str] = Cookie(defa
         "tr_status":    _tr_status(),
         "tr_cash":      float(tr_cash_row[0]) if tr_cash_row else None,
         "tr_unmatched": tr_unmatched,
+        "saved":        saved,
+        "error":        error,
     })
 
 
@@ -1366,11 +1417,12 @@ async def posiciones_add(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
+    t = ticker.strip().upper()
     if 0 < shares < 1_000_000 and 0 < avg_price < 1_000_000:
-        upsert_position(ticker.strip().upper(), shares, avg_price)
-    return RedirectResponse("/posiciones", status_code=303)
+        upsert_position(t, shares, avg_price)
+        return RedirectResponse(f"/posiciones?saved={t}", status_code=303)
+    return RedirectResponse("/posiciones?error=datos_invalidos", status_code=303)
 
 
 @app.post("/posiciones/delete")
@@ -1382,8 +1434,7 @@ async def posiciones_delete(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     delete_position(ticker)
     return RedirectResponse("/posiciones", status_code=303)
 
@@ -1418,8 +1469,7 @@ async def alertas_add(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     if not (0 < target_price < 1_000_000):
         return RedirectResponse("/alertas", status_code=303)
     t = ticker.strip().upper()
@@ -1450,8 +1500,7 @@ async def alertas_delete(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
     deactivate_alert(alert_id)
     return RedirectResponse("/alertas", status_code=303)
 
@@ -1466,8 +1515,7 @@ async def tr_setup_start(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
 
     def _start():
         from trade_republic import setup_device
@@ -1490,8 +1538,7 @@ async def tr_setup_complete(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
 
     def _complete():
         from trade_republic import complete_setup
@@ -1513,8 +1560,7 @@ async def tr_sync(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
 
     def _do_sync():
         from trade_republic import sync_positions
@@ -1837,8 +1883,7 @@ async def tickers_import(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    if not _validate_csrf(csrf_token):
-        raise HTTPException(403, "Token CSRF inválido")
+    _require_csrf(request, csrf_token)
 
     content = (await file.read()).decode("utf-8", errors="ignore")
     reader = csv.DictReader(io.StringIO(content))

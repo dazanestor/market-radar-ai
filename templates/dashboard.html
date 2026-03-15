@@ -9,12 +9,18 @@
 </div>
 {% endif %}
 
+{% if error == "reporte_fallido" %}
+<div class="alert alert-error" style="margin-bottom:16px;padding:10px 14px;border-radius:6px;background:#3d1c1c;border:1px solid #7d3232;color:#f08080;font-size:13px">
+  Error al generar el reporte. Revisa los logs para más detalles.
+</div>
+{% endif %}
+
 <!-- ── Stats ── -->
 <div class="stat-grid">
   <div class="stat-card">
     <div class="stat-label">Valor cartera</div>
     <div class="stat-value">{{ total_value | eur if total_value else "—" }}</div>
-    <div class="stat-sub">posiciones registradas</div>
+    <div class="stat-sub">{% if tr_cash is not none %}posiciones + liquidez TR{% else %}posiciones registradas{% endif %}</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">En cartera</div>

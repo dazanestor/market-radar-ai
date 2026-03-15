@@ -31,6 +31,7 @@ from database import (
     add_price_alert, get_active_alerts, deactivate_alert, log_alert_triggered,
     get_ticker_history, set_tr_cache,
     get_unnotified_alerts, mark_alert_notified, vacuum_db,
+    purge_old_price_history, purge_old_news_cache,
 )
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
@@ -938,12 +939,15 @@ async def job_replay_unnotified_alerts(context):
 
 
 async def job_vacuum_db(context):
-    """Ejecuta VACUUM semanal en SQLite para reducir el tamaño del fichero."""
+    """Mantenimiento semanal de SQLite: purga datos antiguos y compacta el fichero."""
     try:
+        ph = purge_old_price_history(days=365)
+        nc = purge_old_news_cache(days=30)
+        logging.info("Purga: %d snapshots >1 año, %d traducciones >30 días.", ph, nc)
         vacuum_db()
         logging.info("VACUUM semanal completado.")
     except Exception:
-        logging.exception("Error en VACUUM semanal")
+        logging.exception("Error en mantenimiento semanal de BD")
 
 
 async def job_check_claude_health(context):

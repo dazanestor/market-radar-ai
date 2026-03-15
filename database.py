@@ -325,6 +325,28 @@ def cache_news_translation(headline: str, translation: str) -> None:
                 SET translation=excluded.translation, fetched_at=excluded.fetched_at
         """, (h, translation, datetime.now().isoformat(timespec="minutes")))
 
+def purge_old_price_history(days: int = 365) -> int:
+    """Elimina snapshots de price_history con más de `days` días. Devuelve filas eliminadas."""
+    with _db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM price_history WHERE date < date('now', ?)",
+            (f"-{days} days",)
+        )
+        return cur.rowcount
+
+
+def purge_old_news_cache(days: int = 30) -> int:
+    """Elimina traducciones de news_cache con más de `days` días. Devuelve filas eliminadas."""
+    with _db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM news_cache WHERE fetched_at < datetime('now', ?)",
+            (f"-{days} days",)
+        )
+        return cur.rowcount
+
+
 def vacuum_db() -> None:
     """Ejecuta VACUUM + WAL checkpoint para reducir tamaño del fichero SQLite."""
     conn = sqlite3.connect(DATABASE)

@@ -3,6 +3,17 @@
 
 {% block content %}
 
+{% if saved %}
+<div style="margin-bottom:14px;padding:10px 14px;border-radius:6px;background:#1a3d1a;border:1px solid #3d7a3d;color:#80d080;font-size:13px">
+  Posición <strong>{{ saved }}</strong> guardada correctamente.
+</div>
+{% endif %}
+{% if error == "datos_invalidos" %}
+<div style="margin-bottom:14px;padding:10px 14px;border-radius:6px;background:#3d1c1c;border:1px solid #7d3232;color:#f08080;font-size:13px">
+  Datos inválidos. Las acciones y el precio deben ser valores positivos menores de 1.000.000.
+</div>
+{% endif %}
+
 <!-- ── Tabla ──────────────────────────────────────────────────────────────── -->
 <div class="section">
   <div class="card">

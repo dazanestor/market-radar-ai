@@ -32,9 +32,20 @@ def score_watchlist(df):
 
         return round(score, 2)
 
+    _SCORED_COLS = ["drawdown_52w", "momentum_3m", "volatility",
+                    "dividend_yield", "roe", "pe_ratio"]
+
+    def _has_data(row) -> bool:
+        return any(pd.notna(row.get(c)) for c in _SCORED_COLS)
+
     df = df.copy()
     df["score"] = df.apply(compute_score, axis=1)
-    df["opportunity"] = df["score"].apply(
-        lambda x: "ALTA" if x > 15 else "MEDIA" if x > 8 else "BAJA"
+    df["opportunity"] = df.apply(
+        lambda row: (
+            "ALTA"  if row["score"] > 15 else
+            "MEDIA" if row["score"] > 8  else
+            "BAJA"
+        ) if _has_data(row) else "—",
+        axis=1,
     )
     return df

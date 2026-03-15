@@ -12,7 +12,7 @@ def _safe_round(v, n=2):
     return round(v, n) if v is not None and not math.isnan(v) else None
 
 def _dividend_yield(dividends, price):
-    if dividends.empty or not price:
+    if dividends.empty or not price or price < 0.01:
         return 0.0
     one_year_ago = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=1)
     if dividends.index.tz is None:
@@ -98,8 +98,8 @@ def generate():
                 base_6m_raw = close.iloc[-126] if len(close) >= 126 else None
                 base_3m_eur = to_eur(base_3m_raw, currency) if base_3m_raw is not None else None
                 base_6m_eur = to_eur(base_6m_raw, currency) if base_6m_raw is not None else None
-                momentum_3m = (price / base_3m_eur - 1) * 100 if base_3m_eur else None
-                momentum_6m = (price / base_6m_eur - 1) * 100 if base_6m_eur else None
+                momentum_3m = (price / base_3m_eur - 1) * 100 if base_3m_eur and base_3m_eur > 0 else None
+                momentum_6m = (price / base_6m_eur - 1) * 100 if base_6m_eur and base_6m_eur > 0 else None
 
                 daily_returns = close.pct_change().dropna()
                 volatility = daily_returns.tail(252).std() * (252 ** 0.5) * 100 if not daily_returns.empty else None

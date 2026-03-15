@@ -4,6 +4,8 @@ import math
 import yfinance as yf
 from datetime import datetime, timezone
 
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from config import ANTHROPIC_API_KEY, MODEL
 
 logger = logging.getLogger("fetch_data")
@@ -34,6 +36,8 @@ def to_eur(price, currency):
 def clear_fx_cache():
     _fx_cache.clear()
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=20),
+       reraise=True)
 def fetch_stock_data(ticker):
     stock = yf.Ticker(ticker)
     hist = stock.history(period="5y")

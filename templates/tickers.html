@@ -27,7 +27,12 @@
         <tbody>
           {% for ticker, meta in cat_items | dictsort %}
           <tr>
-            <td class="ticker-cell">{{ ticker }}</td>
+            <td class="ticker-cell">
+              {{ ticker }}
+              {% if tickers_with_position and ticker in tickers_with_position %}
+              <span class="badge badge-green" style="font-size:10px;margin-left:4px">Con posición</span>
+              {% endif %}
+            </td>
             <td>{{ meta.name }}</td>
             <td class="text-muted">{{ meta.block or "—" }}</td>
             <td class="text-muted">{{ meta.region or "—" }}</td>

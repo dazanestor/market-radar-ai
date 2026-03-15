@@ -436,12 +436,12 @@ Accede desde el navegador a `http://<IP-servidor>:8589`.
 
 ### Funcionalidades
 
-- **Dashboard** — cartera con P&L, watchlist por score, último informe Claude e indicador de frescura de datos; el valor total incluye liquidez de Trade Republic si está disponible
+- **Dashboard** — cartera con P&L, watchlist por score, último informe Claude e indicador de frescura de datos; el valor total incluye liquidez de Trade Republic si está disponible; icono ⓘ en cada columna con explicación del concepto al pulsar
 - **Rebalanceo** — peso actual vs. objetivo con acción recomendada (Añadir / Recortar / OK)
 - **Noticias** — titulares recientes por ticker traducidos al español (con caché 24h); muestra timestamp de actualización
 - **Ticker detalle** — fundamentales, métricas técnicas, historial drawdown y noticias
 - **Tickers** — añadir/eliminar activos; importar en masa desde CSV; exportar cartera o watchlist a CSV; badge visual para tickers con posición registrada
-- **Posiciones** — registrar y eliminar posiciones con P&L en euros; sincronización con Trade Republic; feedback visual al guardar
+- **Posiciones** — registrar y eliminar posiciones con P&L en euros; sincronización con Trade Republic; feedback visual al guardar; icono ⓘ en cada columna con explicación del concepto
 - **Alertas** — crear alertas de precio, drawdown y score; historial de alertas disparadas
 - **Reportes** — historial paginado de análisis Claude (10 por página)
 - **Generar reporte** — lanza el pipeline completo desde el navegador (máx. 2 por minuto); muestra error si el pipeline falla

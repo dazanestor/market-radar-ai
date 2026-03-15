@@ -188,6 +188,12 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 | `/2fa/disable` | POST | Desactiva 2FA |
 | `/settings/credentials` | GET/POST | Cambiar usuario/contraseña |
 
+**Tooltips de ayuda en tablas:**
+- Icono ⓘ clickable en cada cabecera de tabla (cartera, watchlist, posiciones)
+- Al pulsar muestra un bocadillo con la descripción del concepto; se cierra al hacer clic fuera
+- Implementado con un `<div id="help-tooltip">` global en `base.html` y `position: fixed` para no ser recortado por el `overflow-x: auto` de `.table-wrap`
+- Función `showHelp(el, text)` en JS global; las descripciones no repiten el término del encabezado
+
 **Generación de gráficos:**
 - `_make_price_chart` — precio de cierre 252 días, marca máximo 52 semanas y precio actual, área sombreada en rojo entre precio actual y máximo
 - `_make_history_chart` — drawdown desde máximo 52 semanas (últimos 30 días del radar), área roja bajo cero

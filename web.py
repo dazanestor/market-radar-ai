@@ -1495,16 +1495,76 @@ async def tickers_info(ticker: str = "", session: Optional[str] = Cookie(default
 
 
 @app.get("/tickers", response_class=HTMLResponse)
-async def tickers_page(request: Request, session: Optional[str] = Cookie(default=None)):
+async def tickers_page(
+    request: Request,
+    tab:     Optional[str] = None,
+    saved:   Optional[str] = None,
+    error:   Optional[str] = None,
+    session: Optional[str] = Cookie(default=None),
+):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     tickers = _load_tickers()
-    tickers_with_position = {row[0] for row in get_all_positions()}
+    df      = _read_csv()
+
+    # ── Posiciones ──
+    yaml_names: dict = {}
+    for cat in ("portfolio", "watchlist"):
+        for t, meta in (tickers.get(cat) or {}).items():
+            if isinstance(meta, dict) and meta.get("name"):
+                yaml_names[t] = meta["name"]
+
+    pos_data = []
+    for ticker_row, shares, avg_price in get_all_positions():
+        price = pnl = value = name = None
+        if df is not None:
+            row = df[df["ticker"] == ticker_row]
+            if not row.empty:
+                r     = row.iloc[0]
+                price = r.get("price")
+                name  = r.get("name")
+                if price and not _is_nan(price) and avg_price:
+                    pnl   = (price - avg_price) / avg_price * 100
+                    value = shares * price
+        if not name or name == ticker_row:
+            name = yaml_names.get(ticker_row, ticker_row)
+        pnl_eur = (price - avg_price) * shares if (
+            price and not _is_nan(price) and avg_price
+        ) else None
+        split_warning = (
+            price and avg_price and not _is_nan(price)
+            and price > 0 and avg_price > 0
+            and (price / avg_price) < 0.15
+        )
+        pos_data.append({
+            "ticker": ticker_row, "name": name, "shares": shares,
+            "avg_price": avg_price, "price": price,
+            "pnl": pnl, "value": value,
+            "pnl_eur": pnl_eur, "split_warning": split_warning,
+        })
+
+    # ── Trade Republic ──
+    tr_cash_row      = get_tr_cache("cash_eur")
+    tr_unmatched_row = get_tr_cache("tr_unmatched")
+    tr_unmatched: list = []
+    if tr_unmatched_row:
+        try:
+            tr_unmatched = json.loads(tr_unmatched_row[0])
+        except Exception:
+            pass
+
     return templates.TemplateResponse("tickers.html", {
         "request":               request,
         "portfolio":             tickers.get("portfolio", {}),
         "watchlist":             tickers.get("watchlist", {}),
-        "tickers_with_position": tickers_with_position,
+        "tickers_with_position": {p["ticker"] for p in pos_data},
+        "positions":             pos_data,
+        "tr_status":             _tr_status(),
+        "tr_cash":               float(tr_cash_row[0]) if tr_cash_row else None,
+        "tr_unmatched":          tr_unmatched,
+        "active_tab":            tab or "tickers",
+        "saved":                 saved,
+        "error":                 error,
     })
 
 
@@ -1610,69 +1670,19 @@ async def tickers_delete(
 @app.get("/posiciones", response_class=HTMLResponse)
 async def posiciones_page(
     request: Request,
-    saved: Optional[str] = None,
-    error: Optional[str] = None,
+    saved:   Optional[str] = None,
+    error:   Optional[str] = None,
     session: Optional[str] = Cookie(default=None),
 ):
+    """Redirige a la pestaña de posiciones dentro de /tickers."""
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    df           = _read_csv()
-    tickers_yaml = _load_tickers()
-    # Construir mapa ticker → nombre desde tickers.yaml (portfolio + watchlist)
-    yaml_names = {}
-    for cat in ("portfolio", "watchlist"):
-        for t, meta in (tickers_yaml.get(cat) or {}).items():
-            if isinstance(meta, dict) and meta.get("name"):
-                yaml_names[t] = meta["name"]
-
-    pos_data = []
-    for ticker, shares, avg_price in get_all_positions():
-        price = pnl = value = name = None
-        if df is not None:
-            row = df[df["ticker"] == ticker]
-            if not row.empty:
-                r     = row.iloc[0]
-                price = r.get("price")
-                name  = r.get("name")
-                if price and not _is_nan(price) and avg_price:
-                    pnl   = (price - avg_price) / avg_price * 100
-                    value = shares * price
-        # Fallback: nombre desde tickers.yaml
-        if not name or name == ticker:
-            name = yaml_names.get(ticker, ticker)
-        # Pre-calcular pnl_eur y detectar posible split (>85% pérdida)
-        pnl_eur = (price - avg_price) * shares if (
-            price and not _is_nan(price) and avg_price
-        ) else None
-        split_warning = (
-            price and avg_price and not _is_nan(price)
-            and price > 0 and avg_price > 0
-            and (price / avg_price) < 0.15
-        )
-        pos_data.append({
-            "ticker": ticker, "name": name, "shares": shares,
-            "avg_price": avg_price, "price": price,
-            "pnl": pnl, "value": value,
-            "pnl_eur": pnl_eur, "split_warning": split_warning,
-        })
-    tr_cash_row  = get_tr_cache("cash_eur")
-    tr_unmatched_row = get_tr_cache("tr_unmatched")
-    tr_unmatched = []
-    if tr_unmatched_row:
-        try:
-            tr_unmatched = json.loads(tr_unmatched_row[0])
-        except Exception:
-            pass
-
-    return templates.TemplateResponse("posiciones.html", {
-        "request":      request,
-        "positions":    pos_data,
-        "tr_status":    _tr_status(),
-        "tr_cash":      float(tr_cash_row[0]) if tr_cash_row else None,
-        "tr_unmatched": tr_unmatched,
-        "saved":        saved,
-        "error":        error,
-    })
+    qs = "tab=posiciones"
+    if saved:
+        qs += f"&saved={saved}"
+    if error:
+        qs += f"&error={error}"
+    return RedirectResponse(f"/tickers?{qs}", status_code=302)
 
 
 @app.post("/posiciones/add")
@@ -1690,8 +1700,8 @@ async def posiciones_add(
     t = ticker.strip().upper()
     if 0 < shares < 1_000_000 and 0 < avg_price < 1_000_000:
         upsert_position(t, shares, avg_price)
-        return RedirectResponse(f"/posiciones?saved={t}", status_code=303)
-    return RedirectResponse("/posiciones?error=datos_invalidos", status_code=303)
+        return RedirectResponse(f"/tickers?tab=posiciones&saved={t}", status_code=303)
+    return RedirectResponse("/tickers?tab=posiciones&error=datos_invalidos", status_code=303)
 
 
 @app.post("/posiciones/delete")
@@ -1705,7 +1715,7 @@ async def posiciones_delete(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     delete_position(ticker)
-    return RedirectResponse("/posiciones", status_code=303)
+    return RedirectResponse("/tickers?tab=posiciones", status_code=303)
 
 
 # ── Operaciones ───────────────────────────────────────────────────────────────
@@ -2062,10 +2072,10 @@ async def tr_setup_start(
 
     try:
         await asyncio.get_running_loop().run_in_executor(_executor, _start)
-        return RedirectResponse("/posiciones?tr_msg=sms_sent", status_code=303)
+        return RedirectResponse("/tickers?tab=tr&tr_msg=sms_sent", status_code=303)
     except Exception:
         logger.exception("TR setup/start error")
-        return RedirectResponse("/posiciones?tr_error=Error+en+Trade+Republic", status_code=303)
+        return RedirectResponse("/tickers?tab=tr&tr_error=Error+en+Trade+Republic", status_code=303)
 
 
 @app.post("/tr/setup/complete")
@@ -2085,10 +2095,10 @@ async def tr_setup_complete(
 
     try:
         await asyncio.get_running_loop().run_in_executor(_executor, _complete)
-        return RedirectResponse("/posiciones?tr_msg=setup_ok", status_code=303)
+        return RedirectResponse("/tickers?tab=tr&tr_msg=setup_ok", status_code=303)
     except Exception:
         logger.exception("TR setup/complete error")
-        return RedirectResponse("/posiciones?tr_error=Error+en+Trade+Republic", status_code=303)
+        return RedirectResponse("/tickers?tab=tr&tr_error=Error+en+Trade+Republic", status_code=303)
 
 
 @app.post("/tr/sync")
@@ -2115,12 +2125,12 @@ async def tr_sync(
                     from trade_republic import setup_device
                     return setup_device()
                 await asyncio.get_running_loop().run_in_executor(_executor, _relink)
-                return RedirectResponse("/posiciones?tr_msg=sms_sent", status_code=303)
+                return RedirectResponse("/tickers?tab=tr&tr_msg=sms_sent", status_code=303)
             except Exception:
                 logger.exception("TR relink error")
-                return RedirectResponse("/posiciones?tr_error=Error+al+vincular+dispositivo", status_code=303)
+                return RedirectResponse("/tickers?tab=tr&tr_error=Error+al+vincular+dispositivo", status_code=303)
         logger.exception("TR sync error")
-        return RedirectResponse("/posiciones?tr_error=Error+en+Trade+Republic", status_code=303)
+        return RedirectResponse("/tickers?tab=tr&tr_error=Error+en+Trade+Republic", status_code=303)
 
     synced    = 0
     unmatched = []
@@ -2218,7 +2228,7 @@ async def tr_sync(
         set_tr_cache("tr_transactions", json.dumps(transactions))
 
     return RedirectResponse(
-        f"/posiciones?tr_synced={synced}&tr_unmatched={len(unmatched)}",
+        f"/tickers?tab=tr&tr_synced={synced}&tr_unmatched={len(unmatched)}",
         status_code=303,
     )
 

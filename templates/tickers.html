@@ -1,273 +1,604 @@
 {% extends 'base.html' %}
-{% block page_title %}Tickers{% endblock %}
+{% block page_title %}Tickers y posiciones{% endblock %}
 
 {% block content %}
 
-{% for cat_key, cat_items in [('portfolio', portfolio), ('watchlist', watchlist)] %}
-<div class="section">
-  <div class="section-header">
-    <h2 class="section-title">{% if cat_key == 'portfolio' %}💼 Portfolio{% else %}👀 Watchlist{% endif %}</h2>
-    <span class="badge badge-gray">{{ cat_items | length }} activos</span>
-  </div>
+<!-- ── Tabs ─────────────────────────────────────────────────────────────────── -->
+<div x-data="{ tab: '{{ active_tab }}' }">
 
-  <div class="card" style="margin-bottom:16px">
-    {% if cat_items %}
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Ticker</th>
-            <th>Nombre</th>
-            <th class="hide-mobile">Bloque</th>
-            <th class="hide-mobile">Región</th>
-            {% if cat_key == 'portfolio' %}<th class="hide-mobile">Peso objetivo</th>{% endif %}
-            <th>Horizonte</th>
-            <th class="hide-mobile">Precio obj.</th>
-            <th class="hide-mobile">Notas</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for ticker, meta in cat_items | dictsort %}
-          <tr>
-            <td class="ticker-cell">
-              {{ ticker }}
-              {% if tickers_with_position and ticker in tickers_with_position %}
-              <span class="badge badge-green" style="font-size:10px;margin-left:4px">Con posición</span>
-              {% endif %}
-            </td>
-            <td>{{ meta.name }}</td>
-            <td class="text-muted hide-mobile">{{ meta.block or "—" }}</td>
-            <td class="text-muted hide-mobile">{{ meta.region or "—" }}</td>
-            {% if cat_key == 'portfolio' %}
-            <td class="text-muted hide-mobile">{{ meta.target_weight ~ "%" if meta.target_weight is not none else "—" }}</td>
-            {% endif %}
-            <td>
-              {% set h = meta.horizon %}
-              <form method="post" action="/tickers/update" style="display:inline-flex;align-items:center;gap:4px">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="ticker" value="{{ ticker }}">
-                <input type="hidden" name="categoria" value="{{ cat_key }}">
-                <input type="hidden" name="target_price" value="{{ meta.target_price if meta.target_price is defined and meta.target_price is not none else '' }}">
-                <input type="hidden" name="notes" value="{{ meta.notes if meta.notes is defined and meta.notes else '' }}">
-                <select name="horizon" class="form-input" style="padding:3px 6px;font-size:11px;width:auto" onchange="this.form.submit()">
-                  <option value="" {% if not h %}selected{% endif %}>—</option>
-                  <option value="corto"  {% if h == 'corto'  %}selected{% endif %}>⚡ Corto</option>
-                  <option value="medio"  {% if h == 'medio'  %}selected{% endif %}>📈 Medio</option>
-                  <option value="largo"  {% if h == 'largo'  %}selected{% endif %}>🏦 Largo</option>
-                </select>
-              </form>
-            </td>
-            <td class="text-muted hide-mobile" style="font-size:12px">
-              {% if meta.target_price is defined and meta.target_price is not none %}
-              <span title="Precio objetivo">€{{ meta.target_price | num }}</span>
-              {% else %}
-              —
-              {% endif %}
-            </td>
-            <td class="text-muted hide-mobile" style="font-size:12px">
-              {% if meta.notes is defined and meta.notes %}
-              <span title="{{ meta.notes | e }}" style="cursor:default">📝 {{ meta.notes[:50] }}{% if meta.notes | length > 50 %}…{% endif %}</span>
-              {% else %}
-              —
-              {% endif %}
-            </td>
-            <td style="text-align:right">
-              <form method="post" action="/tickers/delete" style="display:inline" onsubmit="return confirm('¿Eliminar {{ ticker }}?')">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="ticker" value="{{ ticker }}">
-                <input type="hidden" name="categoria" value="{{ cat_key }}">
-                <button type="submit" class="btn btn-danger">Eliminar</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div class="empty-state">Sin activos en {{ cat_key }}.</div>
-    {% endif %}
-  </div>
-
-  <!-- Add form -->
-  <div class="form-section" x-data="{
-    open: false,
-    query: '',
-    results: [],
-    loading: false,
-    selected: false,
-    ticker: '', nombre: '', bloque: '', region: '',
-    horizon: '', horizonLabel: '', horizonRange: '', horizonDesc: '',
-    async search() {
-      if (this.query.length < 2) { this.results = []; return; }
-      this.loading = true;
-      const r = await fetch('/tickers/search?q=' + encodeURIComponent(this.query));
-      this.results = await r.json();
-      this.loading = false;
-    },
-    async pick(item) {
-      this.ticker  = item.ticker;
-      this.nombre  = item.name;
-      this.query   = item.name + ' (' + item.ticker + ')';
-      this.results = [];
-      this.selected = true;
-      this.bloque = ''; this.region = '';
-      this.horizon = ''; this.horizonLabel = ''; this.horizonRange = ''; this.horizonDesc = '';
-      const r = await fetch('/tickers/info?ticker=' + encodeURIComponent(item.ticker));
-      const info = await r.json();
-      if (info.block)   this.bloque = info.block;
-      if (info.region)  this.region = info.region;
-      if (info.name)    this.nombre = info.name;
-      if (info.horizon) {
-        this.horizon      = info.horizon;
-        this.horizonLabel = info.horizon_label;
-        this.horizonRange = info.horizon_range;
-        this.horizonDesc  = info.horizon_desc;
-      }
-    }
-  }">
-    <button @click="open = !open" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:#8b949e;font-size:13px;padding:0">
-      <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:16px;height:16px;transition:transform 0.15s" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-      Añadir a {{ cat_key }}
+  <div style="display:flex;gap:0;border-bottom:1px solid #30363d;margin-bottom:20px">
+    <button @click="tab='tickers'"   :style="tab==='tickers'   ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
+            style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 18px;font-size:13px;font-weight:500;cursor:pointer;color:#8b949e;transition:color 0.12s">
+      Tickers
     </button>
-    <div x-show="open" x-transition x-cloak style="margin-top:16px">
-      <!-- Buscador -->
-      <div style="position:relative;margin-bottom:14px">
-        <label class="form-label">Buscar empresa o ticker</label>
-        <input type="text" x-model="query" @input.debounce.400ms="search()"
-               class="form-input" placeholder="Ej: Nestlé, Apple, MSFT…" autocomplete="off">
-        <div x-show="loading" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#8b949e;font-size:12px">
-          Buscando…
-        </div>
-        <!-- Resultados -->
-        <div x-show="results.length > 0" style="position:absolute;z-index:100;width:100%;background:#21262d;border:1px solid #30363d;border-radius:6px;margin-top:4px;max-height:260px;overflow-y:auto">
-          <template x-for="item in results" :key="item.ticker">
-            <div @click="pick(item)" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center"
-                 @mouseenter="$el.style.background='#2d333b'" @mouseleave="$el.style.background=''">
-              <div>
-                <span style="font-weight:600;color:#e6edf3;font-size:13px" x-text="item.ticker"></span>
-                <span style="color:#8b949e;font-size:12px;margin-left:8px" x-text="item.name"></span>
-              </div>
-              <span style="font-size:11px;color:#484f58" x-text="item.exchange"></span>
-            </div>
-          </template>
-        </div>
+    <button @click="tab='posiciones'" :style="tab==='posiciones' ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
+            style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 18px;font-size:13px;font-weight:500;cursor:pointer;color:#8b949e;transition:color 0.12s">
+      Posiciones
+    </button>
+    <button @click="tab='tr'"        :style="tab==='tr'        ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
+            style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 18px;font-size:13px;font-weight:500;cursor:pointer;color:#8b949e;transition:color 0.12s">
+      Trade Republic
+    </button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       TAB: TICKERS
+       ══════════════════════════════════════════════════════════════════════════ -->
+  <div x-show="tab==='tickers'">
+
+    {% for cat_key, cat_items in [('portfolio', portfolio), ('watchlist', watchlist)] %}
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">{% if cat_key == 'portfolio' %}💼 Portfolio{% else %}👀 Watchlist{% endif %}</h2>
+        <span class="badge badge-gray">{{ cat_items | length }} activos</span>
       </div>
 
-      <form method="post" action="/tickers/add">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="categoria" value="{{ cat_key }}">
-        <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))">
-          <div>
-            <label class="form-label">Ticker *</label>
-            <input type="text" name="ticker" class="form-input" x-model="ticker" placeholder="AAPL" required style="text-transform:uppercase">
-          </div>
-          <div>
-            <label class="form-label">Nombre *</label>
-            <input type="text" name="nombre" class="form-input" x-model="nombre" placeholder="Apple Inc." required>
-          </div>
-          <div>
-            <label class="form-label">Bloque</label>
-            <input type="text" name="bloque" class="form-input" x-model="bloque" placeholder="Tecnología">
-          </div>
-          <div>
-            <label class="form-label">Región</label>
-            <input type="text" name="region" class="form-input" x-model="region" placeholder="USA">
-          </div>
-          {% if cat_key == 'portfolio' %}
-          <div>
-            <label class="form-label">Peso obj. (%)</label>
-            <input type="number" name="target_weight" class="form-input" placeholder="10" min="0" max="100" step="0.1">
-          </div>
-          {% else %}
-          <input type="hidden" name="target_weight" value="">
-          {% endif %}
-          <div>
-            <label class="form-label">Horizonte
-              <button type="button" class="help-btn" onclick="event.stopPropagation();showHelp(this,'Clasifica el activo según el plazo de inversión previsto: corto (días–3m), medio (3m–18m) o largo (18m–varios años). Afecta al algoritmo de puntuación y a la página Oportunidades.')">ⓘ</button>
-            </label>
-            <select name="horizon" class="form-input" x-model="horizon">
-              <option value="">Sin asignar</option>
-              <option value="corto">⚡ Corto plazo</option>
-              <option value="medio">📈 Medio plazo</option>
-              <option value="largo">🏦 Largo plazo</option>
-            </select>
-          </div>
-          <div>
-            <label class="form-label">Precio objetivo (€)</label>
-            <input type="number" name="target_price" step="0.01" min="0" placeholder="Ej: 150.00" class="form-input">
-          </div>
+      <div class="card" style="margin-bottom:16px">
+        {% if cat_items %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Nombre</th>
+                <th class="hide-mobile">Bloque</th>
+                <th class="hide-mobile">Región</th>
+                {% if cat_key == 'portfolio' %}<th class="hide-mobile">Peso obj.</th>{% endif %}
+                <th>Horizonte</th>
+                <th class="hide-mobile">Precio obj.</th>
+                <th class="hide-mobile">Notas</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for ticker, meta in cat_items | dictsort %}
+              <tr x-data="{
+                editing: false,
+                nombre:  {{ meta.name | tojson }},
+                bloque:  {{ (meta.block or '') | tojson }},
+                region:  {{ (meta.region or '') | tojson }},
+                saving:  false,
+                async save() {
+                  this.saving = true;
+                  const fd = new FormData();
+                  fd.append('csrf_token', '{{ csrf_token }}');
+                  fd.append('ticker',    '{{ ticker }}');
+                  fd.append('categoria', '{{ cat_key }}');
+                  fd.append('nombre',    this.nombre);
+                  fd.append('bloque',    this.bloque);
+                  fd.append('region',    this.region);
+                  fd.append('horizon',   '{{ meta.horizon or '' }}');
+                  fd.append('target_price', '{{ meta.target_price if meta.target_price is defined and meta.target_price is not none else '' }}');
+                  fd.append('notes', {{ (meta.notes or '') | tojson }});
+                  await fetch('/tickers/update', { method: 'POST', body: fd });
+                  this.editing = false;
+                  this.saving  = false;
+                }
+              }">
+                <td class="ticker-cell">
+                  {{ ticker }}
+                  {% if tickers_with_position and ticker in tickers_with_position %}
+                  <span class="badge badge-green" style="font-size:10px;margin-left:4px">Con posición</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <span x-show="!editing" x-text="nombre" style="cursor:default"></span>
+                  <input x-show="editing" x-model="nombre" x-cloak
+                         class="form-input" style="padding:3px 8px;font-size:12px;width:140px"
+                         @keydown.enter.prevent="save()" @keydown.escape="editing=false">
+                </td>
+                <td class="text-muted hide-mobile">
+                  <span x-show="!editing" x-text="bloque || '—'" style="cursor:default"></span>
+                  <input x-show="editing" x-model="bloque" x-cloak
+                         class="form-input" style="padding:3px 8px;font-size:12px;width:110px"
+                         @keydown.enter.prevent="save()" @keydown.escape="editing=false">
+                </td>
+                <td class="text-muted hide-mobile">
+                  <span x-show="!editing" x-text="region || '—'" style="cursor:default"></span>
+                  <input x-show="editing" x-model="region" x-cloak
+                         class="form-input" style="padding:3px 8px;font-size:12px;width:90px"
+                         @keydown.enter.prevent="save()" @keydown.escape="editing=false">
+                </td>
+                {% if cat_key == 'portfolio' %}
+                <td class="text-muted hide-mobile">{{ meta.target_weight ~ "%" if meta.target_weight is not none else "—" }}</td>
+                {% endif %}
+                <td>
+                  {% set h = meta.horizon %}
+                  <form method="post" action="/tickers/update" style="display:inline-flex;align-items:center;gap:4px">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="ticker" value="{{ ticker }}">
+                    <input type="hidden" name="categoria" value="{{ cat_key }}">
+                    <input type="hidden" name="target_price" value="{{ meta.target_price if meta.target_price is defined and meta.target_price is not none else '' }}">
+                    <input type="hidden" name="notes" value="{{ meta.notes if meta.notes is defined and meta.notes else '' }}">
+                    <select name="horizon" class="form-input" style="padding:3px 6px;font-size:11px;width:auto" onchange="this.form.submit()">
+                      <option value="" {% if not h %}selected{% endif %}>—</option>
+                      <option value="corto"  {% if h == 'corto'  %}selected{% endif %}>⚡ Corto</option>
+                      <option value="medio"  {% if h == 'medio'  %}selected{% endif %}>📈 Medio</option>
+                      <option value="largo"  {% if h == 'largo'  %}selected{% endif %}>🏦 Largo</option>
+                    </select>
+                  </form>
+                </td>
+                <td class="text-muted hide-mobile" style="font-size:12px">
+                  {% if meta.target_price is defined and meta.target_price is not none %}
+                  <span title="Precio objetivo">€{{ meta.target_price | num }}</span>
+                  {% else %}
+                  —
+                  {% endif %}
+                </td>
+                <td class="text-muted hide-mobile" style="font-size:12px">
+                  {% if meta.notes is defined and meta.notes %}
+                  <span title="{{ meta.notes | e }}" style="cursor:default">📝 {{ meta.notes[:50] }}{% if meta.notes | length > 50 %}…{% endif %}</span>
+                  {% else %}
+                  —
+                  {% endif %}
+                </td>
+                <td style="text-align:right;white-space:nowrap">
+                  <!-- Botón editar / guardar -->
+                  <button x-show="!editing" @click="editing=true" x-cloak
+                          class="btn btn-ghost btn-sm" style="margin-right:4px" title="Editar nombre, bloque y región">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                  </button>
+                  <button x-show="editing" @click="save()" :disabled="saving" x-cloak
+                          class="btn btn-primary btn-sm" style="margin-right:4px">
+                    <span x-text="saving ? '…' : 'OK'"></span>
+                  </button>
+                  <button x-show="editing" @click="editing=false" x-cloak
+                          class="btn btn-ghost btn-sm" style="margin-right:4px">✕</button>
+                  <form method="post" action="/tickers/delete" style="display:inline" onsubmit="return confirm('¿Eliminar {{ ticker }}?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="ticker" value="{{ ticker }}">
+                    <input type="hidden" name="categoria" value="{{ cat_key }}">
+                    <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
-        <div style="margin-top:10px">
-          <label class="form-label">Tesis de inversión (opcional)</label>
-          <input type="text" name="notes" maxlength="500" placeholder="Tesis de inversión (opcional)" class="form-input">
-        </div>
-        <!-- Sugerencia automática de horizonte -->
-        <div x-show="horizonLabel" x-cloak style="margin-top:10px;padding:9px 12px;background:#21262d;border-radius:6px;border:1px solid #30363d;font-size:12px;color:#c9d1d9">
-          <strong style="color:#e6edf3">Sugerencia:</strong> <span x-text="horizonLabel"></span>
-          <span style="color:#8b949e;margin-left:6px" x-text="'(' + horizonRange + ')'"></span>
-          — <span x-text="horizonDesc"></span>
-        </div>
-        <div style="margin-top:12px">
-          <button type="submit" class="btn btn-primary btn-sm">Añadir ticker</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-{% endfor %}
-
-<!-- ── Importar / Exportar ────────────────────────────────────────────────── -->
-<div class="section">
-  <div class="section-header">
-    <h2 class="section-title">Importar / Exportar</h2>
-  </div>
-  <div class="card" style="padding:20px">
-    <div style="display:flex;flex-wrap:wrap;gap:24px">
-
-      <!-- Importar CSV -->
-      <div style="flex:1;min-width:260px">
-        <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:6px">Importar tickers desde CSV</div>
-        <p style="font-size:12px;color:#8b949e;margin-bottom:12px">
-          El CSV debe tener columnas: <code>ticker, nombre, bloque, region, categoria</code>
-          (categoria: <em>portfolio</em> o <em>watchlist</em>).
-        </p>
-        <form method="post" action="/tickers/import" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:flex-end">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <div>
-            <input type="file" name="file" accept=".csv" class="form-input" style="width:auto" required>
-          </div>
-          <button type="submit" class="btn btn-primary btn-sm">Importar</button>
-        </form>
-        {% set import_ok = request.query_params.get('import_ok') %}
-        {% set import_errors = request.query_params.get('import_errors') %}
-        {% if import_ok %}
-        <div style="font-size:12px;color:#3fb950;margin-top:8px">
-          ✅ {{ import_ok }} ticker(s) importados.
-          {% if import_errors and import_errors != '0' %}
-          <span class="text-warning"> · {{ import_errors }} error(es).</span>
-          {% endif %}
-        </div>
+        {% else %}
+        <div class="empty-state">Sin activos en {{ cat_key }}.</div>
         {% endif %}
       </div>
 
-      <!-- Exportar CSV -->
-      <div style="flex:1;min-width:200px">
-        <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:6px">Exportar datos</div>
-        <p style="font-size:12px;color:#8b949e;margin-bottom:12px">Descarga los datos actuales en formato CSV.</p>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <a href="/export/portfolio" class="btn btn-ghost btn-sm" style="text-align:center">
-            ⬇ Exportar cartera CSV
-          </a>
-          <a href="/export/watchlist" class="btn btn-ghost btn-sm" style="text-align:center">
-            ⬇ Exportar watchlist CSV
-          </a>
+      <!-- Add form -->
+      <div class="form-section" x-data="{
+        open: false,
+        query: '',
+        results: [],
+        loading: false,
+        selected: false,
+        ticker: '', nombre: '', bloque: '', region: '',
+        horizon: '', horizonLabel: '', horizonRange: '', horizonDesc: '',
+        async search() {
+          if (this.query.length < 2) { this.results = []; return; }
+          this.loading = true;
+          const r = await fetch('/tickers/search?q=' + encodeURIComponent(this.query));
+          this.results = await r.json();
+          this.loading = false;
+        },
+        async pick(item) {
+          this.ticker  = item.ticker;
+          this.nombre  = item.name;
+          this.query   = item.name + ' (' + item.ticker + ')';
+          this.results = [];
+          this.selected = true;
+          this.bloque = ''; this.region = '';
+          this.horizon = ''; this.horizonLabel = ''; this.horizonRange = ''; this.horizonDesc = '';
+          const r = await fetch('/tickers/info?ticker=' + encodeURIComponent(item.ticker));
+          const info = await r.json();
+          if (info.block)   this.bloque = info.block;
+          if (info.region)  this.region = info.region;
+          if (info.name)    this.nombre = info.name;
+          if (info.horizon) {
+            this.horizon      = info.horizon;
+            this.horizonLabel = info.horizon_label;
+            this.horizonRange = info.horizon_range;
+            this.horizonDesc  = info.horizon_desc;
+          }
+        }
+      }">
+        <button @click="open = !open" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:#8b949e;font-size:13px;padding:0">
+          <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:16px;height:16px;transition:transform 0.15s" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          Añadir a {{ cat_key }}
+        </button>
+        <div x-show="open" x-transition x-cloak style="margin-top:16px">
+          <div style="position:relative;margin-bottom:14px">
+            <label class="form-label">Buscar empresa o ticker</label>
+            <input type="text" x-model="query" @input.debounce.400ms="search()"
+                   class="form-input" placeholder="Ej: Nestlé, Apple, MSFT…" autocomplete="off">
+            <div x-show="loading" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#8b949e;font-size:12px">
+              Buscando…
+            </div>
+            <div x-show="results.length > 0" style="position:absolute;z-index:100;width:100%;background:#21262d;border:1px solid #30363d;border-radius:6px;margin-top:4px;max-height:260px;overflow-y:auto">
+              <template x-for="item in results" :key="item.ticker">
+                <div @click="pick(item)" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center"
+                     @mouseenter="$el.style.background='#2d333b'" @mouseleave="$el.style.background=''">
+                  <div>
+                    <span style="font-weight:600;color:#e6edf3;font-size:13px" x-text="item.ticker"></span>
+                    <span style="color:#8b949e;font-size:12px;margin-left:8px" x-text="item.name"></span>
+                  </div>
+                  <span style="font-size:11px;color:#484f58" x-text="item.exchange"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <form method="post" action="/tickers/add">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="categoria" value="{{ cat_key }}">
+            <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))">
+              <div>
+                <label class="form-label">Ticker *</label>
+                <input type="text" name="ticker" class="form-input" x-model="ticker" placeholder="AAPL" required style="text-transform:uppercase">
+              </div>
+              <div>
+                <label class="form-label">Nombre *</label>
+                <input type="text" name="nombre" class="form-input" x-model="nombre" placeholder="Apple Inc." required>
+              </div>
+              <div>
+                <label class="form-label">Bloque</label>
+                <input type="text" name="bloque" class="form-input" x-model="bloque" placeholder="Tecnología">
+              </div>
+              <div>
+                <label class="form-label">Región</label>
+                <input type="text" name="region" class="form-input" x-model="region" placeholder="USA">
+              </div>
+              {% if cat_key == 'portfolio' %}
+              <div>
+                <label class="form-label">Peso obj. (%)</label>
+                <input type="number" name="target_weight" class="form-input" placeholder="10" min="0" max="100" step="0.1">
+              </div>
+              {% else %}
+              <input type="hidden" name="target_weight" value="">
+              {% endif %}
+              <div>
+                <label class="form-label">Horizonte
+                  <button type="button" class="help-btn" onclick="event.stopPropagation();showHelp(this,'Clasifica el activo según el plazo de inversión previsto: corto (días–3m), medio (3m–18m) o largo (18m–varios años). Afecta al algoritmo de puntuación y a la página Oportunidades.')">ⓘ</button>
+                </label>
+                <select name="horizon" class="form-input" x-model="horizon">
+                  <option value="">Sin asignar</option>
+                  <option value="corto">⚡ Corto plazo</option>
+                  <option value="medio">📈 Medio plazo</option>
+                  <option value="largo">🏦 Largo plazo</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Precio objetivo (€)</label>
+                <input type="number" name="target_price" step="0.01" min="0" placeholder="Ej: 150.00" class="form-input">
+              </div>
+            </div>
+            <div style="margin-top:10px">
+              <label class="form-label">Tesis de inversión (opcional)</label>
+              <input type="text" name="notes" maxlength="500" placeholder="Tesis de inversión (opcional)" class="form-input">
+            </div>
+            <div x-show="horizonLabel" x-cloak style="margin-top:10px;padding:9px 12px;background:#21262d;border-radius:6px;border:1px solid #30363d;font-size:12px;color:#c9d1d9">
+              <strong style="color:#e6edf3">Sugerencia:</strong> <span x-text="horizonLabel"></span>
+              <span style="color:#8b949e;margin-left:6px" x-text="'(' + horizonRange + ')'"></span>
+              — <span x-text="horizonDesc"></span>
+            </div>
+            <div style="margin-top:12px">
+              <button type="submit" class="btn btn-primary btn-sm">Añadir ticker</button>
+            </div>
+          </form>
         </div>
       </div>
-
     </div>
-  </div>
-</div>
+    {% endfor %}
+
+    <!-- ── Importar / Exportar ──────────────────────────────────────────────── -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">Importar / Exportar</h2>
+      </div>
+      <div class="card" style="padding:20px">
+        <div style="display:flex;flex-wrap:wrap;gap:24px">
+          <div style="flex:1;min-width:260px">
+            <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:6px">Importar tickers desde CSV</div>
+            <p style="font-size:12px;color:#8b949e;margin-bottom:12px">
+              El CSV debe tener columnas: <code>ticker, nombre, bloque, region, categoria</code>
+              (categoria: <em>portfolio</em> o <em>watchlist</em>).
+            </p>
+            <form method="post" action="/tickers/import" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:flex-end">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div>
+                <input type="file" name="file" accept=".csv" class="form-input" style="width:auto" required>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Importar</button>
+            </form>
+            {% set import_ok = request.query_params.get('import_ok') %}
+            {% set import_errors = request.query_params.get('import_errors') %}
+            {% if import_ok %}
+            <div style="font-size:12px;color:#3fb950;margin-top:8px">
+              ✅ {{ import_ok }} ticker(s) importados.
+              {% if import_errors and import_errors != '0' %}
+              <span class="text-warning"> · {{ import_errors }} error(es).</span>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+          <div style="flex:1;min-width:200px">
+            <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:6px">Exportar datos</div>
+            <p style="font-size:12px;color:#8b949e;margin-bottom:12px">Descarga los datos actuales en formato CSV.</p>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <a href="/export/portfolio" class="btn btn-ghost btn-sm" style="text-align:center">⬇ Exportar cartera CSV</a>
+              <a href="/export/watchlist" class="btn btn-ghost btn-sm" style="text-align:center">⬇ Exportar watchlist CSV</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab tickers -->
+
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       TAB: POSICIONES
+       ══════════════════════════════════════════════════════════════════════════ -->
+  <div x-show="tab==='posiciones'" x-cloak>
+
+    {% if saved %}
+    <div style="margin-bottom:14px;padding:10px 14px;border-radius:6px;background:#1a3d1a;border:1px solid #3d7a3d;color:#80d080;font-size:13px">
+      Posición <strong>{{ saved }}</strong> guardada correctamente.
+    </div>
+    {% endif %}
+    {% if error == "datos_invalidos" %}
+    <div style="margin-bottom:14px;padding:10px 14px;border-radius:6px;background:#3d1c1c;border:1px solid #7d3232;color:#f08080;font-size:13px">
+      Datos inválidos. Las acciones y el precio deben ser valores positivos menores de 1.000.000.
+    </div>
+    {% endif %}
+
+    <div class="section">
+      <div class="card">
+        {% if positions %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Activo<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Identificador del instrumento financiero en el mercado (ej: AAPL, NESN.SW).')">ⓘ</button></th>
+                <th class="hide-mobile">Acciones<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Cantidad de títulos o participaciones registrados en la posición.')">ⓘ</button></th>
+                <th class="hide-mobile">Precio medio<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Coste medio por título en euros. Siempre en euros, independientemente de la bolsa del ticker.')">ⓘ</button></th>
+                <th class="hide-mobile">Precio actual<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Última cotización de cierre convertida a euros, obtenida del último reporte generado.')">ⓘ</button></th>
+                <th>Valor total<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Importe total en euros: cantidad × cotización EUR.')">ⓘ</button></th>
+                <th>P&amp;L €<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida absoluta en euros.')">ⓘ</button></th>
+                <th>P&amp;L %<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida porcentual respecto al coste medio.')">ⓘ</button></th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set total_value = [] %}
+              {% set total_pnl   = [] %}
+              {% for pos in positions %}
+              {% if pos.value %}{% set _ = total_value.append(pos.value) %}{% endif %}
+              {% if pos.pnl_eur %}{% set _ = total_pnl.append(pos.pnl_eur) %}{% endif %}
+              <tr>
+                <td>
+                  <a href="/ticker/{{ pos.ticker }}" class="ticker-cell">{{ pos.ticker }}</a>
+                  {% if pos.name and pos.name != pos.ticker %}
+                  <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ pos.name }}</div>
+                  {% endif %}
+                  {% if pos.split_warning %}
+                  <div style="font-size:10px;color:#d29922;margin-top:3px" title="El precio actual es muy inferior al precio medio. Comprueba si hubo un split o ajuste corporativo.">
+                    ⚠️ Posible split — revisa el precio medio
+                  </div>
+                  {% endif %}
+                </td>
+                <td class="hide-mobile">{{ "%.4g" % pos.shares }}</td>
+                <td class="hide-mobile">{{ pos.avg_price | eur }}</td>
+                <td class="hide-mobile">{{ pos.price | eur }}</td>
+                <td>{{ pos.value | eur }}</td>
+                <td class="{{ pos.pnl_eur | pnl_class }}">{{ pos.pnl_eur | eur }}</td>
+                <td class="{{ pos.pnl | pnl_class }}">{{ pos.pnl | pct }}</td>
+                <td style="text-align:right">
+                  <form method="post" action="/posiciones/delete" style="display:inline" onsubmit="return confirm('¿Eliminar posición de {{ pos.ticker }}?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="ticker" value="{{ pos.ticker }}">
+                    <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr style="border-top:2px solid #30363d;font-weight:600">
+                <td colspan="4" style="color:#8b949e;font-size:12px">Total</td>
+                <td>{{ total_value | sum | eur }}</td>
+                {% set pnl_sum = total_pnl | sum %}
+                <td class="{{ pnl_sum | pnl_class }}">{{ pnl_sum | eur }}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5" style="margin:0 auto 12px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          Sin posiciones registradas. Añade una abajo.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Formulario añadir posición -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">Añadir / actualizar posición</h2>
+      </div>
+      <div class="form-section">
+        <p style="font-size:12px;color:#8b949e;margin-bottom:16px">
+          Introduce el precio en euros. Si el ticker ya existe, se actualiza.
+        </p>
+        <form method="post" action="/posiciones/add">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="form-row">
+            <div>
+              <label class="form-label">Ticker *</label>
+              <input type="text" name="ticker" class="form-input" placeholder="AAPL" required style="text-transform:uppercase">
+            </div>
+            <div>
+              <label class="form-label">Acciones *</label>
+              <input type="number" name="shares" class="form-input" placeholder="10" min="0.0001" step="any" required>
+            </div>
+            <div>
+              <label class="form-label">Precio medio (€) *</label>
+              <input type="number" name="avg_price" class="form-input" placeholder="150.00" min="0.0001" step="any" required>
+            </div>
+          </div>
+          <div style="margin-top:14px">
+            <button type="submit" class="btn btn-primary btn-sm">Guardar posición</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div><!-- /tab posiciones -->
+
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       TAB: TRADE REPUBLIC
+       ══════════════════════════════════════════════════════════════════════════ -->
+  <div x-show="tab==='tr'" x-cloak>
+
+    {% set tr_synced   = request.query_params.get('tr_synced') %}
+    {% set tr_unm_q    = request.query_params.get('tr_unmatched') %}
+    {% set tr_msg_q    = request.query_params.get('tr_msg') %}
+    {% set tr_error_q  = request.query_params.get('tr_error') %}
+
+    {% if tr_msg_q == 'sms_sent' %}
+    <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3fb950">
+      ✅ Solicitud enviada. Abre la app Trade Republic y confirma el código de 4 dígitos.
+    </div>
+    {% elif tr_msg_q == 'setup_ok' %}
+    <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3fb950">
+      ✅ Trade Republic vinculado correctamente.
+    </div>
+    {% endif %}
+
+    {% if tr_synced %}
+    <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3fb950">
+      ✅ {{ tr_synced }} posición(es) sincronizada(s) desde Trade Republic.
+      {% if tr_unm_q and tr_unm_q != '0' %}
+      <span class="text-warning"> · {{ tr_unm_q }} sin mapear (ver abajo).</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if tr_error_q %}
+    <div style="background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#f85149">
+      ❌ {{ tr_error_q }}
+    </div>
+    {% endif %}
+
+    <div class="section">
+      <div class="form-section">
+        {% if tr_status == 'not_configured' %}
+          <p style="font-size:13px;color:#8b949e;margin:0">
+            Para habilitar la sincronización automática con Trade Republic, añade a tu <code>.env</code>:
+          </p>
+          <pre style="background:#21262d;border-radius:6px;padding:12px;font-size:12px;color:#e6edf3;margin:12px 0 0;overflow-x:auto">TR_PHONE=+34600000000
+TR_PIN=1234
+TR_COOKIES_FILE=data/tr_cookies.txt</pre>
+
+        {% elif tr_status == 'needs_setup' %}
+          <p style="font-size:13px;color:#8b949e;margin:0 0 14px">
+            Credenciales configuradas. Vincula el dispositivo para poder sincronizar.
+            <strong style="color:#d29922"> Atención:</strong> esto cerrará la sesión activa en el móvil.
+          </p>
+          <form method="post" action="/tr/setup/start">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-primary btn-sm">Vincular dispositivo (via app TR)</button>
+          </form>
+
+        {% elif tr_status == 'setup_pending' %}
+          <p style="font-size:13px;color:#8b949e;margin:0 0 14px">
+            Abre la app Trade Republic. Verás un código de 4 dígitos para confirmar el acceso.
+          </p>
+          <form method="post" action="/tr/setup/complete" style="display:flex;gap:10px;align-items:flex-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+              <label class="form-label">Código de la app</label>
+              <input type="text" name="code" class="form-input" placeholder="1234" maxlength="10" required
+                     style="width:140px;letter-spacing:0.15em;font-size:16px">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Confirmar</button>
+          </form>
+          <p style="font-size:12px;color:#8b949e;margin:10px 0 0">
+            ¿No aparece el código en la app?
+            <form method="post" action="/tr/setup/start" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" style="background:none;border:none;color:#58a6ff;cursor:pointer;font-size:12px;padding:0">Reenviar →</button>
+            </form>
+          </p>
+
+        {% elif tr_status == 'ready' %}
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+            <div>
+              {% if tr_cash is not none %}
+              <p style="font-size:13px;color:#8b949e;margin:0 0 4px">
+                Saldo disponible: <strong style="color:#3fb950">{{ tr_cash | eur }}</strong>
+              </p>
+              {% endif %}
+              <p style="font-size:12px;color:#484f58;margin:0">
+                Dispositivo vinculado. Sincroniza para importar posiciones y saldo.
+              </p>
+            </div>
+            <form method="post" action="/tr/sync" x-data="{ loading: false }" @submit="loading = true">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="btn btn-primary btn-sm" :disabled="loading">
+                <template x-if="!loading">
+                  <span style="display:flex;align-items:center;gap:5px">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    Sincronizar desde TR
+                  </span>
+                </template>
+                <template x-if="loading">
+                  <span x-cloak style="display:flex;align-items:center;gap:5px">
+                    <svg class="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Sincronizando…
+                  </span>
+                </template>
+              </button>
+            </form>
+          </div>
+        {% endif %}
+
+        {% if tr_unmatched %}
+        <div style="margin-top:16px;border-top:1px solid #30363d;padding-top:14px">
+          <p style="font-size:12px;color:#d29922;margin:0 0 8px;font-weight:600">
+            ⚠️ {{ tr_unmatched | length }} posición(es) no resueltas automáticamente
+          </p>
+          <p style="font-size:12px;color:#8b949e;margin:0 0 10px">
+            OpenFIGI no encontró ticker para estos ISINs. Edita <code>tickers.yaml</code> y sustituye <code>null</code> por el ticker correcto de yfinance, luego vuelve a sincronizar.
+          </p>
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead>
+              <tr style="color:#8b949e">
+                <th style="text-align:left;padding:4px 8px">ISIN</th>
+                <th style="text-align:left;padding:4px 8px">Nombre en TR</th>
+                <th style="text-align:right;padding:4px 8px">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in tr_unmatched %}
+              <tr style="border-top:1px solid #21262d">
+                <td style="padding:4px 8px;font-family:monospace;color:#e6edf3">{{ p.isin }}</td>
+                <td style="padding:4px 8px;color:#8b949e">{{ p.name }}</td>
+                <td style="padding:4px 8px;text-align:right;color:#8b949e">{{ "%.4g" % p.shares }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+  </div><!-- /tab tr -->
+
+</div><!-- /x-data tab wrapper -->
 
 {% endblock %}

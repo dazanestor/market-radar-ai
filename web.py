@@ -28,6 +28,9 @@ from fastapi import Cookie, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from ai_analysis import analyze
 from config import OUTPUT_DIR
@@ -58,8 +61,15 @@ TOTP_SECRET_FILE   = "data/totp_secret.key"
 DEFAULT_USERNAME   = "admin"
 DEFAULT_PASSWORD   = "market-radar"
 
+# Tokens temporales en memoria: token → timestamp de expiración
+import time as _time
+_pending_tokens: dict = {}
+
 
 # ── Credential helpers ────────────────────────────────────────────────────────
+
+_USERNAME_RE = re.compile(r'^[a-zA-Z0-9_\-\.]{3,32}$')
+
 
 def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
@@ -69,7 +79,19 @@ def _verify_password(password: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
+        # Timing-safe: consumir tiempo similar al de un checkpw real
+        bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(4))
         return False
+
+
+def _validate_password(password: str) -> Optional[str]:
+    if len(password) < 10:
+        return "La contraseña debe tener al menos 10 caracteres."
+    if not re.search(r'[A-Za-z]', password):
+        return "La contraseña debe contener al menos una letra."
+    if not re.search(r'[0-9]', password):
+        return "La contraseña debe contener al menos un número."
+    return None
 
 
 def _load_credentials() -> dict:
@@ -85,6 +107,7 @@ def _load_credentials() -> dict:
         os.makedirs("data", exist_ok=True)
         with open(CREDENTIALS_FILE, "w") as f:
             json.dump(creds, f)
+        os.chmod(CREDENTIALS_FILE, 0o600)
         return creds
 
 
@@ -95,8 +118,26 @@ def _save_credentials(username: str, password: str, first_login: bool = False) -
         "first_login": first_login,
     }
     os.makedirs("data", exist_ok=True)
-    with open(CREDENTIALS_FILE, "w") as f:
+    tmp = CREDENTIALS_FILE + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(creds, f)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, CREDENTIALS_FILE)
+
+
+# ── Pending tokens ────────────────────────────────────────────────────────────
+
+def _create_pending_token(max_age: int) -> str:
+    token = secrets.token_urlsafe(32)
+    _pending_tokens[token] = _time.monotonic() + max_age
+    return token
+
+
+def _consume_pending_token(token: Optional[str]) -> bool:
+    if not token:
+        return False
+    expiry = _pending_tokens.pop(token, None)
+    return expiry is not None and _time.monotonic() < expiry
 
 
 # ── TOTP helpers ──────────────────────────────────────────────────────────────
@@ -117,9 +158,13 @@ def _verify_totp(code: str) -> bool:
     secret = _totp_secret()
     if not secret:
         return True
-    return pyotp.TOTP(secret).verify(code.strip(), valid_window=1)
+    return pyotp.TOTP(secret).verify(code.strip(), valid_window=2)
 
+
+limiter   = Limiter(key_func=get_remote_address)
 app       = FastAPI(title="Market Radar AI", docs_url=None, redoc_url=None)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 templates = Jinja2Templates(directory="templates")
 _executor = ThreadPoolExecutor(max_workers=4)
 
@@ -461,7 +506,9 @@ async def login_page(request: Request, error: str = ""):
 
 
 @app.post("/login")
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     username: str = Form(...),
     password: str = Form(...),
 ):
@@ -471,42 +518,48 @@ async def login(
 
     # Primer login: forzar configuración
     if creds.get("first_login"):
+        token = _create_pending_token(600)
         resp = RedirectResponse("/setup/first-login", status_code=303)
-        resp.set_cookie("setup_pending", "1", httponly=True, samesite="lax", max_age=600)
+        resp.set_cookie("setup_pending", token, httponly=True, samesite="strict", max_age=600)
         return resp
 
     # 2FA activo
     if _totp_enabled():
+        token = _create_pending_token(300)
         resp = RedirectResponse("/login/totp", status_code=303)
-        resp.set_cookie("totp_pending", "1", httponly=True, samesite="lax", max_age=300)
+        resp.set_cookie("totp_pending", token, httponly=True, samesite="strict", max_age=300)
         return resp
 
     resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie("session", SESSION_TOKEN, httponly=True, samesite="lax", max_age=86400 * 30)
+    resp.set_cookie("session", SESSION_TOKEN, httponly=True, samesite="strict", max_age=86400 * 30)
     return resp
 
 
 @app.get("/login/totp", response_class=HTMLResponse)
 async def totp_page(request: Request, totp_pending: Optional[str] = Cookie(default=None), error: str = ""):
+    if not _consume_pending_token(totp_pending) and totp_pending:
+        # Peek sin consumir: recréalo para mostrar la página
+        pass
     if not totp_pending:
         return RedirectResponse("/login", status_code=302)
     return templates.TemplateResponse("login_totp.html", {"request": request, "error": error})
 
 
 @app.post("/login/totp")
+@limiter.limit("5/minute")
 async def totp_verify(
     request: Request,
     code: str = Form(...),
     totp_pending: Optional[str] = Cookie(default=None),
 ):
-    if not totp_pending:
+    if not _consume_pending_token(totp_pending):
         return RedirectResponse("/login", status_code=303)
     if not _verify_totp(code):
         return templates.TemplateResponse(
             "login_totp.html", {"request": request, "error": "1"}, status_code=200
         )
     resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie("session", SESSION_TOKEN, httponly=True, samesite="lax", max_age=86400 * 30)
+    resp.set_cookie("session", SESSION_TOKEN, httponly=True, samesite="strict", max_age=86400 * 30)
     resp.delete_cookie("totp_pending")
     return resp
 
@@ -514,8 +567,8 @@ async def totp_verify(
 # ── Primer login ───────────────────────────────────────────────────────────────
 
 @app.get("/setup/first-login", response_class=HTMLResponse)
-async def first_login_page(request: Request, setup_pending: Optional[str] = Cookie(default=None), error: str = ""):
-    if not setup_pending:
+async def first_login_page(request: Request, setup_pending: Optional[str] = Cookie(default=None)):
+    if not setup_pending or setup_pending not in _pending_tokens:
         return RedirectResponse("/login", status_code=302)
     totp_secret = pyotp.random_base32()
     totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
@@ -523,11 +576,12 @@ async def first_login_page(request: Request, setup_pending: Optional[str] = Cook
         "request": request,
         "totp_secret": totp_secret,
         "totp_uri": totp_uri,
-        "error": error,
+        "error": "",
     })
 
 
 @app.post("/setup/first-login")
+@limiter.limit("5/minute")
 async def first_login_submit(
     request: Request,
     username: str = Form(...),
@@ -537,33 +591,39 @@ async def first_login_submit(
     totp_code: str = Form(...),
     setup_pending: Optional[str] = Cookie(default=None),
 ):
-    if not setup_pending:
+    if not _consume_pending_token(setup_pending):
         return RedirectResponse("/login", status_code=303)
 
     errors = []
-    if len(username.strip()) < 3:
-        errors.append("El usuario debe tener al menos 3 caracteres.")
-    if len(password) < 8:
-        errors.append("La contraseña debe tener al menos 8 caracteres.")
+    if not _USERNAME_RE.match(username.strip()):
+        errors.append("Usuario: solo letras, números, guión, punto o guión bajo (3-32 caracteres).")
+    pwd_err = _validate_password(password)
+    if pwd_err:
+        errors.append(pwd_err)
     if password != password2:
         errors.append("Las contraseñas no coinciden.")
-    if not pyotp.TOTP(totp_secret).verify(totp_code.strip(), valid_window=1):
+    if not pyotp.TOTP(totp_secret).verify(totp_code.strip(), valid_window=2):
         errors.append("Código 2FA incorrecto. Vuelve a escanear el QR e inténtalo.")
 
     if errors:
         totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
-        return templates.TemplateResponse("setup_first_login.html", {
+        # Reissue token para que pueda volver a enviar el formulario
+        new_token = _create_pending_token(600)
+        resp = templates.TemplateResponse("setup_first_login.html", {
             "request": request,
             "totp_secret": totp_secret,
             "totp_uri": totp_uri,
             "error": " ".join(errors),
             "form_username": username,
         })
+        resp.set_cookie("setup_pending", new_token, httponly=True, samesite="strict", max_age=600)
+        return resp
 
     _save_credentials(username.strip(), password, first_login=False)
     os.makedirs("data", exist_ok=True)
     with open(TOTP_SECRET_FILE, "w") as f:
         f.write(totp_secret)
+    os.chmod(TOTP_SECRET_FILE, 0o600)
 
     resp = RedirectResponse("/login?setup_ok=1", status_code=303)
     resp.delete_cookie("setup_pending")
@@ -599,7 +659,7 @@ async def totp_setup(
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     totp = pyotp.TOTP(secret)
-    if not totp.verify(code.strip(), valid_window=1):
+    if not totp.verify(code.strip(), valid_window=2):
         uri = totp.provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
         return templates.TemplateResponse("2fa_setup.html", {
             "request": request, "enabled": False, "secret": secret,
@@ -609,6 +669,7 @@ async def totp_setup(
     os.makedirs("data", exist_ok=True)
     with open(TOTP_SECRET_FILE, "w") as f:
         f.write(secret)
+    os.chmod(TOTP_SECRET_FILE, 0o600)
     return RedirectResponse("/2fa/setup?ok=1", status_code=303)
 
 
@@ -649,10 +710,11 @@ async def credentials_update(
         return RedirectResponse("/login", status_code=302)
     creds = _load_credentials()
     errors = []
-    if len(username.strip()) < 3:
-        errors.append("El usuario debe tener al menos 3 caracteres.")
-    if len(password) < 8:
-        errors.append("La contraseña debe tener al menos 8 caracteres.")
+    if not _USERNAME_RE.match(username.strip()):
+        errors.append("Usuario: solo letras, números, guión, punto o guión bajo (3-32 caracteres).")
+    pwd_err = _validate_password(password)
+    if pwd_err:
+        errors.append(pwd_err)
     if password != password2:
         errors.append("Las contraseñas no coinciden.")
     if errors:
@@ -1182,7 +1244,8 @@ async def tr_setup_start(session: Optional[str] = Cookie(default=None)):
         await asyncio.get_running_loop().run_in_executor(_executor, _start)
         return RedirectResponse("/posiciones?tr_msg=sms_sent", status_code=303)
     except Exception as e:
-        return RedirectResponse(f"/posiciones?tr_error={e}", status_code=303)
+        print(f"TR error: {e}")
+        return RedirectResponse("/posiciones?tr_error=Error+en+Trade+Republic", status_code=303)
 
 
 @app.post("/tr/setup/complete")
@@ -1201,7 +1264,8 @@ async def tr_setup_complete(
         await asyncio.get_running_loop().run_in_executor(_executor, _complete)
         return RedirectResponse("/posiciones?tr_msg=setup_ok", status_code=303)
     except Exception as e:
-        return RedirectResponse(f"/posiciones?tr_error={e}", status_code=303)
+        print(f"TR error: {e}")
+        return RedirectResponse("/posiciones?tr_error=Error+en+Trade+Republic", status_code=303)
 
 
 @app.post("/tr/sync")
@@ -1225,8 +1289,10 @@ async def tr_sync(session: Optional[str] = Cookie(default=None)):
                 await asyncio.get_running_loop().run_in_executor(_executor, _relink)
                 return RedirectResponse("/posiciones?tr_msg=sms_sent", status_code=303)
             except Exception as e2:
-                return RedirectResponse(f"/posiciones?tr_error={e2}", status_code=303)
-        return RedirectResponse(f"/posiciones?tr_error={e}", status_code=303)
+                print(f"TR relink error: {e2}")
+                return RedirectResponse("/posiciones?tr_error=Error+al+vincular+dispositivo", status_code=303)
+        print(f"TR error: {e}")
+        return RedirectResponse("/posiciones?tr_error=Error+en+Trade+Republic", status_code=303)
 
     synced    = 0
     unmatched = []

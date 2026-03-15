@@ -1235,7 +1235,6 @@ async def settings_app_page(
         return RedirectResponse("/login", status_code=302)
     db_settings = get_all_settings()
     env_settings = {s["key"]: os.environ.get(s["key"], "") for s in _APP_SETTINGS}
-    csrf_token = _get_csrf_token(request)
     return templates.TemplateResponse("settings_app.html", {
         "request":      request,
         "settings":     _APP_SETTINGS,
@@ -1245,7 +1244,6 @@ async def settings_app_page(
         "error":        error,
         "setup":        setup,
         "missing":      _missing_required_settings(),
-        "csrf_token":   csrf_token,
     })
 
 

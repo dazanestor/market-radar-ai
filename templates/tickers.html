@@ -6,7 +6,7 @@
 <!-- ── Tabs ─────────────────────────────────────────────────────────────────── -->
 <div x-data="{ tab: '{{ active_tab }}' }">
 
-  <div style="display:flex;gap:0;border-bottom:1px solid #30363d;margin-bottom:20px">
+  <div style="display:flex;gap:4px;border-bottom:1px solid #30363d;margin-bottom:20px">
     <button @click="tab='tickers'" :style="tab==='tickers' ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
             style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 18px;font-size:13px;font-weight:500;cursor:pointer;color:#8b949e;transition:color 0.12s">
       Tickers
@@ -300,7 +300,7 @@
     <div class="section">
       <div class="form-section" x-data="{ open: false }">
         <button @click="open = !open" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:#8b949e;font-size:13px;padding:0">
-          <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:16px;height:16px;transition:transform 0.15s" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:13px;height:13px;transition:transform 0.15s;flex-shrink:0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
           Añadir / actualizar posición
         </button>
         <div x-show="open" x-transition x-cloak style="margin-top:16px">

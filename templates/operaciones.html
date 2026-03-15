@@ -19,7 +19,7 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px">
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Ticker</label>
-            <select name="ticker" class="form-control" required>
+            <select name="ticker" class="form-input" required>
               <option value="">Selecciona</option>
               {% for t in all_tickers %}
               <option value="{{ t.ticker }}">{{ t.ticker }} — {{ t.name }}</option>
@@ -28,27 +28,27 @@
           </div>
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Fecha</label>
-            <input type="date" name="date" class="form-control" required value="{{ ''|truncate(0) }}">
+            <input type="date" name="date" class="form-input" required value="{{ ''|truncate(0) }}">
           </div>
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Tipo</label>
-            <select name="op_type" class="form-control" required>
+            <select name="op_type" class="form-input" required>
               <option value="buy">🟢 Compra</option>
               <option value="sell">🔴 Venta</option>
             </select>
           </div>
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Acciones</label>
-            <input type="number" name="shares" class="form-control" step="0.0001" min="0.0001" placeholder="Ej: 10" required>
+            <input type="number" name="shares" class="form-input" step="0.0001" min="0.0001" placeholder="Ej: 10" required>
           </div>
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Precio (€/acc)</label>
-            <input type="number" name="price_eur" class="form-control" step="0.01" min="0.01" placeholder="Ej: 150.00" required>
+            <input type="number" name="price_eur" class="form-input" step="0.01" min="0.01" placeholder="Ej: 150.00" required>
           </div>
         </div>
         <div style="margin-bottom:10px">
           <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Notas (opcional)</label>
-          <input type="text" name="notes" class="form-control" maxlength="500" placeholder="Motivo de la operación...">
+          <input type="text" name="notes" class="form-input" maxlength="500" placeholder="Motivo de la operación...">
         </div>
         <button type="submit" class="btn btn-primary">Registrar operación</button>
       </form>

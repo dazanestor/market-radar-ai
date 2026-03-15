@@ -28,28 +28,28 @@
 <div class="card" style="margin-bottom:16px">
   <div class="card-body" style="padding:12px 16px">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
-      <input type="text" x-model="search" placeholder="Buscar ticker/nombre..." class="form-control" style="font-size:12px">
-      <select x-model="sector" class="form-control" style="font-size:12px">
+      <input type="text" x-model="search" placeholder="Buscar ticker/nombre..." class="form-input" style="font-size:12px">
+      <select x-model="sector" class="form-input" style="font-size:12px">
         <option value="">Todos los sectores</option>
         {% for s in sectors %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
       </select>
-      <select x-model="region" class="form-control" style="font-size:12px">
+      <select x-model="region" class="form-input" style="font-size:12px">
         <option value="">Todas las regiones</option>
         {% for r in regions %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
       </select>
-      <select x-model="opp" class="form-control" style="font-size:12px">
+      <select x-model="opp" class="form-input" style="font-size:12px">
         <option value="">Cualquier oportunidad</option>
         <option value="ALTA">Alta</option>
         <option value="MEDIA">Media</option>
         <option value="BAJA">Baja</option>
       </select>
-      <select x-model="cat" class="form-control" style="font-size:12px">
+      <select x-model="cat" class="form-input" style="font-size:12px">
         <option value="">Cartera y watchlist</option>
         <option value="portfolio">Solo cartera</option>
         <option value="watchlist">Solo watchlist</option>
       </select>
-      <input type="number" x-model="minScore" placeholder="Score mín." class="form-control" style="font-size:12px" step="0.1" min="0">
-      <input type="number" x-model="maxDd" placeholder="Drawdown máx. (%)" class="form-control" style="font-size:12px" step="0.1" max="0">
+      <input type="number" x-model="minScore" placeholder="Score mín." class="form-input" style="font-size:12px" step="0.1" min="0">
+      <input type="number" x-model="maxDd" placeholder="Drawdown máx. (%)" class="form-input" style="font-size:12px" step="0.1" max="0">
     </div>
   </div>
 </div>

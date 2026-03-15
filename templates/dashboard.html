@@ -67,9 +67,16 @@
       <table>
         <thead>
           <tr>
-            <th>Activo</th><th>Precio</th>
-            <th class="hide-mobile">Drawdown 52s</th><th class="hide-mobile">Mom 3m</th><th class="hide-mobile">Volatilidad</th>
-            <th class="hide-mobile">Acciones</th><th class="hide-mobile">P. Medio</th><th>Valor</th><th>P&amp;L</th><th class="hide-mobile">Tend.</th>
+            <th>Activo<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Identificador del instrumento financiero en el mercado (ej: AAPL, NESN.SW). Haz clic para ver su detalle completo.')">ⓘ</button></th>
+            <th>Precio<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Última cotización de cierre convertida a euros.')">ⓘ</button></th>
+            <th class="hide-mobile">Drawdown 52s<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Caída porcentual desde el máximo de los últimos 12 meses. Un −20% significa que la cotización está un 20% por debajo de su pico anual.')">ⓘ</button></th>
+            <th class="hide-mobile">Mom 3m<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Rendimiento acumulado en los últimos 3 meses. Positivo = subida, negativo = bajada.')">ⓘ</button></th>
+            <th class="hide-mobile">Volatilidad<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Desviación estándar anualizada de los retornos diarios. A mayor cifra, mayor inestabilidad de la cotización.')">ⓘ</button></th>
+            <th class="hide-mobile">Acciones<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Cantidad de títulos o participaciones registrados en la posición.')">ⓘ</button></th>
+            <th class="hide-mobile">P. Medio<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Coste medio por título en euros, tal como lo registraste en Posiciones.')">ⓘ</button></th>
+            <th>Valor<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Importe total en euros de la posición: cantidad de títulos × última cotización en EUR.')">ⓘ</button></th>
+            <th>P&amp;L<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida porcentual respecto al coste medio de compra. Positivo = en verde, negativo = en rojo.')">ⓘ</button></th>
+            <th class="hide-mobile">Tend.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Evolución reciente de la caída desde el máximo anual: ↑ la caída se está recuperando (señal positiva), ↓ la caída sigue aumentando (señal negativa).')">ⓘ</button></th>
           </tr>
         </thead>
         <tbody>
@@ -135,8 +142,15 @@
       <table>
         <thead>
           <tr>
-            <th>Activo</th><th>Score</th><th>Oportunidad</th>
-            <th class="hide-mobile">Precio</th><th>Drawdown 52s</th><th class="hide-mobile">Mom 3m</th><th class="hide-mobile">Div Yield</th><th class="hide-mobile">PER</th><th class="hide-mobile">Tend.</th>
+            <th>Activo<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Identificador del instrumento financiero en el mercado (ej: AAPL, NESN.SW). Haz clic para ver su detalle completo.')">ⓘ</button></th>
+            <th>Score<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Cifra calculada con 6 factores que mide lo atractivo que está el activo para entrar: caída desde máximo (30%), impulso reciente (15%), estabilidad (15%), dividendo (15%), rentabilidad del capital (15%) y valoración (10%). A mayor número, más atractivo.')">ⓘ</button></th>
+            <th>Oportunidad<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Clasificación de atractivo según la cifra del score: ALTA (>15), MEDIA (>8), BAJA (≤8). Un guión (—) indica datos insuficientes para clasificar.')">ⓘ</button></th>
+            <th class="hide-mobile">Precio<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Última cotización de cierre convertida a euros.')">ⓘ</button></th>
+            <th>Drawdown 52s<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Caída porcentual desde el máximo de los últimos 12 meses. Un −20% significa que la cotización está un 20% por debajo de su pico anual.')">ⓘ</button></th>
+            <th class="hide-mobile">Mom 3m<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Rendimiento acumulado en los últimos 3 meses. Positivo = subida, negativo = bajada.')">ⓘ</button></th>
+            <th class="hide-mobile">Div Yield<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Retribución anual al accionista expresada como porcentaje de la cotización actual. Un 3% significa que percibes 3€ al año por cada 100€ invertidos en el activo.')">ⓘ</button></th>
+            <th class="hide-mobile">PER<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ratio entre la capitalización bursátil y el beneficio neto anual. Un número bajo puede indicar que el mercado la valora por debajo de lo que gana; uno muy alto, que descuenta fuerte crecimiento futuro.')">ⓘ</button></th>
+            <th class="hide-mobile">Tend.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Evolución reciente de la caída desde el máximo anual: ↑ la caída se está recuperando (señal positiva), ↓ la caída sigue aumentando (señal negativa).')">ⓘ</button></th>
           </tr>
         </thead>
         <tbody>

@@ -22,13 +22,13 @@
       <table>
         <thead>
           <tr>
-            <th>Activo</th>
-            <th class="hide-mobile">Acciones</th>
-            <th class="hide-mobile">Precio medio</th>
-            <th class="hide-mobile">Precio actual</th>
-            <th>Valor total</th>
-            <th>P&amp;L €</th>
-            <th>P&amp;L %</th>
+            <th>Activo<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Identificador del instrumento financiero en el mercado (ej: AAPL, NESN.SW). Haz clic para ver su detalle completo.')">ⓘ</button></th>
+            <th class="hide-mobile">Acciones<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Cantidad de títulos o participaciones registrados en la posición.')">ⓘ</button></th>
+            <th class="hide-mobile">Precio medio<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Coste medio por título en euros tal como lo registraste. Siempre en euros, independientemente de la bolsa del ticker.')">ⓘ</button></th>
+            <th class="hide-mobile">Precio actual<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Última cotización de cierre convertida a euros, obtenida del último reporte generado.')">ⓘ</button></th>
+            <th>Valor total<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Importe total en euros de la posición: cantidad de títulos × última cotización en EUR.')">ⓘ</button></th>
+            <th>P&amp;L €<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida absoluta en euros: (última cotización − coste medio) × número de títulos.')">ⓘ</button></th>
+            <th>P&amp;L %<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida porcentual respecto al coste medio de compra.')">ⓘ</button></th>
             <th></th>
           </tr>
         </thead>

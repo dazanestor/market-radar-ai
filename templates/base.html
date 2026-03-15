@@ -164,6 +164,11 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #444c56; }
+
+    /* Help tooltip icon */
+    .help-btn { background: none; border: none; cursor: pointer; padding: 0 0 0 4px; line-height: 1; color: #484f58; vertical-align: middle; display: inline-flex; align-items: center; transition: color 0.12s; font-size: 11px; }
+    .help-btn:hover { color: #8b949e; }
+    #help-tooltip { display: none; position: fixed; z-index: 9999; background: #2d333b; border: 1px solid #444c56; border-radius: 6px; padding: 8px 11px; font-size: 12px; color: #c9d1d9; max-width: 230px; line-height: 1.55; font-weight: 400; text-transform: none; letter-spacing: 0; box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none; white-space: normal; }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
@@ -282,7 +287,31 @@
   </div>
 
 </div>
+<div id="help-tooltip"></div>
 <script>
+  (function() {
+    var tip = null, _dismiss = null;
+    function _init() { tip = document.getElementById('help-tooltip'); }
+    window.showHelp = function(el, text) {
+      if (!tip) _init();
+      if (_dismiss) { document.removeEventListener('click', _dismiss); _dismiss = null; }
+      tip.textContent = text;
+      tip.style.display = 'block';
+      var r = el.getBoundingClientRect();
+      var tw = tip.offsetWidth, th = tip.offsetHeight;
+      var left = r.left + r.width / 2 - tw / 2;
+      var top  = r.top - th - 8;
+      if (left < 8) left = 8;
+      if (left + tw > window.innerWidth - 8) left = window.innerWidth - 8 - tw;
+      if (top < 8) top = r.bottom + 8; // flip below if no room above
+      tip.style.left = left + 'px';
+      tip.style.top  = top  + 'px';
+      setTimeout(function() {
+        _dismiss = function() { tip.style.display = 'none'; _dismiss = null; };
+        document.addEventListener('click', _dismiss, { once: true });
+      }, 10);
+    };
+  })();
   var DESKTOP = 769;
   function _sidebarSetState(open) {
     document.getElementById('sidebar').classList.toggle('open', open);

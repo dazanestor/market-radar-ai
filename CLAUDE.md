@@ -71,8 +71,12 @@ uvicorn web:app --host 0.0.0.0 --port 8589  # Solo dashboard web
 Tablas en `data/radar.db`:
 - **`portfolio`** — `ticker PK`, `shares`, `avg_price` (en EUR)
 - **`price_history`** — snapshots diarios con métricas: `price`, `drawdown_52w`, `momentum_3m/6m`, `volatility`, `dividend_yield`, `score`, `opportunity`; constraint UNIQUE en `(ticker, date)`
-- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `active`
+- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `condition_type` (price/drawdown/score), `condition_value`, `active`
+- **`alert_history`** — historial de alertas disparadas: `ticker`, `target_price`, `direction`, `condition_type`, `condition_value`, `triggered_at`, `price_at_trigger`
 - **`reports`** — informes guardados: `date`, `content`
+- **`news_cache`** — caché de traducciones de titulares: `headline_hash PK`, `translation`, `fetched_at` (TTL 24h)
+- **`tr_cache`** — caché de Trade Republic: `key PK`, `value`, `updated`
+- **Backups automáticos**: el servicio `backup` en docker-compose copia `radar.db` a `data/backups/radar_YYYYMMDD.db` cada 24h, conservando los últimos 7 snapshots.
 
 ## Algoritmo de scoring (scoring.py)
 
@@ -150,6 +154,7 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 | `/chart/historial/{ticker}` | GET | PNG del drawdown histórico 30 días (tema oscuro) |
 | `/login` | GET/POST | Formulario de login |
 | `/logout` | GET | Borra cookie de sesión |
+| `/health` | GET | Estado del sistema: SQLite ok/error, CSV existe, timestamp UTC |
 
 **Filtros Jinja2 registrados:**
 - `eur` — formatea como `€1,234.56`; devuelve `—` para None/NaN
@@ -161,9 +166,27 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 - `tg` — convierte formato Markdown Telegram (`*bold*`, `_italic_`, `` `code` ``) a HTML
 
 **Autenticación:**
-- Si `WEB_PASSWORD` está vacío, no hay autenticación (todas las sesiones son válidas)
-- Si está configurado, se genera un `SESSION_TOKEN` aleatorio al arrancar (no persiste entre reinicios)
-- Cookie `session` con `httponly=True`, `samesite=lax`, expira en 30 días
+- Credenciales en `data/credentials.json` (bcrypt), TOTP en `data/totp_secret.key` (chmod 600)
+- Primer acceso fuerza cambio de usuario/contraseña y configuración de 2FA TOTP
+- Sesiones por UUID en dict `_active_sessions` (expiran en 30 días, se invalidan al hacer logout)
+- Bloqueo de IP tras 5 intentos fallidos (15 min)
+- CSRF token global (`CSRF_TOKEN`) inyectado en todos los templates via `templates.env.globals`; validado en todos los POST mutantes
+- Cookie `session` con `httponly=True`, `samesite=strict`, expira en 30 días
+- `/generar-reporte` tiene rate limit adicional de 2/minuto
+
+**Nuevas rutas:**
+
+| Ruta | Método | Descripción |
+|------|--------|-------------|
+| `/export/portfolio` | GET | Descarga cartera como CSV |
+| `/export/watchlist` | GET | Descarga watchlist como CSV |
+| `/tickers/import` | POST | Importa tickers desde CSV |
+| `/reportes?page=N` | GET | Paginación de informes (10 por página) |
+| `/login/totp` | GET/POST | Verificación 2FA TOTP |
+| `/setup/first-login` | GET/POST | Wizard de primer acceso |
+| `/2fa/setup` | GET/POST | Gestión 2FA para usuario autenticado |
+| `/2fa/disable` | POST | Desactiva 2FA |
+| `/settings/credentials` | GET/POST | Cambiar usuario/contraseña |
 
 **Generación de gráficos:**
 - `_make_price_chart` — precio de cierre 252 días, marca máximo 52 semanas y precio actual, área sombreada en rojo entre precio actual y máximo
@@ -174,13 +197,15 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 ## Notas de implementación
 
 - Los gráficos usan tema oscuro (background `#161b22`), backend Agg (sin display)
-- La traducción de titulares usa Claude con cache en memoria; fallback a inglés
+- La traducción de titulares usa Claude con caché en memoria + BD (TTL 24h); fallback a inglés
 - Los mensajes Telegram largos se dividen automáticamente para evitar errores de Markdown
-- El healthcheck Docker verifica conectividad SQLite cada 60s
+- El healthcheck Docker: bot verifica SQLite cada 60s; web hace GET a `/login` cada 30s
 - No hay suite de tests automatizados; se valida manualmente via Telegram o `scheduler.py`
 - `generate_csv.py` continúa si falla un ticker individual (recopila errores al final)
 - El dashboard web usa un executor de hilos para no bloquear al generar informes
 - El timeout de Claude (120s) está configurado en el constructor `anthropic.Anthropic(timeout=120)`, no en `messages.create()`
+- CSV en memoria cacheado 5 min (`_csv_cache`); se invalida al generar reporte
+- Si el job diario falla, se notifica automáticamente por Telegram con el error
 
 ## Trampas conocidas y decisiones de diseño
 
@@ -208,7 +233,9 @@ Nota: el contenedor `market-radar-ai` se llama así en docker-compose. El conten
 
 ## Trabajo pendiente / próximas funcionalidades
 
-- **Integración Trade Republic**: sincronizar posiciones automáticamente desde la app del broker. La librería recomendada es [`pytr`](https://github.com/pytr-org/pytr) (Python, +400 estrellas, activamente mantenida). Las alternativas evaluadas y descartadas fueron `cdamken/Trade_Republic_Connector` (TypeScript, no Python) y `guilhermehott/trapi` (abandonada desde 2022).
+- **Tests automatizados**: no hay suite de tests. Validación manual via Telegram/scheduler.
+- **CSRF no en formularios de login/setup**: los endpoints de login no necesitan CSRF (no requieren sesión previa); el CSRF token global cubre todos los formularios de usuario autenticado.
+- **Alertas por drawdown/score en Telegram bot**: el comando `/alerta` solo crea alertas de precio. Las alertas por drawdown/score solo se crean desde el dashboard web.
 
 ## CI/CD
 

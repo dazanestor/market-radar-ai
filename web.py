@@ -502,9 +502,9 @@ async def chart_historial(ticker: str, session: Optional[str] = Cookie(default=N
 # ── QR code ───────────────────────────────────────────────────────────────────
 
 def _make_qr_svg(uri: str) -> str:
-    buf = io.StringIO()
+    buf = io.BytesIO()
     segno.make_qr(uri).save(buf, kind="svg", scale=4, border=1, xmldecl=False, nl=False)
-    return buf.getvalue()
+    return buf.getvalue().decode("utf-8")
 
 
 

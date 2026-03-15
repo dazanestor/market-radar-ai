@@ -5,6 +5,22 @@
 <a href="javascript:history.back()" class="btn btn-ghost btn-sm">← Volver</a>
 {% endblock %}
 
+{% block extra_head %}
+<style>
+  .chart-loading {
+    min-height: 220px;
+    background: linear-gradient(90deg, #21262d 25%, #2d333b 50%, #21262d 75%);
+    background-size: 200% 100%;
+    animation: chart-shimmer 1.4s infinite;
+    border-radius: 6px;
+  }
+  @keyframes chart-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 
 <!-- ── Header ── -->
@@ -50,9 +66,12 @@
       <span class="card-title">📈 Precio último año</span>
     </div>
     <div style="padding:16px">
+      <div class="chart-loading" id="shimmer-precio"></div>
       <img src="/chart/precio/{{ ticker }}" class="chart-img" loading="lazy"
            alt="Gráfico de precio {{ ticker }}"
-           onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+           style="display:none"
+           onload="this.style.display='block';document.getElementById('shimmer-precio').style.display='none'"
+           onerror="document.getElementById('shimmer-precio').style.display='none';this.nextElementSibling.style.display='block'">
       <div style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">
         No hay datos de precio disponibles para {{ ticker }}.
       </div>
@@ -177,9 +196,12 @@
       <span class="card-title">📅 Historial drawdown (últimos 30 días radar)</span>
     </div>
     <div style="padding:16px">
+      <div class="chart-loading" id="shimmer-hist"></div>
       <img src="/chart/historial/{{ ticker }}" class="chart-img" loading="lazy"
            alt="Historial drawdown {{ ticker }}"
-           onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+           style="display:none"
+           onload="this.style.display='block';document.getElementById('shimmer-hist').style.display='none'"
+           onerror="document.getElementById('shimmer-hist').style.display='none';this.nextElementSibling.style.display='block'">
       <div style="display:none;padding:20px;text-align:center;color:#8b949e;font-size:13px">
         No hay suficientes datos históricos aún.
       </div>

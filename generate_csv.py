@@ -5,7 +5,7 @@ import pandas as pd
 import yaml
 
 from fetch_data import fetch_stock_data, to_eur, clear_fx_cache
-from database import get_trend, get_portfolio_position
+from database import get_trend, get_portfolio_position, get_ticker_history
 from config import OUTPUT_DIR
 
 def _safe_round(v, n=2):
@@ -73,7 +73,11 @@ def generate():
             try:
                 hist, dividends, info = fetch_stock_data(ticker)
                 if hist.empty:
-                    errors.append(f"{ticker}: sin datos")
+                    # Distinguish delisted/suspended from never-seen tickers
+                    if get_ticker_history(ticker, days=1):
+                        errors.append(f"{ticker}: ⚠️ sin datos recientes (posible baja o suspensión)")
+                    else:
+                        errors.append(f"{ticker}: sin datos")
                     continue
 
                 close = hist["Close"].dropna()
@@ -90,10 +94,12 @@ def generate():
                     continue
                 drawdown = (price / high_52w - 1) * 100
 
-                base_3m = close.iloc[-63] if len(close) >= 63 else None
-                base_6m = close.iloc[-126] if len(close) >= 126 else None
-                momentum_3m = (price_orig / base_3m - 1) * 100 if base_3m else None
-                momentum_6m = (price_orig / base_6m - 1) * 100 if base_6m else None
+                base_3m_raw = close.iloc[-63] if len(close) >= 63 else None
+                base_6m_raw = close.iloc[-126] if len(close) >= 126 else None
+                base_3m_eur = to_eur(base_3m_raw, currency) if base_3m_raw is not None else None
+                base_6m_eur = to_eur(base_6m_raw, currency) if base_6m_raw is not None else None
+                momentum_3m = (price / base_3m_eur - 1) * 100 if base_3m_eur else None
+                momentum_6m = (price / base_6m_eur - 1) * 100 if base_6m_eur else None
 
                 daily_returns = close.pct_change().dropna()
                 volatility = daily_returns.tail(252).std() * (252 ** 0.5) * 100 if not daily_returns.empty else None

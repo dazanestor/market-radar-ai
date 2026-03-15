@@ -165,6 +165,7 @@
     ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #444c56; }
   </style>
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
 <div class="layout" x-data="{ sidebarOpen: false }">

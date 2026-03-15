@@ -58,7 +58,8 @@ def init_db():
             condition_type TEXT DEFAULT 'price',
             condition_value REAL,
             triggered_at TEXT,
-            price_at_trigger REAL
+            price_at_trigger REAL,
+            notified INTEGER DEFAULT 0
         )
         """)
         c.execute("""
@@ -84,10 +85,14 @@ def init_db():
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_alerts_active ON price_alerts(active)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_reports_date ON reports(date DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_triggered ON alert_history(triggered_at DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_notified ON alert_history(notified)")
 
         # Migrations: add new columns if they don't exist yet
         _add_column_if_missing(conn, "price_alerts", "condition_type", "TEXT DEFAULT 'price'")
         _add_column_if_missing(conn, "price_alerts", "condition_value", "REAL")
+        _add_column_if_missing(conn, "alert_history", "notified", "INTEGER DEFAULT 0")
 
 
 def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:
@@ -214,15 +219,39 @@ def deactivate_alert(alert_id):
 def log_alert_triggered(ticker: str, target_price: float, direction: str,
                         price_at_trigger: float,
                         condition_type: str = "price",
-                        condition_value: Optional[float] = None):
+                        condition_value: Optional[float] = None) -> int:
+    """Registra alerta disparada con notified=0. Devuelve el ID insertado."""
     with _db() as conn:
-        conn.cursor().execute("""
+        cur = conn.cursor()
+        cur.execute("""
             INSERT INTO alert_history
                 (ticker, target_price, direction, condition_type, condition_value,
-                 triggered_at, price_at_trigger)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 triggered_at, price_at_trigger, notified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
         """, (ticker, target_price, direction, condition_type, condition_value,
               datetime.now().isoformat(timespec="minutes"), price_at_trigger))
+        return cur.lastrowid
+
+
+def mark_alert_notified(history_id: int) -> None:
+    with _db() as conn:
+        conn.cursor().execute(
+            "UPDATE alert_history SET notified = 1 WHERE id = ?", (history_id,)
+        )
+
+
+def get_unnotified_alerts(limit: int = 20):
+    """Devuelve alertas guardadas pero no notificadas (ej.: el bot estaba caído)."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, ticker, target_price, direction, condition_type,
+                   condition_value, triggered_at, price_at_trigger
+            FROM alert_history WHERE notified = 0
+            ORDER BY id ASC LIMIT ?
+        """, (limit,))
+        return c.fetchall()
+
 
 def get_alert_history(limit: int = 50):
     with _db() as conn:
@@ -295,6 +324,18 @@ def cache_news_translation(headline: str, translation: str) -> None:
             ON CONFLICT(headline_hash) DO UPDATE
                 SET translation=excluded.translation, fetched_at=excluded.fetched_at
         """, (h, translation, datetime.now().isoformat(timespec="minutes")))
+
+def vacuum_db() -> None:
+    """Ejecuta VACUUM + WAL checkpoint para reducir tamaño del fichero SQLite."""
+    conn = sqlite3.connect(DATABASE)
+    try:
+        conn.isolation_level = None  # autocommit requerido para VACUUM
+        conn.execute("VACUUM")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        logger.info("VACUUM completado.")
+    finally:
+        conn.close()
+
 
 def get_cached_translation(headline: str, max_age_hours: int = 24) -> Optional[str]:
     h = _headline_hash(headline)

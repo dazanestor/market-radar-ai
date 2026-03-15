@@ -25,21 +25,25 @@
           {% set total_value = [] %}
           {% set total_pnl   = [] %}
           {% for pos in positions %}
-          {% set pnl_eur = (pos.price - pos.avg_price) * pos.shares if pos.price and pos.avg_price else none %}
           {% if pos.value %}{% set _ = total_value.append(pos.value) %}{% endif %}
-          {% if pnl_eur %}{% set _ = total_pnl.append(pnl_eur) %}{% endif %}
+          {% if pos.pnl_eur %}{% set _ = total_pnl.append(pos.pnl_eur) %}{% endif %}
           <tr>
             <td>
               <a href="/ticker/{{ pos.ticker }}" class="ticker-cell">{{ pos.ticker }}</a>
               {% if pos.name and pos.name != pos.ticker %}
               <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ pos.name }}</div>
               {% endif %}
+              {% if pos.split_warning %}
+              <div style="font-size:10px;color:#d29922;margin-top:3px" title="El precio actual es muy inferior al precio medio. Comprueba si hubo un split o ajuste corporativo.">
+                ⚠️ Posible split — revisa el precio medio
+              </div>
+              {% endif %}
             </td>
             <td class="hide-mobile">{{ "%.4g" % pos.shares }}</td>
             <td class="hide-mobile">{{ pos.avg_price | eur }}</td>
             <td class="hide-mobile">{{ pos.price | eur }}</td>
             <td>{{ pos.value | eur }}</td>
-            <td class="{{ pnl_eur | pnl_class }}">{{ pnl_eur | eur }}</td>
+            <td class="{{ pos.pnl_eur | pnl_class }}">{{ pos.pnl_eur | eur }}</td>
             <td class="{{ pos.pnl | pnl_class }}">{{ pos.pnl | pct }}</td>
             <td style="text-align:right">
               <form method="post" action="/posiciones/delete" style="display:inline" onsubmit="return confirm('¿Eliminar posición de {{ pos.ticker }}?')">

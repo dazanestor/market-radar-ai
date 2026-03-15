@@ -4,11 +4,12 @@ Uso: python scheduler.py
 """
 import logging
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from generate_csv import generate
 from scoring import score_watchlist
 from ai_analysis import analyze
-from database import init_db, save_snapshot, save_report
+from database import init_db, save_snapshot, save_report, vacuum_db
 from fetch_data import get_macro_context, get_news
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
@@ -61,7 +62,16 @@ def run():
     portfolio_df = df[df["category"] == "portfolio"].copy()
     watchlist_df = df[df["category"] == "watchlist"].copy()
 
-    news_by_ticker = {ticker: get_news(ticker) for ticker in df["ticker"].tolist()}
+    ticker_list = df["ticker"].tolist()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        news_futures = {pool.submit(get_news, t): t for t in ticker_list}
+        news_by_ticker = {}
+        for fut in as_completed(news_futures, timeout=120):
+            t = news_futures[fut]
+            try:
+                news_by_ticker[t] = fut.result()
+            except Exception:
+                news_by_ticker[t] = []
 
     try:
         ai_report = analyze(portfolio_df, watchlist_df, macro=macro, news_by_ticker=news_by_ticker)

@@ -1,9 +1,12 @@
+import glob
 import json
 import logging
 import datetime
 import io
 import math
 import os
+import time as _time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
 
 import matplotlib
@@ -20,13 +23,14 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from generate_csv import generate
 from scoring import score_watchlist
-from ai_analysis import analyze
+from ai_analysis import analyze, check_api_health
 from fetch_data import get_macro_context, get_news, to_eur, clear_fx_cache
 from database import (
     init_db, save_snapshot, save_report, get_recent_reports,
     upsert_position, delete_position, get_all_positions,
     add_price_alert, get_active_alerts, deactivate_alert, log_alert_triggered,
     get_ticker_history, set_tr_cache,
+    get_unnotified_alerts, mark_alert_notified, vacuum_db,
 )
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
@@ -197,7 +201,16 @@ async def _run_report(bot, chat_id):
     portfolio_df = df[df["category"] == "portfolio"].copy()
     watchlist_df = df[df["category"] == "watchlist"].copy()
 
-    news_by_ticker = {ticker: get_news(ticker) for ticker in df["ticker"].tolist()}
+    ticker_list = df["ticker"].tolist()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        news_futures = {pool.submit(get_news, t): t for t in ticker_list}
+        news_by_ticker = {}
+        for fut in as_completed(news_futures, timeout=120):
+            t = news_futures[fut]
+            try:
+                news_by_ticker[t] = fut.result()
+            except Exception:
+                news_by_ticker[t] = []
 
     alerts = _build_alerts(df)
 
@@ -876,24 +889,104 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
                 )
 
         if triggered:
-            msg = f"{icon} *Alerta disparada*\n*{ticker}*: {msg_detail}"
-            await context.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"
-            )
+            # Log first (notified=0) so we don't lose it if Telegram send fails
+            history_id = None
             try:
-                log_alert_triggered(
+                history_id = log_alert_triggered(
                     ticker, target, direction, current,
                     condition_type=condition_type,
                 )
             except Exception:
                 logging.exception("Error guardando historial de alerta")
             deactivate_alert(alert_id)
+            msg = f"{icon} *Alerta disparada*\n*{ticker}*: {msg_detail}"
+            try:
+                await context.bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"
+                )
+                if history_id:
+                    mark_alert_notified(history_id)
+            except Exception:
+                logging.exception("Error enviando notificación de alerta %s", ticker)
+
+
+# ── Jobs adicionales ──────────────────────────────────────────────────────────
+
+async def job_replay_unnotified_alerts(context):
+    """Al arrancar, reenvía alertas que se dispararon mientras el bot estaba caído."""
+    pending = get_unnotified_alerts(limit=20)
+    if not pending:
+        return
+    logging.info("Reenviando %d alerta(s) no notificada(s).", len(pending))
+    for row in pending:
+        history_id, ticker, target, direction, ctype, cvalue, triggered_at, price_at = row
+        if ctype == "drawdown":
+            detail = f"Drawdown disparó umbral {target:.1f}% el {triggered_at}"
+        elif ctype == "score":
+            detail = f"Score superó umbral {target:.1f} el {triggered_at}"
+        else:
+            arrow = "bajado a" if direction == "below" else "subido a"
+            detail = f"Precio {arrow} €{price_at:.2f} el {triggered_at} (objetivo €{target:.2f})"
+        msg = f"🔔 *Alerta pendiente* (bot estaba caído)\n*{ticker}*: {detail}"
+        try:
+            await context.bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"
+            )
+            mark_alert_notified(history_id)
+        except Exception:
+            logging.exception("Error reenviando alerta pendiente %s", ticker)
+
+
+async def job_vacuum_db(context):
+    """Ejecuta VACUUM semanal en SQLite para reducir el tamaño del fichero."""
+    try:
+        vacuum_db()
+        logging.info("VACUUM semanal completado.")
+    except Exception:
+        logging.exception("Error en VACUUM semanal")
+
+
+async def job_check_claude_health(context):
+    """Comprueba semanalmente que la API de Claude responde."""
+    ok = check_api_health()
+    if ok:
+        logging.info("Claude API healthcheck OK.")
+    else:
+        logging.error("Claude API no responde.")
+        try:
+            await context.bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID,
+                text="⚠️ *Alerta de sistema*: La API de Claude no responde. "
+                     "Revisa la clave API o el saldo de la cuenta.",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            logging.exception("Error enviando alerta de salud de Claude")
+
+
+def _cleanup_matplotlib_cache():
+    """Elimina ficheros de caché de matplotlib con más de 7 días."""
+    mpl_dir = os.environ.get("MPLCONFIGDIR", "")
+    if not mpl_dir or not os.path.isdir(mpl_dir):
+        return
+    cutoff = _time.time() - 7 * 86400
+    cleaned = 0
+    for fpath in glob.glob(os.path.join(mpl_dir, "**", "*"), recursive=True):
+        if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
+            try:
+                os.remove(fpath)
+                cleaned += 1
+            except OSError:
+                pass
+    if cleaned:
+        logging.info("Matplotlib cache: %d archivo(s) antiguo(s) eliminado(s).", cleaned)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     init_db()
+    _cleanup_matplotlib_cache()
 
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -921,6 +1014,9 @@ def main():
     report_time = datetime.time(hour=REPORT_HOUR, minute=0, tzinfo=tz)
     app.job_queue.run_daily(job_daily_report, time=report_time)
     app.job_queue.run_repeating(job_check_price_alerts, interval=3600, first=60)
+    app.job_queue.run_once(job_replay_unnotified_alerts, when=30)
+    app.job_queue.run_repeating(job_vacuum_db, interval=7 * 86400, first=300)
+    app.job_queue.run_repeating(job_check_claude_health, interval=7 * 86400, first=120)
 
     logging.info(f"Bot iniciado. Reporte diario a las {REPORT_HOUR}:00 {TIMEZONE}.")
     app.run_polling()

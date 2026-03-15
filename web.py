@@ -67,14 +67,19 @@ logger = logging.getLogger("web")
 CREDENTIALS_FILE   = "data/credentials.json"
 TOTP_SECRET_FILE   = "data/totp_secret.key"
 DEFAULT_USERNAME   = "admin"
-DEFAULT_PASSWORD   = "market-radar"
 
 # Sesiones activas: session_id → expiry timestamp (monotonic)
 SESSION_EXPIRY    = 86400 * 30  # 30 días
 _active_sessions: dict = {}
 
-# CSRF token global (por arranque de la app; protege contra cross-site requests)
-CSRF_TOKEN = secrets.token_urlsafe(32)
+# CSRF: rota cada 24h; acepta token anterior durante 1h post-rotación
+_CSRF_ROTATION = 86400
+_CSRF_OVERLAP  = 3600
+_csrf_state: dict = {
+    "current":    secrets.token_urlsafe(32),
+    "previous":   None,
+    "rotated_at": _time.monotonic(),
+}
 
 # Tokens temporales en memoria: token → timestamp de expiración
 _pending_tokens: dict = {}
@@ -122,15 +127,24 @@ def _load_credentials() -> dict:
         with open(CREDENTIALS_FILE) as f:
             return json.load(f)
     except FileNotFoundError:
+        initial_password = secrets.token_urlsafe(12)
         creds = {
             "username": DEFAULT_USERNAME,
-            "password_hash": _hash_password(DEFAULT_PASSWORD),
+            "password_hash": _hash_password(initial_password),
             "first_login": True,
         }
         os.makedirs("data", exist_ok=True)
         with open(CREDENTIALS_FILE, "w") as f:
             json.dump(creds, f)
         os.chmod(CREDENTIALS_FILE, 0o600)
+        logger.warning(
+            "\n" + "=" * 52 +
+            "\n  PRIMER ARRANQUE — Credenciales iniciales" +
+            f"\n  Usuario:     {DEFAULT_USERNAME}" +
+            f"\n  Contraseña:  {initial_password}" +
+            "\n  Cambia estas credenciales en el asistente de\n  primer acceso antes de usar la aplicación." +
+            "\n" + "=" * 52
+        )
         return creds
 
 
@@ -278,7 +292,14 @@ templates.env.filters.update({
     "tg":        tg_to_html,
 })
 # CSRF token disponible en todos los templates como {{ csrf_token }}
-templates.env.globals["csrf_token"] = CSRF_TOKEN
+templates.env.globals["csrf_token"] = _csrf_state["current"]
+
+
+@app.middleware("http")
+async def _refresh_csrf_global(request: Request, call_next):
+    """Rota el CSRF token si ha expirado antes de cada petición."""
+    _rotate_csrf_if_needed()
+    return await call_next(request)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -313,8 +334,27 @@ def _record_failed_login(ip: str) -> None:
 def _reset_lockout(ip: str) -> None:
     _failed_logins.pop(ip, None)
 
-def _validate_csrf(csrf_token: Optional[str]) -> bool:
-    return csrf_token == CSRF_TOKEN
+def _rotate_csrf_if_needed() -> None:
+    """Rota el CSRF token cada 24h y actualiza el global de Jinja2."""
+    now = _time.monotonic()
+    if now - _csrf_state["rotated_at"] >= _CSRF_ROTATION:
+        _csrf_state["previous"]   = _csrf_state["current"]
+        _csrf_state["current"]    = secrets.token_urlsafe(32)
+        _csrf_state["rotated_at"] = now
+        templates.env.globals["csrf_token"] = _csrf_state["current"]
+
+
+def _validate_csrf(token: Optional[str]) -> bool:
+    if not token:
+        return False
+    if secrets.compare_digest(token, _csrf_state["current"]):
+        return True
+    prev = _csrf_state["previous"]
+    if prev:
+        since_rotation = _time.monotonic() - _csrf_state["rotated_at"]
+        if since_rotation < _CSRF_OVERLAP and secrets.compare_digest(token, prev):
+            return True
+    return False
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -449,7 +489,16 @@ def _do_generate_report():
     save_snapshot(df.to_dict("records"))
     portfolio_df = df[df["category"] == "portfolio"].copy()
     watchlist_df = df[df["category"] == "watchlist"].copy()
-    news_by_ticker = {t: get_news(t) for t in df["ticker"].tolist()}
+    from concurrent.futures import as_completed as _as_completed
+    ticker_list = df["ticker"].tolist()
+    news_futures = {_executor.submit(get_news, t): t for t in ticker_list}
+    news_by_ticker = {}
+    for fut in _as_completed(news_futures, timeout=120):
+        t = news_futures[fut]
+        try:
+            news_by_ticker[t] = fut.result()
+        except Exception:
+            news_by_ticker[t] = []
     ai_report = analyze(portfolio_df, watchlist_df, macro=macro, news_by_ticker=news_by_ticker)
     save_report(ai_report)
     _invalidate_csv_cache()
@@ -1273,10 +1322,20 @@ async def posiciones_page(request: Request, session: Optional[str] = Cookie(defa
         # Fallback: nombre desde tickers.yaml
         if not name or name == ticker:
             name = yaml_names.get(ticker, ticker)
+        # Pre-calcular pnl_eur y detectar posible split (>85% pérdida)
+        pnl_eur = (price - avg_price) * shares if (
+            price and not _is_nan(price) and avg_price
+        ) else None
+        split_warning = (
+            price and avg_price and not _is_nan(price)
+            and price > 0 and avg_price > 0
+            and (price / avg_price) < 0.15
+        )
         pos_data.append({
             "ticker": ticker, "name": name, "shares": shares,
             "avg_price": avg_price, "price": price,
             "pnl": pnl, "value": value,
+            "pnl_eur": pnl_eur, "split_warning": split_warning,
         })
     tr_cash_row  = get_tr_cache("cash_eur")
     tr_unmatched_row = get_tr_cache("tr_unmatched")

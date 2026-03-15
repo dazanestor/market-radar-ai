@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configuración inicial — Market Radar AI</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2358a6ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='2'/><path d='M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14'/></svg>">
+  <script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 36px; width: 100%; max-width: 480px; }
+    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .logo-text { font-size: 16px; font-weight: 600; color: #e6edf3; }
+    h1 { font-size: 20px; font-weight: 600; color: #e6edf3; margin-bottom: 6px; }
+    .sub { font-size: 13px; color: #8b949e; margin-bottom: 28px; line-height: 1.6; }
+    .step { border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+    .step-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; margin-bottom: 14px; }
+    label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; margin-bottom: 5px; }
+    input { background: #21262d; border: 1px solid #30363d; color: #e6edf3; border-radius: 6px; padding: 9px 12px; font-size: 14px; width: 100%; outline: none; transition: border-color 0.12s; margin-bottom: 12px; }
+    input:focus { border-color: #388bfd; box-shadow: 0 0 0 3px rgba(56,139,253,0.1); }
+    input.code { font-size: 20px; letter-spacing: 0.25em; text-align: center; font-family: monospace; }
+    button[type="submit"] { background: #1f6feb; color: white; border: none; border-radius: 6px; padding: 11px 20px; font-size: 14px; font-weight: 500; cursor: pointer; width: 100%; transition: background 0.12s; margin-top: 4px; }
+    button[type="submit"]:hover { background: #388bfd; }
+    .error { background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.3); color: #f85149; border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+    .qr-wrap { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 14px; }
+    .secret-box { background: #21262d; border-radius: 6px; padding: 8px 12px; font-family: monospace; font-size: 12px; color: #e6edf3; word-break: break-all; letter-spacing: 0.06em; margin-bottom: 12px; }
+    .hint { font-size: 11px; color: #8b949e; margin-bottom: 8px; }
+    .badge-warn { display:inline-flex;align-items:center;gap:6px;background:rgba(210,153,34,0.1);border:1px solid rgba(210,153,34,0.3);color:#d29922;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:20px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>
+      </svg>
+      <span class="logo-text">Market Radar AI</span>
+    </div>
+
+    <h1>Configuración inicial</h1>
+    <p class="sub">Es tu primer acceso. Establece tus credenciales y configura la autenticación en dos pasos antes de continuar.</p>
+
+    <div class="badge-warn">
+      ⚠️ Completa los tres pasos para activar tu cuenta.
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/setup/first-login">
+      <input type="hidden" name="totp_secret" value="{{ totp_secret }}">
+
+      <!-- Paso 1: Credenciales -->
+      <div class="step">
+        <div class="step-title">Paso 1 — Elige tu usuario y contraseña</div>
+        <label for="username">Nombre de usuario</label>
+        <input type="text" id="username" name="username" placeholder="admin"
+               value="{{ form_username or '' }}" autocomplete="username" minlength="3" required>
+        <label for="password">Nueva contraseña</label>
+        <input type="password" id="password" name="password" placeholder="Mínimo 10 caracteres, letras y números"
+               autocomplete="new-password" minlength="10" required>
+        <label for="password2">Confirmar contraseña</label>
+        <input type="password" id="password2" name="password2" placeholder="Repite la contraseña"
+               autocomplete="new-password" minlength="8" required style="margin-bottom:0">
+      </div>
+
+      <!-- Paso 2: QR 2FA -->
+      <div class="step">
+        <div class="step-title">Paso 2 — Configura Google Authenticator</div>
+        <p class="hint">Abre la app y escanea el código QR. También puedes introducir la clave manualmente.</p>
+        <div class="qr-wrap">
+          <canvas id="qr-canvas" style="border-radius:6px;background:white;padding:8px;flex-shrink:0"></canvas>
+          <div style="flex:1;min-width:140px">
+            <div class="hint">Clave manual:</div>
+            <div class="secret-box">{{ totp_secret }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Paso 3: Verificar -->
+      <div class="step">
+        <div class="step-title">Paso 3 — Verifica el código 2FA</div>
+        <p class="hint" style="margin-bottom:10px">Introduce el código de 6 dígitos que muestra la app para confirmar que todo está correcto.</p>
+        <label for="totp_code">Código de verificación</label>
+        <input type="text" id="totp_code" name="totp_code" class="code"
+               placeholder="000000" maxlength="6" inputmode="numeric"
+               pattern="[0-9]{6}" autocomplete="one-time-code" required style="margin-bottom:0">
+      </div>
+
+      <button type="submit" style="margin-top:20px">Activar cuenta →</button>
+    </form>
+  </div>
+
+  <script>
+    var canvas = document.getElementById('qr-canvas');
+    if (canvas) {
+      QRCode.toCanvas(canvas, {{ totp_uri | tojson }}, { width: 160, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+    }
+  </script>
+</body>
+</html>

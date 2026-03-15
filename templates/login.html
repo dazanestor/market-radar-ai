@@ -37,7 +37,9 @@
     <div class="success">✅ Cuenta configurada. Ya puedes iniciar sesión.</div>
     {% endif %}
 
-    {% if error %}
+    {% if error == 'locked' %}
+    <div class="error">⛔ Demasiados intentos fallidos. Espera 15 minutos e inténtalo de nuevo.</div>
+    {% elif error %}
     <div class="error">Usuario o contraseña incorrectos.</div>
     {% endif %}
 

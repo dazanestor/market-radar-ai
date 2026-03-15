@@ -1,8 +1,13 @@
+import hashlib
+import logging
 import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime
+from typing import Optional
 from config import DATABASE
+
+logger = logging.getLogger("database")
 
 
 def init_db():
@@ -38,8 +43,22 @@ def init_db():
             ticker TEXT,
             target_price REAL,
             direction TEXT,
+            condition_type TEXT DEFAULT 'price',
+            condition_value REAL,
             active INTEGER DEFAULT 1,
             created TEXT
+        )
+        """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS alert_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT,
+            target_price REAL,
+            direction TEXT,
+            condition_type TEXT DEFAULT 'price',
+            condition_value REAL,
+            triggered_at TEXT,
+            price_at_trigger REAL
         )
         """)
         c.execute("""
@@ -56,8 +75,26 @@ def init_db():
             updated TEXT
         )
         """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS news_cache (
+            headline_hash TEXT PRIMARY KEY,
+            translation   TEXT,
+            fetched_at    TEXT
+        )
+        """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_alerts_active ON price_alerts(active)")
+
+        # Migrations: add new columns if they don't exist yet
+        _add_column_if_missing(conn, "price_alerts", "condition_type", "TEXT DEFAULT 'price'")
+        _add_column_if_missing(conn, "price_alerts", "condition_value", "REAL")
+
+
+def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
 
 @contextmanager
@@ -145,18 +182,22 @@ def get_all_positions():
 
 # ── price alerts ──────────────────────────────────────────────────────────────
 
-def add_price_alert(ticker, target_price, direction):
+def add_price_alert(ticker, target_price, direction,
+                    condition_type: str = "price", condition_value: Optional[float] = None):
     with _db() as conn:
         conn.cursor().execute("""
-            INSERT INTO price_alerts (ticker, target_price, direction, active, created)
-            VALUES (?, ?, ?, 1, ?)
-        """, (ticker, target_price, direction, date.today().isoformat()))
+            INSERT INTO price_alerts
+                (ticker, target_price, direction, condition_type, condition_value, active, created)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+        """, (ticker, target_price, direction, condition_type, condition_value,
+              date.today().isoformat()))
 
 def get_active_alerts():
     with _db() as conn:
         c = conn.cursor()
         c.execute("""
-            SELECT id, ticker, target_price, direction, created
+            SELECT id, ticker, target_price, direction, created,
+                   condition_type, condition_value
             FROM price_alerts WHERE active = 1
         """)
         return c.fetchall()
@@ -166,6 +207,34 @@ def deactivate_alert(alert_id):
         conn.cursor().execute(
             "UPDATE price_alerts SET active = 0 WHERE id = ?", (alert_id,)
         )
+
+
+# ── alert_history ─────────────────────────────────────────────────────────────
+
+def log_alert_triggered(ticker: str, target_price: float, direction: str,
+                        price_at_trigger: float,
+                        condition_type: str = "price",
+                        condition_value: Optional[float] = None):
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT INTO alert_history
+                (ticker, target_price, direction, condition_type, condition_value,
+                 triggered_at, price_at_trigger)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (ticker, target_price, direction, condition_type, condition_value,
+              datetime.now().isoformat(timespec="minutes"), price_at_trigger))
+
+def get_alert_history(limit: int = 50):
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, ticker, target_price, direction, condition_type,
+                   condition_value, triggered_at, price_at_trigger
+            FROM alert_history
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,))
+        return c.fetchall()
 
 
 # ── tr_cache ──────────────────────────────────────────────────────────────────
@@ -195,8 +264,53 @@ def save_report(content):
             (datetime.now().isoformat(timespec="minutes"), content)
         )
 
-def get_recent_reports(n=5):
+def get_recent_reports(n: int = 5, offset: int = 0):
     with _db() as conn:
         c = conn.cursor()
-        c.execute("SELECT id, date, content FROM reports ORDER BY id DESC LIMIT ?", (n,))
+        c.execute(
+            "SELECT id, date, content FROM reports ORDER BY id DESC LIMIT ? OFFSET ?",
+            (n, offset)
+        )
         return c.fetchall()
+
+def count_reports() -> int:
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM reports")
+        row = c.fetchone()
+        return row[0] if row else 0
+
+
+# ── news_cache ────────────────────────────────────────────────────────────────
+
+def _headline_hash(headline: str) -> str:
+    return hashlib.sha256(headline.encode("utf-8")).hexdigest()[:32]
+
+def cache_news_translation(headline: str, translation: str) -> None:
+    h = _headline_hash(headline)
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT INTO news_cache (headline_hash, translation, fetched_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(headline_hash) DO UPDATE
+                SET translation=excluded.translation, fetched_at=excluded.fetched_at
+        """, (h, translation, datetime.now().isoformat(timespec="minutes")))
+
+def get_cached_translation(headline: str, max_age_hours: int = 24) -> Optional[str]:
+    h = _headline_hash(headline)
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT translation, fetched_at FROM news_cache WHERE headline_hash = ?", (h,)
+        )
+        row = c.fetchone()
+    if not row:
+        return None
+    try:
+        fetched = datetime.fromisoformat(row[1])
+        age_hours = (datetime.now() - fetched).total_seconds() / 3600
+        if age_hours > max_age_hours:
+            return None
+    except Exception:
+        return None
+    return row[0]

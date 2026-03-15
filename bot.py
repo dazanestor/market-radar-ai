@@ -25,7 +25,7 @@ from fetch_data import get_macro_context, get_news, to_eur, clear_fx_cache
 from database import (
     init_db, save_snapshot, save_report, get_recent_reports,
     upsert_position, delete_position, get_all_positions,
-    add_price_alert, get_active_alerts, deactivate_alert,
+    add_price_alert, get_active_alerts, deactivate_alert, log_alert_triggered,
     get_ticker_history, set_tr_cache,
 )
 from config import (
@@ -788,7 +788,18 @@ async def cmd_eliminar_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def job_daily_report(context: ContextTypes.DEFAULT_TYPE):
     logging.info("Ejecutando reporte diario...")
-    await _run_report(context.bot, TELEGRAM_CHAT_ID)
+    try:
+        await _run_report(context.bot, TELEGRAM_CHAT_ID)
+    except Exception as e:
+        logging.exception("Error en el reporte diario")
+        try:
+            await context.bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID,
+                text=f"⚠️ *Error en el reporte diario*\n`{type(e).__name__}: {str(e)[:200]}`",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            logging.exception("No se pudo notificar el error del reporte")
 
 async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
     alerts = get_active_alerts()
@@ -798,6 +809,22 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
     tickers_needed = list({a[1] for a in alerts})
     prices = {}
     clear_fx_cache()
+
+    # Leer CSV para drawdown/score si hay alertas de ese tipo
+    csv_data = {}
+    has_advanced = any((len(a) > 5 and a[5] in ("drawdown", "score")) for a in alerts)
+    if has_advanced:
+        try:
+            from config import OUTPUT_DIR
+            import pandas as pd, os
+            csv_path = f"{OUTPUT_DIR}/precios_global.csv"
+            if os.path.exists(csv_path):
+                df = pd.read_csv(csv_path)
+                for _, row in df.iterrows():
+                    csv_data[row["ticker"]] = row.to_dict()
+        except Exception:
+            logging.exception("Error leyendo CSV para alertas avanzadas")
+
     for ticker in tickers_needed:
         try:
             t = yf.Ticker(ticker)
@@ -812,24 +839,54 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logging.warning(f"Error obteniendo precio de {ticker} para alertas: {e}")
 
-    for alert_id, ticker, target, direction, _ in alerts:
+    for row in alerts:
+        alert_id, ticker, target, direction = row[0], row[1], row[2], row[3]
+        condition_type = row[5] if len(row) > 5 else "price"
+
         current = prices.get(ticker)
         if current is None or (isinstance(current, float) and math.isnan(current)):
             continue
 
-        triggered = (direction == "below" and current <= target) or \
-                    (direction == "above" and current >= target)
+        triggered = False
+        icon = "🔔"
+        msg_detail = ""
+
+        if condition_type == "drawdown":
+            dd = csv_data.get(ticker, {}).get("drawdown_52w")
+            if dd is not None and not (isinstance(dd, float) and math.isnan(dd)):
+                triggered = float(dd) < float(target)
+                if triggered:
+                    icon = "📉"
+                    msg_detail = f"Drawdown: {dd:.1f}% (umbral: {target:.1f}%)"
+        elif condition_type == "score":
+            score = csv_data.get(ticker, {}).get("score")
+            if score is not None and not (isinstance(score, float) and math.isnan(score)):
+                triggered = float(score) > float(target)
+                if triggered:
+                    icon = "⭐"
+                    msg_detail = f"Score: {score:.1f} (umbral: {target:.1f})"
+        else:
+            triggered = (direction == "below" and current <= target) or \
+                        (direction == "above" and current >= target)
+            if triggered:
+                icon = "📉" if direction == "below" else "📈"
+                msg_detail = (
+                    f"{'bajado a' if direction == 'below' else 'subido a'} "
+                    f"{_fmt(current)} (objetivo: {_fmt(target)})"
+                )
 
         if triggered:
-            icon = "📉" if direction == "below" else "📈"
-            msg = (
-                f"{icon} *Alerta disparada*\n"
-                f"*{ticker}* ha {'bajado a' if direction == 'below' else 'subido a'} "
-                f"{_fmt(current)} (objetivo: {_fmt(target)})"
-            )
+            msg = f"{icon} *Alerta disparada*\n*{ticker}*: {msg_detail}"
             await context.bot.send_message(
                 chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"
             )
+            try:
+                log_alert_triggered(
+                    ticker, target, direction, current,
+                    condition_type=condition_type,
+                )
+            except Exception:
+                logging.exception("Error guardando historial de alerta")
             deactivate_alert(alert_id)
 
 

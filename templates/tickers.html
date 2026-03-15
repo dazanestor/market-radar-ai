@@ -36,6 +36,7 @@
             {% endif %}
             <td style="text-align:right">
               <form method="post" action="/tickers/delete" style="display:inline" onsubmit="return confirm('¿Eliminar {{ ticker }}?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="ticker" value="{{ ticker }}">
                 <input type="hidden" name="categoria" value="{{ cat_key }}">
                 <button type="submit" class="btn btn-danger">Eliminar</button>
@@ -109,6 +110,7 @@
       </div>
 
       <form method="post" action="/tickers/add">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="categoria" value="{{ cat_key }}">
         <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))">
           <div>
@@ -144,5 +146,57 @@
   </div>
 </div>
 {% endfor %}
+
+<!-- ── Importar / Exportar ────────────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">Importar / Exportar</h2>
+  </div>
+  <div class="card" style="padding:20px">
+    <div style="display:flex;flex-wrap:wrap;gap:24px">
+
+      <!-- Importar CSV -->
+      <div style="flex:1;min-width:260px">
+        <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:6px">Importar tickers desde CSV</div>
+        <p style="font-size:12px;color:#8b949e;margin-bottom:12px">
+          El CSV debe tener columnas: <code>ticker, nombre, bloque, region, categoria</code>
+          (categoria: <em>portfolio</em> o <em>watchlist</em>).
+        </p>
+        <form method="post" action="/tickers/import" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:flex-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div>
+            <input type="file" name="file" accept=".csv" class="form-input" style="width:auto" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Importar</button>
+        </form>
+        {% set import_ok = request.query_params.get('import_ok') %}
+        {% set import_errors = request.query_params.get('import_errors') %}
+        {% if import_ok %}
+        <div style="font-size:12px;color:#3fb950;margin-top:8px">
+          ✅ {{ import_ok }} ticker(s) importados.
+          {% if import_errors and import_errors != '0' %}
+          <span class="text-warning"> · {{ import_errors }} error(es).</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Exportar CSV -->
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:6px">Exportar datos</div>
+        <p style="font-size:12px;color:#8b949e;margin-bottom:12px">Descarga los datos actuales en formato CSV.</p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <a href="/export/portfolio" class="btn btn-ghost btn-sm" style="text-align:center">
+            ⬇ Exportar cartera CSV
+          </a>
+          <a href="/export/watchlist" class="btn btn-ghost btn-sm" style="text-align:center">
+            ⬇ Exportar watchlist CSV
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 {% endblock %}

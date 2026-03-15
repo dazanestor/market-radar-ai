@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 
 from config import ANTHROPIC_API_KEY, MODEL
 
+logger = logging.getLogger("fetch_data")
+
 _translate_cache: dict = {}
 _fx_cache: dict = {}
 
@@ -48,13 +50,29 @@ def translate_headlines(headlines: list) -> list:
     """Traduce una lista de titulares al español en una sola llamada a Claude.
 
     Conserva el símbolo •, el nombre del medio y la fecha entre paréntesis.
-    Usa caché en memoria para no retradducir titulares ya vistos.
+    Usa caché en BD (24h) y en memoria para no retradducir titulares ya vistos.
     Si la llamada falla, devuelve los titulares originales.
     """
     if not headlines:
         return headlines
 
-    to_translate = [h for h in headlines if h not in _translate_cache]
+    # Intentar cargar caché de BD
+    try:
+        from database import get_cached_translation, cache_news_translation
+        _db_cache_available = True
+    except Exception:
+        _db_cache_available = False
+
+    to_translate = []
+    for h in headlines:
+        if h in _translate_cache:
+            continue
+        if _db_cache_available:
+            cached = get_cached_translation(h)
+            if cached is not None:
+                _translate_cache[h] = cached
+                continue
+        to_translate.append(h)
 
     if to_translate:
         try:
@@ -86,10 +104,16 @@ def translate_headlines(headlines: list) -> list:
             # Guardar en caché; si Claude devuelve menos líneas, usar original
             for orig, trans in zip(to_translate, translated):
                 _translate_cache[orig] = trans
+                if _db_cache_available:
+                    try:
+                        cache_news_translation(orig, trans)
+                    except Exception:
+                        pass
             for h in to_translate[len(translated):]:
                 _translate_cache[h] = h
 
         except Exception:
+            logger.exception("Error traduciendo titulares con Claude")
             for h in to_translate:
                 _translate_cache[h] = h
 

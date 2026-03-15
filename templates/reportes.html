@@ -3,6 +3,23 @@
 
 {% block content %}
 
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+  <div style="font-size:13px;color:#8b949e">
+    {% if total %} {{ total }} informe(s) en total {% endif %}
+  </div>
+  {% if total_pages > 1 %}
+  <div style="display:flex;gap:8px;align-items:center">
+    {% if page > 1 %}
+    <a href="/reportes?page={{ page - 1 }}" class="btn btn-ghost btn-sm">← Anterior</a>
+    {% endif %}
+    <span style="font-size:13px;color:#8b949e">Página {{ page }} / {{ total_pages }}</span>
+    {% if page < total_pages %}
+    <a href="/reportes?page={{ page + 1 }}" class="btn btn-ghost btn-sm">Siguiente →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
 {% if not reports %}
 <div class="card">
   <div class="empty-state">

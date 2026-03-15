@@ -43,6 +43,7 @@
             <td class="{{ pos.pnl | pnl_class }}">{{ pos.pnl | pct }}</td>
             <td style="text-align:right">
               <form method="post" action="/posiciones/delete" style="display:inline" onsubmit="return confirm('¿Eliminar posición de {{ pos.ticker }}?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="ticker" value="{{ pos.ticker }}">
                 <button type="submit" class="btn btn-danger">Eliminar</button>
               </form>
@@ -80,6 +81,7 @@
       Introduce el precio en euros. Si el ticker ya existe, se actualiza.
     </p>
     <form method="post" action="/posiciones/add">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-row">
         <div>
           <label class="form-label">Ticker *</label>
@@ -152,6 +154,7 @@ TR_COOKIES_FILE=data/tr_cookies.txt</pre>
         <strong style="color:#d29922"> Atención:</strong> esto cerrará la sesión activa en el móvil.
       </p>
       <form method="post" action="/tr/setup/start">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn btn-primary btn-sm">Vincular dispositivo (via app TR)</button>
       </form>
 
@@ -160,6 +163,7 @@ TR_COOKIES_FILE=data/tr_cookies.txt</pre>
         Abre la app Trade Republic. Verás un código de 4 dígitos para confirmar el acceso.
       </p>
       <form method="post" action="/tr/setup/complete" style="display:flex;gap:10px;align-items:flex-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div>
           <label class="form-label">Código de la app</label>
           <input type="text" name="code" class="form-input" placeholder="1234" maxlength="10" required
@@ -170,6 +174,7 @@ TR_COOKIES_FILE=data/tr_cookies.txt</pre>
       <p style="font-size:12px;color:#8b949e;margin:10px 0 0">
         ¿No aparece el código en la app?
         <form method="post" action="/tr/setup/start" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" style="background:none;border:none;color:#58a6ff;cursor:pointer;font-size:12px;padding:0">Reenviar →</button>
         </form>
       </p>
@@ -187,6 +192,7 @@ TR_COOKIES_FILE=data/tr_cookies.txt</pre>
           </p>
         </div>
         <form method="post" action="/tr/sync" x-data="{ loading: false }" @submit="loading = true">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="btn btn-primary btn-sm" :disabled="loading">
             <template x-if="!loading">
               <span style="display:flex;align-items:center;gap:5px">

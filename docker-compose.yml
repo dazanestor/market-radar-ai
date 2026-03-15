@@ -7,7 +7,7 @@ services:
       - -c
       - |
         [ -f /workspace/tickers.yaml ] || printf 'portfolio: {}\nwatchlist: {}\n' > /workspace/tickers.yaml
-        mkdir -p /workspace/data /workspace/output
+        mkdir -p /workspace/data /workspace/output /workspace/data/backups
         chmod -R 777 /workspace/data /workspace/output
         chmod 666 /workspace/tickers.yaml
     volumes:
@@ -67,6 +67,13 @@ services:
       TR_PIN:          ${TR_PIN:-}
       TR_COOKIES_FILE: ${TR_COOKIES_FILE:-data/tr_cookies.txt}
 
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8589/login', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
     ports:
       - "${WEB_PORT:-8589}:8589"
 
@@ -74,3 +81,19 @@ services:
       - ./output:/app/output
       - ./data:/app/data
       - ./tickers.yaml:/app/tickers.yaml
+
+  backup:
+    image: alpine:3.21
+    restart: unless-stopped
+    entrypoint: >
+      sh -c "
+        while true; do
+          sleep 86400;
+          mkdir -p /data/backups;
+          cp /data/radar.db /data/backups/radar_\$$(date +%Y%m%d).db 2>/dev/null || true;
+          ls -t /data/backups/radar_*.db 2>/dev/null | tail -n +8 | xargs rm -f;
+          echo \"[backup] snapshot $$(date +%Y-%m-%d) done\";
+        done
+      "
+    volumes:
+      - ./data:/data

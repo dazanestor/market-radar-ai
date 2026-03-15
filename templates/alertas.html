@@ -3,7 +3,7 @@
 
 {% block content %}
 
-<!-- ── Tabla ──────────────────────────────────────────────────────────────── -->
+<!-- ── Tabla alertas activas ──────────────────────────────────────────────── -->
 <div class="section">
   <div class="section-header">
     <h2 class="section-title">Alertas activas</h2>
@@ -17,28 +17,48 @@
           <tr>
             <th class="hide-mobile">#</th>
             <th>Ticker</th>
-            <th>Precio objetivo</th>
-            <th>Dirección</th>
+            <th>Tipo</th>
+            <th>Condición</th>
             <th class="hide-mobile">Creada</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {% for alert_id, ticker, target, direction, created in alerts %}
+          {% for row in alerts %}
+          {% set alert_id = row[0] %}
+          {% set ticker = row[1] %}
+          {% set target = row[2] %}
+          {% set direction = row[3] %}
+          {% set created = row[4] %}
+          {% set ctype = row[5] if row|length > 5 else 'price' %}
+          {% set cvalue = row[6] if row|length > 6 else none %}
           <tr>
             <td class="hide-mobile text-muted">{{ alert_id }}</td>
             <td class="ticker-cell">{{ ticker }}</td>
-            <td>{{ target | eur }}</td>
             <td>
-              {% if direction == 'below' %}
-                <span class="text-negative">↓ baja a</span>
+              {% if ctype == 'drawdown' %}
+                <span class="badge badge-red">Drawdown</span>
+              {% elif ctype == 'score' %}
+                <span class="badge badge-blue">Score</span>
               {% else %}
-                <span class="text-positive">↑ sube a</span>
+                <span class="badge badge-gray">Precio</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if ctype == 'drawdown' %}
+                Drawdown &lt; {{ target | num }}%
+              {% elif ctype == 'score' %}
+                Score &gt; {{ target | num }}
+              {% elif direction == 'below' %}
+                <span class="text-negative">↓ baja a {{ target | eur }}</span>
+              {% else %}
+                <span class="text-positive">↑ sube a {{ target | eur }}</span>
               {% endif %}
             </td>
             <td class="hide-mobile text-muted">{{ created }}</td>
             <td style="text-align:right">
               <form method="post" action="/alertas/delete" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="alert_id" value="{{ alert_id }}">
                 <button type="submit" class="btn btn-danger">Borrar</button>
               </form>
@@ -57,17 +77,15 @@
   </div>
 </div>
 
-<!-- ── Formulario ─────────────────────────────────────────────────────────── -->
+<!-- ── Formulario crear alerta ────────────────────────────────────────────── -->
 <div class="section">
   <div class="section-header">
     <h2 class="section-title">Crear alerta</h2>
   </div>
   <div class="form-section">
-    <p style="font-size:12px;color:#8b949e;margin-bottom:16px">
-      Si el precio objetivo es menor al actual → alerta al bajar. Si es mayor → alerta al subir.
-    </p>
-    <form method="post" action="/alertas/add">
-      <div class="form-row" style="grid-template-columns: 1fr 1fr auto">
+    <form method="post" action="/alertas/add" x-data="{ ctype: 'price' }">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr auto">
         <div>
           <label class="form-label">Ticker *</label>
           {% if tickers_disponibles %}
@@ -82,15 +100,81 @@
           {% endif %}
         </div>
         <div>
-          <label class="form-label">Precio objetivo (€) *</label>
-          <input type="number" name="target_price" class="form-input" placeholder="150.00" min="0.01" step="any" required>
+          <label class="form-label">Tipo de alerta</label>
+          <select name="condition_type" class="form-input" x-model="ctype">
+            <option value="price">Precio (€)</option>
+            <option value="drawdown">Drawdown (%)</option>
+            <option value="score">Score</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" x-text="ctype === 'price' ? 'Precio objetivo (€)' : ctype === 'drawdown' ? 'Drawdown máximo (%)' : 'Score mínimo'">Valor *</label>
+          <input type="number" name="target_price" class="form-input"
+                 :placeholder="ctype === 'price' ? '150.00' : ctype === 'drawdown' ? '-20' : '15'"
+                 step="any" required>
         </div>
         <div style="display:flex;align-items:flex-end">
           <button type="submit" class="btn btn-primary btn-sm">Crear alerta</button>
         </div>
       </div>
+      <p style="font-size:11px;color:#8b949e;margin-top:8px">
+        Precio: avisa cuando el precio cruza el umbral.
+        Drawdown: avisa cuando la caída desde máximos supera el % indicado.
+        Score: avisa cuando el score supera el valor indicado.
+      </p>
     </form>
   </div>
 </div>
+
+<!-- ── Historial de alertas disparadas ───────────────────────────────────── -->
+{% if alert_history %}
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">Historial de alertas</h2>
+    <span class="badge badge-gray">últimas {{ alert_history | length }}</span>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Tipo</th>
+            <th>Condición</th>
+            <th>Precio al dispararse</th>
+            <th class="hide-mobile">Cuando</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in alert_history %}
+          {% set h_ticker = row[1] %}
+          {% set h_target = row[2] %}
+          {% set h_dir = row[3] %}
+          {% set h_ctype = row[4] if row|length > 4 else 'price' %}
+          {% set h_triggered_at = row[6] if row|length > 6 else '' %}
+          {% set h_price = row[7] if row|length > 7 else none %}
+          <tr>
+            <td class="ticker-cell">{{ h_ticker }}</td>
+            <td>
+              {% if h_ctype == 'drawdown' %}<span class="badge badge-red">Drawdown</span>
+              {% elif h_ctype == 'score' %}<span class="badge badge-blue">Score</span>
+              {% else %}<span class="badge badge-gray">Precio</span>{% endif %}
+            </td>
+            <td>
+              {% if h_ctype == 'drawdown' %}Drawdown &lt; {{ h_target | num }}%
+              {% elif h_ctype == 'score' %}Score &gt; {{ h_target | num }}
+              {% elif h_dir == 'below' %}<span class="text-negative">↓ {{ h_target | eur }}</span>
+              {% else %}<span class="text-positive">↑ {{ h_target | eur }}</span>{% endif %}
+            </td>
+            <td>{{ h_price | eur }}</td>
+            <td class="hide-mobile text-muted">{{ h_triggered_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% endblock %}

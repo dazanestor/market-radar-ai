@@ -3,6 +3,12 @@
 
 {% block content %}
 
+{% if data_age %}
+<div style="font-size:11px;color:#484f58;margin-bottom:12px;text-align:right">
+  ⏱ Datos actualizados {{ data_age }}
+</div>
+{% endif %}
+
 <!-- ── Stats ── -->
 <div class="stat-grid">
   <div class="stat-card">

@@ -235,6 +235,7 @@
 
     <div class="sidebar-footer">
       <form method="post" action="/generar-reporte" x-data="{ loading: false }" @submit="loading = true">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn btn-primary btn-full btn-sm" :disabled="loading" style="margin-bottom:8px">
           <template x-if="!loading">
             <span style="display:flex;align-items:center;gap:5px">

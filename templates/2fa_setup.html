@@ -36,6 +36,7 @@
     </div>
 
     <form method="post" action="/2fa/disable" onsubmit="return confirm('¿Desactivar el 2FA? El acceso solo requerirá contraseña.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="btn btn-danger" style="padding:8px 16px;font-size:13px">Desactivar 2FA</button>
     </form>
   </div>
@@ -78,6 +79,7 @@
         {% endif %}
 
         <form method="post" action="/2fa/setup">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="secret" value="{{ secret }}">
           <div style="display:flex;gap:10px;align-items:flex-end">
             <div style="flex:1">

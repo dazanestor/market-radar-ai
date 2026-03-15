@@ -106,6 +106,12 @@ def init_db():
             positions_count INTEGER
         )
         """)
+        # Migrations: add new columns before creating indexes that depend on them
+        _add_column_if_missing(conn, "price_alerts",  "condition_type",  "TEXT DEFAULT 'price'")
+        _add_column_if_missing(conn, "price_alerts",  "condition_value", "REAL")
+        _add_column_if_missing(conn, "alert_history", "notified",        "INTEGER DEFAULT 0")
+        _add_column_if_missing(conn, "price_history", "rsi",             "REAL")
+
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
         # Composite index for get_ticker_history queries (ticker + date DESC)
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker_date ON price_history(ticker, date DESC)")
@@ -116,12 +122,6 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_operations_ticker ON operations(ticker)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_operations_date ON operations(date DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_value_date ON portfolio_value(date DESC)")
-
-        # Migrations: add new columns if they don't exist yet
-        _add_column_if_missing(conn, "price_alerts",  "condition_type",  "TEXT DEFAULT 'price'")
-        _add_column_if_missing(conn, "price_alerts",  "condition_value", "REAL")
-        _add_column_if_missing(conn, "alert_history", "notified",        "INTEGER DEFAULT 0")
-        _add_column_if_missing(conn, "price_history", "rsi",             "REAL")
 
 
 def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:

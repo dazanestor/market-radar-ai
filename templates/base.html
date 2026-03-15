@@ -14,23 +14,27 @@
 
     /* Layout */
     .layout { display: flex; height: 100vh; overflow: hidden; }
-    .sidebar { width: 220px; background: #161b22; border-right: 1px solid #30363d; display: flex; flex-direction: column; flex-shrink: 0; height: 100vh; overflow-y: auto; transition: transform 0.22s ease; z-index: 200; }
-    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+    /* Sidebar: siempre overlay (position fixed), fuera del flujo */
+    .sidebar { position: fixed; top: 0; left: 0; width: 220px; background: #161b22; border-right: 1px solid #30363d; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; transition: transform 0.22s ease; z-index: 200; transform: translateX(-100%); }
+    .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.4); }
+    /* En pantallas grandes, empujamos el main con margen cuando el sidebar está abierto */
+    @media (min-width: 769px) {
+      .layout.sidebar-open .main { margin-left: 220px; }
+    }
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; transition: margin-left 0.22s ease; }
     .topbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 13px 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .topbar-title { font-size: 15px; font-weight: 600; color: #e6edf3; margin: 0; }
     .content { flex: 1; overflow-y: auto; padding: 24px; }
     .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 199; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-    .hamburger { display: none; background: none; border: none; cursor: pointer; padding: 4px; color: #8b949e; flex-shrink: 0; }
+    .sidebar-overlay.open { display: block; }
+    /* Hamburger siempre visible */
+    .hamburger { display: flex; align-items: center; background: none; border: none; cursor: pointer; padding: 4px; color: #8b949e; flex-shrink: 0; }
     .hamburger:hover { color: #e6edf3; }
-    .sidebar-close { display: none; background: none; border: none; cursor: pointer; color: #8b949e; padding: 4px 6px; margin-left: auto; font-size: 18px; line-height: 1; border-radius: 4px; }
+    /* Botón ✕ dentro del sidebar, siempre visible */
+    .sidebar-close { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #8b949e; padding: 4px 6px; margin-left: auto; line-height: 1; border-radius: 4px; }
     .sidebar-close:hover { color: #e6edf3; background: #21262d; }
 
     @media (max-width: 768px) {
-      .hamburger { display: flex; align-items: center; }
-      .sidebar-close { display: flex; align-items: center; }
-      .sidebar { position: fixed; top: 0; left: 0; transform: translateX(-100%); }
-      .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
-      .sidebar-overlay.open { display: block; }
       .content { padding: 16px; }
       .topbar { padding: 11px 16px; }
       .stat-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
@@ -269,16 +273,22 @@
 
 </div>
 <script>
-  function toggleSidebar() {
-    var s = document.getElementById('sidebar');
-    var o = document.getElementById('sidebar-overlay');
-    var open = s.classList.toggle('open');
-    o.classList.toggle('open', open);
+  var DESKTOP = 769;
+  function _sidebarSetState(open) {
+    document.getElementById('sidebar').classList.toggle('open', open);
+    document.getElementById('sidebar-overlay').classList.toggle('open', open && window.innerWidth < DESKTOP);
+    document.querySelector('.layout').classList.toggle('sidebar-open', open);
+    try { localStorage.setItem('sidebarOpen', open ? '1' : '0'); } catch(e) {}
   }
-  function closeSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebar-overlay').classList.remove('open');
-  }
+  function toggleSidebar() { _sidebarSetState(!document.getElementById('sidebar').classList.contains('open')); }
+  function closeSidebar() { _sidebarSetState(false); }
+  // Estado inicial: abierto en desktop, cerrado en móvil
+  document.addEventListener('DOMContentLoaded', function() {
+    var saved = null;
+    try { saved = localStorage.getItem('sidebarOpen'); } catch(e) {}
+    var open = saved !== null ? saved === '1' : window.innerWidth >= DESKTOP;
+    _sidebarSetState(open);
+  });
 </script>
 </body>
 </html>

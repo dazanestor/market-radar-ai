@@ -6,7 +6,28 @@ from tenacity import retry, stop_after_attempt, wait_exponential, before_sleep_l
 from config import ANTHROPIC_API_KEY, MODEL
 
 logger = logging.getLogger("ai_analysis")
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120)
+
+
+def _effective_api_key() -> str:
+    """BD > env para ANTHROPIC_API_KEY."""
+    try:
+        from database import get_setting
+        return get_setting("ANTHROPIC_API_KEY") or ANTHROPIC_API_KEY
+    except Exception:
+        return ANTHROPIC_API_KEY
+
+
+def _effective_model() -> str:
+    """BD > env para MODEL."""
+    try:
+        from database import get_setting
+        return get_setting("MODEL") or MODEL
+    except Exception:
+        return MODEL
+
+
+def _get_client() -> anthropic.Anthropic:
+    return anthropic.Anthropic(api_key=_effective_api_key(), timeout=120)
 
 
 @retry(
@@ -16,8 +37,8 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=120)
     reraise=True,
 )
 def _call_claude(prompt: str):
-    return client.messages.create(
-        model=MODEL,
+    return _get_client().messages.create(
+        model=_effective_model(),
         max_tokens=4096,
         temperature=0,
         messages=[{"role": "user", "content": prompt}],
@@ -27,8 +48,8 @@ def _call_claude(prompt: str):
 def check_api_health() -> bool:
     """Envía un ping mínimo a Claude. Devuelve True si la API responde."""
     try:
-        client.messages.create(
-            model=MODEL,
+        _get_client().messages.create(
+            model=_effective_model(),
             max_tokens=5,
             temperature=0,
             messages=[{"role": "user", "content": "ping"}],

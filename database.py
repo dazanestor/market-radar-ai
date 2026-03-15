@@ -106,6 +106,13 @@ def init_db():
             positions_count INTEGER
         )
         """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key     TEXT PRIMARY KEY,
+            value   TEXT NOT NULL,
+            updated TEXT
+        )
+        """)
         # Migrations: add new columns before creating indexes that depend on them
         _add_column_if_missing(conn, "price_alerts",  "condition_type",  "TEXT DEFAULT 'price'")
         _add_column_if_missing(conn, "price_alerts",  "condition_value", "REAL")
@@ -459,6 +466,38 @@ def get_portfolio_value_history(days: int = 365) -> list:
             LIMIT ?
         """, (days,))
         return c.fetchall()
+
+
+# ── settings ──────────────────────────────────────────────────────────────────
+
+def get_setting(key: str) -> Optional[str]:
+    """Devuelve el valor guardado en BD para la clave, o None si no existe."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = c.fetchone()
+        return row[0] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT INTO settings (key, value, updated) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated=excluded.updated
+        """, (key, value, datetime.now().isoformat(timespec="minutes")))
+
+
+def delete_setting(key: str) -> None:
+    with _db() as conn:
+        conn.cursor().execute("DELETE FROM settings WHERE key = ?", (key,))
+
+
+def get_all_settings() -> dict:
+    """Devuelve todos los settings guardados en BD como {key: value}."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT key, value FROM settings")
+        return dict(c.fetchall())
 
 
 def get_cached_translation(headline: str, max_age_hours: int = 24) -> Optional[str]:

@@ -62,6 +62,10 @@ from database import (
     save_snapshot,
     set_tr_cache,
     upsert_position,
+    get_setting,
+    set_setting,
+    delete_setting,
+    get_all_settings,
 )
 from fetch_data import get_macro_context, get_news
 from generate_csv import generate
@@ -1123,6 +1127,130 @@ async def credentials_update(
         })
     _save_credentials(username.strip(), password, first_login=False)
     return RedirectResponse("/settings/credentials?ok=1", status_code=303)
+
+
+# ── Configuración de la aplicación ────────────────────────────────────────────
+
+# Variables configurables desde la web (BD sobrescribe variable de entorno)
+_APP_SETTINGS = [
+    {
+        "key": "ANTHROPIC_API_KEY",
+        "label": "Anthropic API Key",
+        "hint": "Clave de la API de Claude. Formato: sk-ant-...",
+        "type": "password",
+        "restart": False,
+        "section": "Claude AI",
+    },
+    {
+        "key": "MODEL",
+        "label": "Modelo Claude",
+        "hint": "Modelo que se usa para generar informes y traducir noticias.",
+        "type": "select",
+        "options": [
+            "claude-haiku-4-5-20251001",
+            "claude-haiku-4-5",
+            "claude-sonnet-4-5",
+            "claude-sonnet-4-6",
+            "claude-opus-4-5",
+            "claude-opus-4-6",
+        ],
+        "restart": False,
+        "section": "Claude AI",
+    },
+    {
+        "key": "TELEGRAM_BOT_TOKEN",
+        "label": "Telegram Bot Token",
+        "hint": "Token del bot obtenido de @BotFather.",
+        "type": "password",
+        "restart": True,
+        "section": "Telegram",
+    },
+    {
+        "key": "TELEGRAM_CHAT_ID",
+        "label": "Telegram Chat ID",
+        "hint": "Tu ID de Telegram (destinatario de alertas y reportes).",
+        "type": "text",
+        "restart": False,
+        "section": "Telegram",
+    },
+    {
+        "key": "REPORT_HOUR",
+        "label": "Hora del informe diario (0–23)",
+        "hint": "Hora local (según TIMEZONE) en que se envía el reporte diario.",
+        "type": "number",
+        "restart": True,
+        "section": "Planificación",
+    },
+    {
+        "key": "TIMEZONE",
+        "label": "Zona horaria",
+        "hint": "Zona horaria IANA, p.ej. Europe/Madrid.",
+        "type": "text",
+        "restart": True,
+        "section": "Planificación",
+    },
+    {
+        "key": "TR_PHONE",
+        "label": "Trade Republic — Teléfono",
+        "hint": "Número de teléfono asociado a tu cuenta Trade Republic (con prefijo, ej. +34...).",
+        "type": "text",
+        "restart": False,
+        "section": "Trade Republic",
+    },
+    {
+        "key": "TR_PIN",
+        "label": "Trade Republic — PIN",
+        "hint": "PIN de 4 dígitos de tu cuenta Trade Republic.",
+        "type": "password",
+        "restart": False,
+        "section": "Trade Republic",
+    },
+]
+
+
+@app.get("/settings/app", response_class=HTMLResponse)
+async def settings_app_page(
+    request: Request,
+    session: Optional[str] = Cookie(default=None),
+    ok: str = "",
+    error: str = "",
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    db_settings = get_all_settings()
+    env_settings = {s["key"]: os.environ.get(s["key"], "") for s in _APP_SETTINGS}
+    csrf_token = _get_csrf_token(request)
+    return templates.TemplateResponse("settings_app.html", {
+        "request":     request,
+        "settings":    _APP_SETTINGS,
+        "db_settings": db_settings,
+        "env_settings": env_settings,
+        "ok":          ok,
+        "error":       error,
+        "csrf_token":  csrf_token,
+    })
+
+
+@app.post("/settings/app")
+async def settings_app_update(
+    request:    Request,
+    session:    Optional[str] = Cookie(default=None),
+    csrf_token: Optional[str] = Form(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    _require_csrf(request, csrf_token)
+    form = await request.form()
+    valid_keys = {s["key"] for s in _APP_SETTINGS}
+    for key in valid_keys:
+        value = (form.get(key) or "").strip()
+        clear = form.get(f"clear_{key}")
+        if clear:
+            delete_setting(key)
+        elif value:
+            set_setting(key, value)
+        # Empty + no clear → leave unchanged
+    return RedirectResponse("/settings/app?ok=1", status_code=303)
 
 
 @app.get("/logout")

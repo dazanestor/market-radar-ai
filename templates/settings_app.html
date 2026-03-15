@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block page_title %}Configuración{% endblock %}
+
+{% block content %}
+<div style="max-width:600px">
+
+  {% if ok %}
+  <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#3fb950">
+    ✅ Configuración guardada. Los cambios sin reinicio toman efecto inmediatamente.
+  </div>
+  {% endif %}
+  {% if error %}
+  <div style="background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.25);border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#f85149">
+    ⚠️ {{ error }}
+  </div>
+  {% endif %}
+
+  <p style="font-size:13px;color:#8b949e;margin:0 0 20px">
+    Los valores guardados en BD tienen prioridad sobre las variables de entorno del contenedor.
+    Deja el campo vacío (sin marcar "Borrar") para mantener el valor actual sin cambios.
+  </p>
+
+  <form method="post" action="/settings/app">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    {% set ns = namespace(current_section='') %}
+    {% for s in settings %}
+      {% if s.section != ns.current_section %}
+        {% if ns.current_section %}</div>{% endif %}
+        {% set ns.current_section = s.section %}
+        <div class="card" style="margin-bottom:16px;padding:20px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#484f58;margin-bottom:16px">{{ s.section }}</div>
+      {% endif %}
+
+      {% set db_val  = db_settings.get(s.key, '') %}
+      {% set env_val = env_settings.get(s.key, '') %}
+      {% set has_db  = db_val != '' %}
+
+      <div style="margin-bottom:20px" x-data="{ show: false }">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">
+          <label class="form-label" style="margin:0">{{ s.label }}</label>
+          {% if has_db %}
+            <span class="badge badge-blue" style="font-size:10px">guardado en BD</span>
+          {% else %}
+            <span class="badge badge-gray" style="font-size:10px">variable de entorno</span>
+          {% endif %}
+          {% if s.restart %}
+            <span class="badge badge-yellow" style="font-size:10px">requiere reinicio del bot</span>
+          {% endif %}
+        </div>
+
+        {% if s.hint %}
+          <div style="font-size:11px;color:#484f58;margin-bottom:6px">{{ s.hint }}</div>
+        {% endif %}
+
+        <div style="display:flex;gap:8px;align-items:center">
+          {% if s.type == 'select' %}
+            <select name="{{ s.key }}" class="form-input">
+              <option value="">— sin cambios —</option>
+              {% for opt in s.options %}
+                <option value="{{ opt }}"
+                  {% if has_db and db_val == opt %}selected
+                  {% elif not has_db and env_val == opt %}selected{% endif %}>
+                  {{ opt }}
+                  {% if not has_db and env_val == opt %} (actual)
+                  {% elif has_db and db_val == opt %} (BD){% endif %}
+                </option>
+              {% endfor %}
+            </select>
+
+          {% elif s.type == 'password' %}
+            <div style="position:relative;flex:1">
+              <input
+                :type="show ? 'text' : 'password'"
+                name="{{ s.key }}"
+                class="form-input"
+                placeholder="{% if has_db %}••••••••  (guardado en BD){% elif env_val %}••••••••  (variable de entorno){% else %}Sin configurar{% endif %}"
+                autocomplete="off"
+                style="padding-right:36px">
+              <button type="button" @click="show = !show"
+                style="position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#484f58;padding:0;line-height:1"
+                tabindex="-1">
+                <template x-if="show">
+                  <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </template>
+                <template x-if="!show">
+                  <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </template>
+              </button>
+            </div>
+
+          {% elif s.type == 'number' %}
+            <input type="number" name="{{ s.key }}" class="form-input"
+              min="0" max="23"
+              placeholder="{% if has_db %}{{ db_val }}{% elif env_val %}{{ env_val }}{% else %}—{% endif %}"
+              style="max-width:120px">
+
+          {% else %}
+            <input type="text" name="{{ s.key }}" class="form-input"
+              placeholder="{% if has_db %}{{ db_val }}{% elif env_val %}{{ env_val }}{% else %}—{% endif %}"
+              autocomplete="off">
+          {% endif %}
+
+          {% if has_db %}
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#8b949e;white-space:nowrap;cursor:pointer" title="Elimina el valor guardado en BD y vuelve a usar la variable de entorno">
+              <input type="checkbox" name="clear_{{ s.key }}" value="1"
+                style="accent-color:#f85149;width:13px;height:13px">
+              Borrar
+            </label>
+          {% endif %}
+        </div>
+      </div>
+
+    {% endfor %}
+    </div>{# cierre del último card #}
+
+    <div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button type="submit" class="btn btn-primary">Guardar configuración</button>
+      <a href="/settings/credentials" class="btn btn-ghost">Credenciales</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

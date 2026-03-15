@@ -121,25 +121,20 @@ Clasificación: `ALTA` (>15), `MEDIA` (>8), `BAJA` (≤8), `—` (sin datos)
 8. `database.save_report()` → guarda informe en SQLite
 9. Bot envía el informe al Telegram configurado
 
-## Comandos Telegram disponibles
+## Bot Telegram — modo pasivo
 
-| Comando | Descripción |
-|---------|-------------|
-| `/reporte` | Genera informe ahora |
-| `/cartera` | Vista de la cartera |
-| `/watchlist` | Watchlist ordenada por score |
-| `/oportunidades` | Top 3 oportunidades por horizonte (corto/medio/largo) |
-| `/rebalanceo` | Pesos actuales vs. objetivo + distribución por horizonte |
-| `/grafico <ticker>` | Gráfico de precio |
-| `/historial <ticker>` | Evolución drawdown 30 días |
-| `/fundamentos <ticker>` | Fundamentales |
-| `/posicion <ticker> <shares> <precio_eur>` | Registrar posición |
-| `/eliminar_posicion <ticker>` | Eliminar posición |
-| `/alerta <ticker> <precio>` | Crear alerta de precio |
-| `/mis_alertas` | Listar alertas activas |
-| `/borrar_alerta <id>` | Eliminar alerta |
-| `/agregar <categoria> <ticker> <nombre> <sector> <region>` | Añadir ticker |
-| `/eliminar <ticker>` | Eliminar ticker |
+El bot no acepta comandos. Actúa únicamente como canal de salida (notificaciones push):
+
+| Job | Cuándo | Qué envía |
+|-----|--------|-----------|
+| `job_daily_report` | `REPORT_HOUR`:00 diario | Informe completo + alertas de drawdown |
+| `job_check_exdividend` | 07:00 diario | Aviso si algún ticker tiene ex-dividend en ≤3 días |
+| `job_check_price_alerts` | Cada hora | Dispara alertas de precio/drawdown/score configuradas en el web |
+| `job_replay_unnotified_alerts` | Al arrancar (30s) | Reenvía alertas perdidas mientras el bot estaba caído |
+| `job_vacuum_db` | Semanal | Purga snapshots >1 año y traducciones >30 días; VACUUM SQLite |
+| `job_check_claude_health` | Semanal | Alerta si la API de Claude no responde |
+
+Toda la gestión (tickers, posiciones, alertas, Trade Republic) se realiza desde el dashboard web.
 
 ## Base de datos SQLite
 

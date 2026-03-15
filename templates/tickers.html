@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block page_title %}Tickers y posiciones{% endblock %}
+{% block page_title %}Tickers{% endblock %}
 
 {% block content %}
 
@@ -7,15 +7,11 @@
 <div x-data="{ tab: '{{ active_tab }}' }">
 
   <div style="display:flex;gap:0;border-bottom:1px solid #30363d;margin-bottom:20px">
-    <button @click="tab='tickers'"   :style="tab==='tickers'   ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
+    <button @click="tab='tickers'" :style="tab==='tickers' ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
             style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 18px;font-size:13px;font-weight:500;cursor:pointer;color:#8b949e;transition:color 0.12s">
       Tickers
     </button>
-    <button @click="tab='posiciones'" :style="tab==='posiciones' ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
-            style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 18px;font-size:13px;font-weight:500;cursor:pointer;color:#8b949e;transition:color 0.12s">
-      Posiciones
-    </button>
-    <button @click="tab='tr'"        :style="tab==='tr'        ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
+    <button @click="tab='tr'"      :style="tab==='tr'      ? 'border-bottom:2px solid #58a6ff;color:#e6edf3' : ''"
             style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 18px;font-size:13px;font-weight:500;cursor:pointer;color:#8b949e;transition:color 0.12s">
       Trade Republic
     </button>
@@ -289,6 +285,88 @@
     </div>
     {% endfor %}
 
+    <!-- ── Añadir / actualizar posición ────────────────────────────────────── -->
+    {% if saved %}
+    <div style="margin-bottom:14px;padding:10px 14px;border-radius:6px;background:#1a3d1a;border:1px solid #3d7a3d;color:#80d080;font-size:13px">
+      Posición <strong>{{ saved }}</strong> guardada correctamente.
+    </div>
+    {% endif %}
+    {% if error == "datos_invalidos" %}
+    <div style="margin-bottom:14px;padding:10px 14px;border-radius:6px;background:#3d1c1c;border:1px solid #7d3232;color:#f08080;font-size:13px">
+      Datos inválidos. Las acciones y el precio deben ser positivos y menores de 1.000.000.
+    </div>
+    {% endif %}
+
+    <div class="section">
+      <div class="form-section" x-data="{ open: false }">
+        <button @click="open = !open" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:#8b949e;font-size:13px;padding:0">
+          <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:16px;height:16px;transition:transform 0.15s" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          Añadir / actualizar posición
+        </button>
+        <div x-show="open" x-transition x-cloak style="margin-top:16px">
+          <p style="font-size:12px;color:#8b949e;margin-bottom:14px">Introduce el precio en euros. Si el ticker ya existe, se actualiza.</p>
+          <form method="post" action="/posiciones/add">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-row">
+              <div>
+                <label class="form-label">Ticker *</label>
+                <input type="text" name="ticker" class="form-input" placeholder="AAPL" required style="text-transform:uppercase">
+              </div>
+              <div>
+                <label class="form-label">Acciones *</label>
+                <input type="number" name="shares" class="form-input" placeholder="10" min="0.0001" step="any" required>
+              </div>
+              <div>
+                <label class="form-label">Precio medio (€) *</label>
+                <input type="number" name="avg_price" class="form-input" placeholder="150.00" min="0.0001" step="any" required>
+              </div>
+            </div>
+            <div style="margin-top:12px">
+              <button type="submit" class="btn btn-primary btn-sm">Guardar posición</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {% if positions %}
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title" style="font-size:13px;color:#8b949e">Posiciones registradas</h2>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Acciones</th>
+                <th>Precio medio</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for pos in positions %}
+              <tr>
+                <td>{{ pos.ticker }}</td>
+                <td>{{ "%.4g" % pos.shares }}</td>
+                <td>{{ pos.avg_price | eur }}</td>
+                <td style="text-align:right">
+                  <form method="post" action="/posiciones/delete" style="display:inline" onsubmit="return confirm('¿Eliminar posición de {{ pos.ticker }}?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="ticker" value="{{ pos.ticker }}">
+                    <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- ── Importar / Exportar ──────────────────────────────────────────────── -->
     <div class="section">
       <div class="section-header">
@@ -334,127 +412,6 @@
 
   </div><!-- /tab tickers -->
 
-
-  <!-- ══════════════════════════════════════════════════════════════════════════
-       TAB: POSICIONES
-       ══════════════════════════════════════════════════════════════════════════ -->
-  <div x-show="tab==='posiciones'" x-cloak>
-
-    {% if saved %}
-    <div style="margin-bottom:14px;padding:10px 14px;border-radius:6px;background:#1a3d1a;border:1px solid #3d7a3d;color:#80d080;font-size:13px">
-      Posición <strong>{{ saved }}</strong> guardada correctamente.
-    </div>
-    {% endif %}
-    {% if error == "datos_invalidos" %}
-    <div style="margin-bottom:14px;padding:10px 14px;border-radius:6px;background:#3d1c1c;border:1px solid #7d3232;color:#f08080;font-size:13px">
-      Datos inválidos. Las acciones y el precio deben ser valores positivos menores de 1.000.000.
-    </div>
-    {% endif %}
-
-    <div class="section">
-      <div class="card">
-        {% if positions %}
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Activo<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Identificador del instrumento financiero en el mercado (ej: AAPL, NESN.SW).')">ⓘ</button></th>
-                <th class="hide-mobile">Acciones<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Cantidad de títulos o participaciones registrados en la posición.')">ⓘ</button></th>
-                <th class="hide-mobile">Precio medio<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Coste medio por título en euros. Siempre en euros, independientemente de la bolsa del ticker.')">ⓘ</button></th>
-                <th class="hide-mobile">Precio actual<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Última cotización de cierre convertida a euros, obtenida del último reporte generado.')">ⓘ</button></th>
-                <th>Valor total<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Importe total en euros: cantidad × cotización EUR.')">ⓘ</button></th>
-                <th>P&amp;L €<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida absoluta en euros.')">ⓘ</button></th>
-                <th>P&amp;L %<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida porcentual respecto al coste medio.')">ⓘ</button></th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% set total_value = [] %}
-              {% set total_pnl   = [] %}
-              {% for pos in positions %}
-              {% if pos.value %}{% set _ = total_value.append(pos.value) %}{% endif %}
-              {% if pos.pnl_eur %}{% set _ = total_pnl.append(pos.pnl_eur) %}{% endif %}
-              <tr>
-                <td>
-                  <a href="/ticker/{{ pos.ticker }}" class="ticker-cell">{{ pos.ticker }}</a>
-                  {% if pos.name and pos.name != pos.ticker %}
-                  <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ pos.name }}</div>
-                  {% endif %}
-                  {% if pos.split_warning %}
-                  <div style="font-size:10px;color:#d29922;margin-top:3px" title="El precio actual es muy inferior al precio medio. Comprueba si hubo un split o ajuste corporativo.">
-                    ⚠️ Posible split — revisa el precio medio
-                  </div>
-                  {% endif %}
-                </td>
-                <td class="hide-mobile">{{ "%.4g" % pos.shares }}</td>
-                <td class="hide-mobile">{{ pos.avg_price | eur }}</td>
-                <td class="hide-mobile">{{ pos.price | eur }}</td>
-                <td>{{ pos.value | eur }}</td>
-                <td class="{{ pos.pnl_eur | pnl_class }}">{{ pos.pnl_eur | eur }}</td>
-                <td class="{{ pos.pnl | pnl_class }}">{{ pos.pnl | pct }}</td>
-                <td style="text-align:right">
-                  <form method="post" action="/posiciones/delete" style="display:inline" onsubmit="return confirm('¿Eliminar posición de {{ pos.ticker }}?')">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input type="hidden" name="ticker" value="{{ pos.ticker }}">
-                    <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
-                  </form>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-            <tfoot>
-              <tr style="border-top:2px solid #30363d;font-weight:600">
-                <td colspan="4" style="color:#8b949e;font-size:12px">Total</td>
-                <td>{{ total_value | sum | eur }}</td>
-                {% set pnl_sum = total_pnl | sum %}
-                <td class="{{ pnl_sum | pnl_class }}">{{ pnl_sum | eur }}</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-        {% else %}
-        <div class="empty-state">
-          <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5" style="margin:0 auto 12px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-          Sin posiciones registradas. Añade una abajo.
-        </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <!-- Formulario añadir posición -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">Añadir / actualizar posición</h2>
-      </div>
-      <div class="form-section">
-        <p style="font-size:12px;color:#8b949e;margin-bottom:16px">
-          Introduce el precio en euros. Si el ticker ya existe, se actualiza.
-        </p>
-        <form method="post" action="/posiciones/add">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <div class="form-row">
-            <div>
-              <label class="form-label">Ticker *</label>
-              <input type="text" name="ticker" class="form-input" placeholder="AAPL" required style="text-transform:uppercase">
-            </div>
-            <div>
-              <label class="form-label">Acciones *</label>
-              <input type="number" name="shares" class="form-input" placeholder="10" min="0.0001" step="any" required>
-            </div>
-            <div>
-              <label class="form-label">Precio medio (€) *</label>
-              <input type="number" name="avg_price" class="form-input" placeholder="150.00" min="0.0001" step="any" required>
-            </div>
-          </div>
-          <div style="margin-top:14px">
-            <button type="submit" class="btn btn-primary btn-sm">Guardar posición</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-  </div><!-- /tab posiciones -->
 
 
   <!-- ══════════════════════════════════════════════════════════════════════════

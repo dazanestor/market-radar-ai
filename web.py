@@ -1137,10 +1137,14 @@ async def dashboard(
                     total_value += value
                 if avg and price and not _is_nan(price):
                     pnl = (price - avg) / avg * 100
-            d["shares"]   = shares
+            pnl_eur = (price - avg) * shares if (
+                avg and price and not _is_nan(price) and shares
+            ) else None
+            d["shares"]    = shares
             d["avg_price"] = avg
-            d["value"]    = value
-            d["pnl_pct"]  = pnl
+            d["value"]     = value
+            d["pnl_pct"]   = pnl
+            d["pnl_eur"]   = pnl_eur
             portfolio.append(d)
 
         for _, row in df_s[df_s["category"] == "watchlist"] \
@@ -1497,7 +1501,7 @@ async def tickers_info(ticker: str = "", session: Optional[str] = Cookie(default
 @app.get("/tickers", response_class=HTMLResponse)
 async def tickers_page(
     request: Request,
-    tab:     Optional[str] = None,
+    tab:     Optional[str] = None,   # 'tickers' (default) | 'tr'
     saved:   Optional[str] = None,
     error:   Optional[str] = None,
     session: Optional[str] = Cookie(default=None),
@@ -1562,7 +1566,7 @@ async def tickers_page(
         "tr_status":             _tr_status(),
         "tr_cash":               float(tr_cash_row[0]) if tr_cash_row else None,
         "tr_unmatched":          tr_unmatched,
-        "active_tab":            tab or "tickers",
+        "active_tab":            tab if tab in ("tickers", "tr") else "tickers",
         "saved":                 saved,
         "error":                 error,
     })
@@ -1677,12 +1681,12 @@ async def posiciones_page(
     """Redirige a la pestaña de posiciones dentro de /tickers."""
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    qs = "tab=posiciones"
+    qs = ""
     if saved:
-        qs += f"&saved={saved}"
-    if error:
-        qs += f"&error={error}"
-    return RedirectResponse(f"/tickers?{qs}", status_code=302)
+        qs = f"?saved={saved}"
+    elif error:
+        qs = f"?error={error}"
+    return RedirectResponse(f"/tickers{qs}", status_code=302)
 
 
 @app.post("/posiciones/add")
@@ -1700,8 +1704,8 @@ async def posiciones_add(
     t = ticker.strip().upper()
     if 0 < shares < 1_000_000 and 0 < avg_price < 1_000_000:
         upsert_position(t, shares, avg_price)
-        return RedirectResponse(f"/tickers?tab=posiciones&saved={t}", status_code=303)
-    return RedirectResponse("/tickers?tab=posiciones&error=datos_invalidos", status_code=303)
+        return RedirectResponse(f"/tickers?saved={t}", status_code=303)
+    return RedirectResponse("/tickers?error=datos_invalidos", status_code=303)
 
 
 @app.post("/posiciones/delete")
@@ -1715,7 +1719,7 @@ async def posiciones_delete(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     delete_position(ticker)
-    return RedirectResponse("/tickers?tab=posiciones", status_code=303)
+    return RedirectResponse("/tickers", status_code=303)
 
 
 # ── Operaciones ───────────────────────────────────────────────────────────────

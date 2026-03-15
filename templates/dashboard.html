@@ -86,7 +86,7 @@
             <th class="hide-mobile">Acciones<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Cantidad de títulos o participaciones registrados en la posición.')">ⓘ</button></th>
             <th class="hide-mobile">P. Medio<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Coste medio por título en euros, tal como lo registraste en Posiciones.')">ⓘ</button></th>
             <th>Valor<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Importe total en euros de la posición: cantidad de títulos × última cotización en EUR.')">ⓘ</button></th>
-            <th>P&amp;L<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida porcentual respecto al coste medio de compra. Positivo = en verde, negativo = en rojo.')">ⓘ</button></th>
+            <th>P&amp;L<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancia o pérdida respecto al coste medio de compra, en euros y porcentaje.')">ⓘ</button></th>
             <th class="hide-mobile">Tend.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Evolución reciente de la caída desde el máximo anual: ↑ la caída se está recuperando (señal positiva), ↓ la caída sigue aumentando (señal negativa).')">ⓘ</button></th>
           </tr>
         </thead>
@@ -106,7 +106,10 @@
             </td>
             <td class="hide-mobile text-muted">{{ row.avg_price | eur if row.avg_price else "—" }}</td>
             <td>{{ row.value | eur }}</td>
-            <td class="{{ row.pnl_pct | pnl_class }}">{{ row.pnl_pct | pct }}</td>
+            <td class="{{ row.pnl_pct | pnl_class }}">
+              {{ row.pnl_eur | eur }}
+              {% if row.pnl_pct is not none %}<div style="font-size:11px;opacity:0.8">{{ row.pnl_pct | pct }}</div>{% endif %}
+            </td>
             <td class="hide-mobile">
               {% if row.trend == 'mejorando' %}<span class="text-positive">↑</span>
               {% elif row.trend == 'empeorando' %}<span class="text-negative">↓</span>
@@ -133,6 +136,17 @@
           </tr>
           {% endfor %}
         </tbody>
+        {% set total_pnl_eur = portfolio | selectattr('pnl_eur') | map(attribute='pnl_eur') | list %}
+        {% if total_pnl_eur %}
+        <tfoot>
+          <tr style="border-top:2px solid #30363d;font-weight:600;color:#8b949e;font-size:12px">
+            <td colspan="7">Total</td>
+            <td>{{ total_value | eur if total_value else "—" }}</td>
+            <td class="{{ total_pnl_eur | sum | pnl_class }}">{{ total_pnl_eur | sum | eur }}</td>
+            <td class="hide-mobile"></td>
+          </tr>
+        </tfoot>
+        {% endif %}
       </table>
     </div>
     {% else %}

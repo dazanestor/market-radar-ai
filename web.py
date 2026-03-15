@@ -225,6 +225,7 @@ limiter      = Limiter(key_func=get_remote_address)
 app          = FastAPI(title="Market Radar AI", docs_url=None, redoc_url=None)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+init_db()  # Asegura migraciones de BD tanto en uvicorn directo como vía __main__
 templates    = Jinja2Templates(directory="templates")
 _executor    = ThreadPoolExecutor(max_workers=4)
 _chart_lock  = threading.Lock()  # matplotlib no es thread-safe

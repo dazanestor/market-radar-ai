@@ -68,11 +68,11 @@ services:
       TR_COOKIES_FILE: ${TR_COOKIES_FILE:-data/tr_cookies.txt}
 
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8589/login', timeout=5)"]
-      interval: 30s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8589/health', timeout=5)"]
+      interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
     ports:
       - "${WEB_PORT:-8589}:8589"

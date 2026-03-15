@@ -44,7 +44,6 @@ services:
       - ./output:/app/output
       - ./data:/app/data
       - ./tickers.yaml:/app/tickers.yaml
-      - ./templates:/app/templates
 
   market-radar-web:
     image: ghcr.io/dazanestor/market-radar-ai:latest
@@ -75,4 +74,3 @@ services:
       - ./output:/app/output
       - ./data:/app/data
       - ./tickers.yaml:/app/tickers.yaml
-      - ./templates:/app/templates

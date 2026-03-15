@@ -15,6 +15,7 @@ from typing import Optional
 
 import bcrypt
 import pyotp
+import segno
 
 import matplotlib
 matplotlib.use("Agg")
@@ -496,6 +497,24 @@ async def chart_historial(ticker: str, session: Optional[str] = Cookie(default=N
     if fig is None:
         raise HTTPException(404)
     return _fig_to_response(fig)
+
+
+# ── QR code ───────────────────────────────────────────────────────────────────
+
+def _make_qr_svg(uri: str) -> str:
+    buf = io.StringIO()
+    segno.make_qr(uri).save(buf, kind="svg", scale=4, border=1, xmldecl=False, nl=False)
+    return buf.getvalue()
+
+
+@app.get("/qr")
+async def qr_code(uri: str, session: Optional[str] = Cookie(default=None), setup_pending: Optional[str] = Cookie(default=None)):
+    # Permitir acceso con sesión válida o durante el setup inicial
+    if not _is_auth(session) and setup_pending not in _pending_tokens:
+        raise HTTPException(status_code=403)
+    svg = _make_qr_svg(uri)
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"Cache-Control": "no-store"})
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────

@@ -60,7 +60,7 @@
         <div style="font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px">Paso 1 — Escanea el código QR</div>
         <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
           <div>
-            <canvas id="qr-canvas" style="border-radius:6px;background:white;padding:8px;display:block"></canvas>
+            <img src="/qr?uri={{ uri | urlencode }}" alt="QR 2FA" style="border-radius:6px;background:white;padding:8px;display:block;width:168px;height:168px">
           </div>
           <div style="flex:1;min-width:160px">
             <div style="font-size:11px;color:#8b949e;margin-bottom:6px">¿No puedes escanear? Introduce manualmente:</div>
@@ -100,11 +100,4 @@
 
 </div>
 
-<script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
-<script>
-  var canvas = document.getElementById('qr-canvas');
-  if (canvas) {
-    QRCode.toCanvas(canvas, {{ uri | tojson }}, { width: 180, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
-  }
-</script>
 {% endblock %}

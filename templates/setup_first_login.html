@@ -71,7 +71,7 @@
         <div class="step-title">Paso 2 — Configura Google Authenticator</div>
         <p class="hint">Abre la app y escanea el código QR. También puedes introducir la clave manualmente.</p>
         <div class="qr-wrap">
-          <canvas id="qr-canvas" style="border-radius:6px;background:white;padding:8px;flex-shrink:0"></canvas>
+          <img src="/qr?uri={{ totp_uri | urlencode }}" alt="QR 2FA" style="border-radius:6px;background:white;padding:8px;flex-shrink:0;width:168px;height:168px">
           <div style="flex:1;min-width:140px">
             <div class="hint">Clave manual:</div>
             <div class="secret-box">{{ totp_secret }}</div>
@@ -93,11 +93,5 @@
     </form>
   </div>
 
-  <script>
-    var canvas = document.getElementById('qr-canvas');
-    if (canvas) {
-      QRCode.toCanvas(canvas, {{ totp_uri | tojson }}, { width: 160, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
-    }
-  </script>
 </body>
 </html>

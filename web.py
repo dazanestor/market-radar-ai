@@ -1016,7 +1016,7 @@ async def first_login_submit(
         f.write(totp_secret)
     os.chmod(TOTP_SECRET_FILE, 0o600)
 
-    resp = RedirectResponse("/login?setup_ok=1", status_code=303)
+    resp = RedirectResponse("/settings/app?setup=1", status_code=303)
     resp.delete_cookie("setup_pending")
     return resp
 
@@ -1208,12 +1208,28 @@ _APP_SETTINGS = [
 ]
 
 
+def _missing_required_settings() -> list[str]:
+    """Devuelve lista de claves requeridas que no están configuradas (ni en BD ni en env)."""
+    from config import ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    db = get_all_settings()
+    missing = []
+    for key, env_val in [
+        ("ANTHROPIC_API_KEY",  ANTHROPIC_API_KEY),
+        ("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
+        ("TELEGRAM_CHAT_ID",   TELEGRAM_CHAT_ID),
+    ]:
+        if not db.get(key) and not env_val:
+            missing.append(key)
+    return missing
+
+
 @app.get("/settings/app", response_class=HTMLResponse)
 async def settings_app_page(
     request: Request,
     session: Optional[str] = Cookie(default=None),
     ok: str = "",
     error: str = "",
+    setup: str = "",
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
@@ -1221,13 +1237,15 @@ async def settings_app_page(
     env_settings = {s["key"]: os.environ.get(s["key"], "") for s in _APP_SETTINGS}
     csrf_token = _get_csrf_token(request)
     return templates.TemplateResponse("settings_app.html", {
-        "request":     request,
-        "settings":    _APP_SETTINGS,
-        "db_settings": db_settings,
+        "request":      request,
+        "settings":     _APP_SETTINGS,
+        "db_settings":  db_settings,
         "env_settings": env_settings,
-        "ok":          ok,
-        "error":       error,
-        "csrf_token":  csrf_token,
+        "ok":           ok,
+        "error":        error,
+        "setup":        setup,
+        "missing":      _missing_required_settings(),
+        "csrf_token":   csrf_token,
     })
 
 

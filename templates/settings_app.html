@@ -4,6 +4,20 @@
 {% block content %}
 <div style="max-width:600px">
 
+  {% if setup %}
+  <div style="background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);border-radius:6px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#58a6ff">
+    <strong>Bienvenido a Market Radar AI.</strong> Configura las claves de la aplicación para empezar.
+    No necesitas editar ningún fichero — todo se guarda en la base de datos.
+  </div>
+  {% endif %}
+
+  {% if missing and not setup %}
+  <div style="background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.3);border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#d29922">
+    ⚠️ Faltan por configurar:
+    {% for k in missing %}<code style="background:rgba(210,153,34,0.12);padding:1px 5px;border-radius:3px;margin:0 3px">{{ k }}</code>{% endfor %}
+  </div>
+  {% endif %}
+
   {% if ok %}
   <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#3fb950">
     ✅ Configuración guardada. Los cambios sin reinicio toman efecto inmediatamente.

@@ -21,12 +21,20 @@ from database import (
     init_db, save_snapshot, save_report,
     get_active_alerts, deactivate_alert, log_alert_triggered,
     get_unnotified_alerts, mark_alert_notified, vacuum_db,
-    purge_old_price_history, purge_old_news_cache,
+    purge_old_price_history, purge_old_news_cache, effective,
 )
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
     REPORT_HOUR, TIMEZONE,
 )
+
+
+def _token() -> str:
+    return effective("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN)
+
+
+def _chat_id() -> str:
+    return effective("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID)
 
 logging.basicConfig(
     format="%(asctime)s — %(levelname)s — %(message)s",
@@ -166,12 +174,12 @@ async def _run_report(bot, chat_id):
 async def job_daily_report(context: ContextTypes.DEFAULT_TYPE):
     logging.info("Ejecutando reporte diario...")
     try:
-        await _run_report(context.bot, TELEGRAM_CHAT_ID)
+        await _run_report(context.bot, _chat_id())
     except Exception as e:
         logging.exception("Error en el reporte diario")
         try:
             await context.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID,
+                chat_id=_chat_id(),
                 text=f"⚠️ *Error en el reporte diario*\n`{type(e).__name__}: {str(e)[:200]}`",
                 parse_mode="Markdown",
             )
@@ -263,7 +271,7 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
             msg = f"{icon} *Alerta disparada*\n*{ticker}*: {msg_detail}"
             try:
                 await context.bot.send_message(
-                    chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"
+                    chat_id=_chat_id(), text=msg, parse_mode="Markdown"
                 )
                 if history_id:
                     mark_alert_notified(history_id)
@@ -289,7 +297,7 @@ async def job_replay_unnotified_alerts(context):
         msg = f"🔔 *Alerta pendiente* (bot estaba caído)\n*{ticker}*: {detail}"
         try:
             await context.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"
+                chat_id=_chat_id(), text=msg, parse_mode="Markdown"
             )
             mark_alert_notified(history_id)
         except Exception:
@@ -317,7 +325,7 @@ async def job_check_claude_health(context):
         logging.error("Claude API no responde.")
         try:
             await context.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID,
+                chat_id=_chat_id(),
                 text="⚠️ *Alerta de sistema*: La API de Claude no responde. "
                      "Revisa la clave API o el saldo de la cuenta.",
                 parse_mode="Markdown",
@@ -364,7 +372,7 @@ async def job_check_exdividend(context: ContextTypes.DEFAULT_TYPE):
         msg = "📅 *Próximas fechas ex-dividendo*\n\n" + "\n\n".join(alerts)
         try:
             await context.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"
+                chat_id=_chat_id(), text=msg, parse_mode="Markdown"
             )
         except Exception:
             logging.exception("Error enviando alerta ex-dividend")
@@ -375,10 +383,34 @@ async def job_check_exdividend(context: ContextTypes.DEFAULT_TYPE):
 def main():
     init_db()
 
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    # Esperar hasta que TOKEN y CHAT_ID estén configurados (BD o env var)
+    while True:
+        token   = _token()
+        chat_id = _chat_id()
+        if token and chat_id:
+            break
+        logging.warning(
+            "Bot en espera: TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurados. "
+            "Configúralos en el dashboard web (/settings/app). Reintentando en 60s..."
+        )
+        _time.sleep(60)
 
-    tz = ZoneInfo(TIMEZONE)
-    report_time = datetime.time(hour=REPORT_HOUR, minute=0, tzinfo=tz)
+    # Leer REPORT_HOUR y TIMEZONE efectivos (BD > env)
+    try:
+        _rh = int(effective("REPORT_HOUR", str(REPORT_HOUR)))
+        if not 0 <= _rh <= 23:
+            _rh = REPORT_HOUR
+    except ValueError:
+        _rh = REPORT_HOUR
+    _tz_name = effective("TIMEZONE", TIMEZONE)
+    try:
+        tz = ZoneInfo(_tz_name)
+    except Exception:
+        tz = ZoneInfo(TIMEZONE)
+
+    app = ApplicationBuilder().token(token).build()
+
+    report_time = datetime.time(hour=_rh, minute=0, tzinfo=tz)
     app.job_queue.run_daily(job_daily_report, time=report_time)
     exdiv_time = datetime.time(hour=7, minute=0, tzinfo=tz)
     app.job_queue.run_daily(job_check_exdividend, time=exdiv_time)
@@ -387,7 +419,7 @@ def main():
     app.job_queue.run_repeating(job_vacuum_db, interval=7 * 86400, first=300)
     app.job_queue.run_repeating(job_check_claude_health, interval=7 * 86400, first=120)
 
-    logging.info(f"Bot iniciado (modo pasivo). Reporte diario a las {REPORT_HOUR}:00 {TIMEZONE}.")
+    logging.info(f"Bot iniciado (modo pasivo). Reporte diario a las {_rh}:00 {_tz_name}.")
     app.run_polling()
 
 

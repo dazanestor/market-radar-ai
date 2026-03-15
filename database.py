@@ -500,6 +500,17 @@ def get_all_settings() -> dict:
         return dict(c.fetchall())
 
 
+def effective(key: str, env_fallback: str = "", default: str = "") -> str:
+    """Retorna el valor efectivo de un setting: BD > variable de entorno > default."""
+    try:
+        val = get_setting(key)
+        if val:
+            return val
+    except Exception:
+        pass
+    return env_fallback or default
+
+
 def get_cached_translation(headline: str, max_age_hours: int = 24) -> Optional[str]:
     h = _headline_hash(headline)
     with _db() as conn:

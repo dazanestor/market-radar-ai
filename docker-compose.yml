@@ -22,16 +22,16 @@ services:
         condition: service_completed_successfully
 
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
-      MODEL: ${MODEL:-claude-haiku-4-5-20251001}
-      REPORT_HOUR: ${REPORT_HOUR:-8}
-      TIMEZONE: ${TIMEZONE:-Europe/Madrid}
-      MPLCONFIGDIR: /app/output/.matplotlib
-      TR_PHONE:        ${TR_PHONE:-}
-      TR_PIN:          ${TR_PIN:-}
-      TR_COOKIES_FILE: ${TR_COOKIES_FILE:-data/tr_cookies.txt}
+      ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID:   ${TELEGRAM_CHAT_ID:-}
+      MODEL:              ${MODEL:-claude-haiku-4-5-20251001}
+      REPORT_HOUR:        ${REPORT_HOUR:-8}
+      TIMEZONE:           ${TIMEZONE:-Europe/Madrid}
+      MPLCONFIGDIR:       /app/output/.matplotlib
+      TR_PHONE:           ${TR_PHONE:-}
+      TR_PIN:             ${TR_PIN:-}
+      TR_COOKIES_FILE:    ${TR_COOKIES_FILE:-data/tr_cookies.txt}
 
     healthcheck:
       test: ["CMD", "python", "-c", "import sqlite3, os; db='/app/data/radar.db'; sqlite3.connect(db).execute('SELECT 1') if os.path.exists(db) else None"]
@@ -55,17 +55,17 @@ services:
         condition: service_completed_successfully
 
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
-      MODEL: ${MODEL:-claude-haiku-4-5-20251001}
-      REPORT_HOUR: ${REPORT_HOUR:-8}
-      TIMEZONE: ${TIMEZONE:-Europe/Madrid}
-      WEB_PASSWORD: ${WEB_PASSWORD:-}
-      MPLCONFIGDIR: /app/output/.matplotlib
-      TR_PHONE:        ${TR_PHONE:-}
-      TR_PIN:          ${TR_PIN:-}
-      TR_COOKIES_FILE: ${TR_COOKIES_FILE:-data/tr_cookies.txt}
+      ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID:   ${TELEGRAM_CHAT_ID:-}
+      MODEL:              ${MODEL:-claude-haiku-4-5-20251001}
+      REPORT_HOUR:        ${REPORT_HOUR:-8}
+      TIMEZONE:           ${TIMEZONE:-Europe/Madrid}
+      WEB_PASSWORD:       ${WEB_PASSWORD:-}
+      MPLCONFIGDIR:       /app/output/.matplotlib
+      TR_PHONE:           ${TR_PHONE:-}
+      TR_PIN:             ${TR_PIN:-}
+      TR_COOKIES_FILE:    ${TR_COOKIES_FILE:-data/tr_cookies.txt}
 
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8589/health', timeout=5)"]

@@ -1,36 +1,31 @@
 import os
-import sys
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+# Todas las variables son opcionales al arrancar.
+# Pueden configurarse desde el dashboard web (se guardan en la BD SQLite).
+# Prioridad en runtime: BD > variable de entorno > default.
 
-# Trade Republic (opcional)
-TR_PHONE   = os.getenv("TR_PHONE", "")
-TR_PIN     = os.getenv("TR_PIN", "")
+ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY",  "")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "")
+MODEL              = os.getenv("MODEL", "claude-haiku-4-5-20251001")
+
+TR_PHONE        = os.getenv("TR_PHONE", "")
+TR_PIN          = os.getenv("TR_PIN",   "")
 TR_COOKIES_FILE = os.getenv("TR_COOKIES_FILE", "data/tr_cookies.txt")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-MODEL = os.getenv("MODEL", "claude-haiku-4-5-20251001")
 
-DATABASE = "data/radar.db"
+DATABASE   = "data/radar.db"
 OUTPUT_DIR = "output"
 
 try:
     REPORT_HOUR = int(os.getenv("REPORT_HOUR", "8"))
     if not 0 <= REPORT_HOUR <= 23:
-        raise ValueError
+        REPORT_HOUR = 8
 except ValueError:
-    print("ERROR: REPORT_HOUR debe ser un número entero entre 0 y 23.", file=sys.stderr)
-    sys.exit(1)
+    REPORT_HOUR = 8
 
-TIMEZONE = os.getenv("TIMEZONE", "UTC")
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Madrid")
 try:
     ZoneInfo(TIMEZONE)
 except (ZoneInfoNotFoundError, KeyError):
-    print(f"ERROR: TIMEZONE inválido: '{TIMEZONE}'. Ejemplo válido: Europe/Madrid", file=sys.stderr)
-    sys.exit(1)
-
-_missing = [v for v in ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID") if not os.getenv(v)]
-if _missing:
-    print(f"ERROR: Variables de entorno requeridas no definidas: {', '.join(_missing)}", file=sys.stderr)
-    sys.exit(1)
+    TIMEZONE = "Europe/Madrid"

@@ -14,11 +14,12 @@
     h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; color: #e6edf3; }
     p.sub { font-size: 13px; color: #8b949e; margin-bottom: 28px; }
     label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; margin-bottom: 6px; }
-    input[type="password"] { background: #21262d; border: 1px solid #30363d; color: #e6edf3; border-radius: 6px; padding: 10px 14px; font-size: 14px; width: 100%; outline: none; transition: border-color 0.12s; margin-bottom: 16px; }
-    input[type="password"]:focus { border-color: #388bfd; box-shadow: 0 0 0 3px rgba(56,139,253,0.1); }
+    input { background: #21262d; border: 1px solid #30363d; color: #e6edf3; border-radius: 6px; padding: 10px 14px; font-size: 14px; width: 100%; outline: none; transition: border-color 0.12s; margin-bottom: 16px; }
+    input:focus { border-color: #388bfd; box-shadow: 0 0 0 3px rgba(56,139,253,0.1); }
     button { background: #1f6feb; color: white; border: none; border-radius: 6px; padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; width: 100%; transition: background 0.12s; }
     button:hover { background: #388bfd; }
     .error { background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.3); color: #f85149; border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+    .success { background: rgba(63,185,80,0.08); border: 1px solid rgba(63,185,80,0.25); color: #3fb950; border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
   </style>
 </head>
 <body>
@@ -29,16 +30,22 @@
       </svg>
       <span class="logo-text">Market Radar AI</span>
     </div>
-    <h1>Acceso</h1>
-    <p class="sub">Introduce la contraseña para continuar.</p>
+    <h1>Iniciar sesión</h1>
+    <p class="sub">Introduce tus credenciales para continuar.</p>
+
+    {% if request.query_params.get('setup_ok') %}
+    <div class="success">✅ Cuenta configurada. Ya puedes iniciar sesión.</div>
+    {% endif %}
 
     {% if error %}
-    <div class="error">Contraseña incorrecta. Inténtalo de nuevo.</div>
+    <div class="error">Usuario o contraseña incorrectos.</div>
     {% endif %}
 
     <form method="post" action="/login">
+      <label for="username">Usuario</label>
+      <input type="text" id="username" name="username" placeholder="admin" autocomplete="username" autofocus>
       <label for="password">Contraseña</label>
-      <input type="password" id="password" name="password" placeholder="••••••••" autofocus>
+      <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password">
       <button type="submit">Entrar</button>
     </form>
   </div>

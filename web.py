@@ -13,6 +13,7 @@ import secrets
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+import bcrypt
 import pyotp
 
 import matplotlib
@@ -51,10 +52,54 @@ from scoring import score_watchlist
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-WEB_PASSWORD     = os.getenv("WEB_PASSWORD", "")
-SESSION_TOKEN    = secrets.token_hex(32)
-TOTP_SECRET_FILE = "data/totp_secret.key"
+SESSION_TOKEN      = secrets.token_hex(32)
+CREDENTIALS_FILE   = "data/credentials.json"
+TOTP_SECRET_FILE   = "data/totp_secret.key"
+DEFAULT_USERNAME   = "admin"
+DEFAULT_PASSWORD   = "market-radar"
 
+
+# ── Credential helpers ────────────────────────────────────────────────────────
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def _load_credentials() -> dict:
+    try:
+        with open(CREDENTIALS_FILE) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        creds = {
+            "username": DEFAULT_USERNAME,
+            "password_hash": _hash_password(DEFAULT_PASSWORD),
+            "first_login": True,
+        }
+        os.makedirs("data", exist_ok=True)
+        with open(CREDENTIALS_FILE, "w") as f:
+            json.dump(creds, f)
+        return creds
+
+
+def _save_credentials(username: str, password: str, first_login: bool = False) -> None:
+    creds = {
+        "username": username,
+        "password_hash": _hash_password(password),
+        "first_login": first_login,
+    }
+    os.makedirs("data", exist_ok=True)
+    with open(CREDENTIALS_FILE, "w") as f:
+        json.dump(creds, f)
+
+
+# ── TOTP helpers ──────────────────────────────────────────────────────────────
 
 def _totp_secret() -> Optional[str]:
     try:
@@ -169,7 +214,7 @@ templates.env.filters.update({
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def _is_auth(session: Optional[str]) -> bool:
-    return not WEB_PASSWORD or session == SESSION_TOKEN
+    return session == SESSION_TOKEN
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -416,13 +461,26 @@ async def login_page(request: Request, error: str = ""):
 
 
 @app.post("/login")
-async def login(password: str = Form(...)):
-    if WEB_PASSWORD and password != WEB_PASSWORD:
+async def login(
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    creds = _load_credentials()
+    if username != creds["username"] or not _verify_password(password, creds["password_hash"]):
         return RedirectResponse("/login?error=1", status_code=303)
+
+    # Primer login: forzar configuración
+    if creds.get("first_login"):
+        resp = RedirectResponse("/setup/first-login", status_code=303)
+        resp.set_cookie("setup_pending", "1", httponly=True, samesite="lax", max_age=600)
+        return resp
+
+    # 2FA activo
     if _totp_enabled():
         resp = RedirectResponse("/login/totp", status_code=303)
         resp.set_cookie("totp_pending", "1", httponly=True, samesite="lax", max_age=300)
         return resp
+
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie("session", SESSION_TOKEN, httponly=True, samesite="lax", max_age=86400 * 30)
     return resp
@@ -452,6 +510,67 @@ async def totp_verify(
     resp.delete_cookie("totp_pending")
     return resp
 
+
+# ── Primer login ───────────────────────────────────────────────────────────────
+
+@app.get("/setup/first-login", response_class=HTMLResponse)
+async def first_login_page(request: Request, setup_pending: Optional[str] = Cookie(default=None), error: str = ""):
+    if not setup_pending:
+        return RedirectResponse("/login", status_code=302)
+    totp_secret = pyotp.random_base32()
+    totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
+    return templates.TemplateResponse("setup_first_login.html", {
+        "request": request,
+        "totp_secret": totp_secret,
+        "totp_uri": totp_uri,
+        "error": error,
+    })
+
+
+@app.post("/setup/first-login")
+async def first_login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+    totp_secret: str = Form(...),
+    totp_code: str = Form(...),
+    setup_pending: Optional[str] = Cookie(default=None),
+):
+    if not setup_pending:
+        return RedirectResponse("/login", status_code=303)
+
+    errors = []
+    if len(username.strip()) < 3:
+        errors.append("El usuario debe tener al menos 3 caracteres.")
+    if len(password) < 8:
+        errors.append("La contraseña debe tener al menos 8 caracteres.")
+    if password != password2:
+        errors.append("Las contraseñas no coinciden.")
+    if not pyotp.TOTP(totp_secret).verify(totp_code.strip(), valid_window=1):
+        errors.append("Código 2FA incorrecto. Vuelve a escanear el QR e inténtalo.")
+
+    if errors:
+        totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
+        return templates.TemplateResponse("setup_first_login.html", {
+            "request": request,
+            "totp_secret": totp_secret,
+            "totp_uri": totp_uri,
+            "error": " ".join(errors),
+            "form_username": username,
+        })
+
+    _save_credentials(username.strip(), password, first_login=False)
+    os.makedirs("data", exist_ok=True)
+    with open(TOTP_SECRET_FILE, "w") as f:
+        f.write(totp_secret)
+
+    resp = RedirectResponse("/login?setup_ok=1", status_code=303)
+    resp.delete_cookie("setup_pending")
+    return resp
+
+
+# ── 2FA (usuario ya autenticado) ───────────────────────────────────────────────
 
 @app.get("/2fa/setup", response_class=HTMLResponse)
 async def totp_setup_page(request: Request, session: Optional[str] = Cookie(default=None), ok: str = "", disabled: str = ""):
@@ -483,12 +602,8 @@ async def totp_setup(
     if not totp.verify(code.strip(), valid_window=1):
         uri = totp.provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
         return templates.TemplateResponse("2fa_setup.html", {
-            "request": request,
-            "enabled": False,
-            "secret": secret,
-            "uri": uri,
-            "ok": "",
-            "disabled": "",
+            "request": request, "enabled": False, "secret": secret,
+            "uri": uri, "ok": "", "disabled": "",
             "error": "Código incorrecto. Vuelve a escanear el QR e inténtalo.",
         })
     os.makedirs("data", exist_ok=True)
@@ -508,11 +623,55 @@ async def totp_disable(session: Optional[str] = Cookie(default=None)):
     return RedirectResponse("/2fa/setup?disabled=1", status_code=303)
 
 
+# ── Cambiar credenciales ───────────────────────────────────────────────────────
+
+@app.get("/settings/credentials", response_class=HTMLResponse)
+async def credentials_page(request: Request, session: Optional[str] = Cookie(default=None), ok: str = ""):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    creds = _load_credentials()
+    return templates.TemplateResponse("settings_credentials.html", {
+        "request": request,
+        "current_username": creds["username"],
+        "ok": ok,
+    })
+
+
+@app.post("/settings/credentials")
+async def credentials_update(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+    session: Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    creds = _load_credentials()
+    errors = []
+    if len(username.strip()) < 3:
+        errors.append("El usuario debe tener al menos 3 caracteres.")
+    if len(password) < 8:
+        errors.append("La contraseña debe tener al menos 8 caracteres.")
+    if password != password2:
+        errors.append("Las contraseñas no coinciden.")
+    if errors:
+        return templates.TemplateResponse("settings_credentials.html", {
+            "request": request,
+            "current_username": creds["username"],
+            "ok": "",
+            "error": " ".join(errors),
+        })
+    _save_credentials(username.strip(), password, first_login=False)
+    return RedirectResponse("/settings/credentials?ok=1", status_code=303)
+
+
 @app.get("/logout")
 async def logout():
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie("session")
     resp.delete_cookie("totp_pending")
+    resp.delete_cookie("setup_pending")
     return resp
 
 

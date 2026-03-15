@@ -22,6 +22,8 @@
             <th class="hide-mobile">Región</th>
             {% if cat_key == 'portfolio' %}<th class="hide-mobile">Peso objetivo</th>{% endif %}
             <th>Horizonte</th>
+            <th class="hide-mobile">Precio obj.</th>
+            <th class="hide-mobile">Notas</th>
             <th></th>
           </tr>
         </thead>
@@ -46,6 +48,8 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="ticker" value="{{ ticker }}">
                 <input type="hidden" name="categoria" value="{{ cat_key }}">
+                <input type="hidden" name="target_price" value="{{ meta.target_price if meta.target_price is defined and meta.target_price is not none else '' }}">
+                <input type="hidden" name="notes" value="{{ meta.notes if meta.notes is defined and meta.notes else '' }}">
                 <select name="horizon" class="form-input" style="padding:3px 6px;font-size:11px;width:auto" onchange="this.form.submit()">
                   <option value="" {% if not h %}selected{% endif %}>—</option>
                   <option value="corto"  {% if h == 'corto'  %}selected{% endif %}>⚡ Corto</option>
@@ -53,6 +57,20 @@
                   <option value="largo"  {% if h == 'largo'  %}selected{% endif %}>🏦 Largo</option>
                 </select>
               </form>
+            </td>
+            <td class="text-muted hide-mobile" style="font-size:12px">
+              {% if meta.target_price is defined and meta.target_price is not none %}
+              <span title="Precio objetivo">€{{ meta.target_price | num }}</span>
+              {% else %}
+              —
+              {% endif %}
+            </td>
+            <td class="text-muted hide-mobile" style="font-size:12px">
+              {% if meta.notes is defined and meta.notes %}
+              <span title="{{ meta.notes | e }}" style="cursor:default">📝 {{ meta.notes[:50] }}{% if meta.notes | length > 50 %}…{% endif %}</span>
+              {% else %}
+              —
+              {% endif %}
             </td>
             <td style="text-align:right">
               <form method="post" action="/tickers/delete" style="display:inline" onsubmit="return confirm('¿Eliminar {{ ticker }}?')">
@@ -176,6 +194,14 @@
               <option value="largo">🏦 Largo plazo</option>
             </select>
           </div>
+          <div>
+            <label class="form-label">Precio objetivo (€)</label>
+            <input type="number" name="target_price" step="0.01" min="0" placeholder="Ej: 150.00" class="form-input">
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label class="form-label">Tesis de inversión (opcional)</label>
+          <input type="text" name="notes" maxlength="500" placeholder="Tesis de inversión (opcional)" class="form-input">
         </div>
         <!-- Sugerencia automática de horizonte -->
         <div x-show="horizonLabel" x-cloak style="margin-top:10px;padding:9px 12px;background:#21262d;border-radius:6px;border:1px solid #30363d;font-size:12px;color:#c9d1d9">

@@ -80,15 +80,27 @@ Tablas en `data/radar.db`:
 
 ## Algoritmo de scoring (scoring.py)
 
-Puntuación numérica con 6 factores ponderados (no normalizada a 100; el valor depende de los datos de cada activo):
-- Drawdown 52w: **30%** (señal contraria — drawdown alto = más oportunidad)
-- Momentum 3m: **15%**
-- Volatilidad: **15%**
-- Dividendo: **15%**
-- ROE: **15%**
-- P/E ratio: **10%**
+Tres conjuntos de pesos según el horizonte de inversión del ticker. RSI(14) es el 7º factor:
 
-Clasificación: `ALTA` (>15), `MEDIA` (>8), `BAJA` (≤8)
+| Factor | Largo plazo | Medio plazo | Corto plazo |
+|--------|------------|------------|------------|
+| Drawdown 52w | 20% | 25% | 25% |
+| Momentum 3m | 5% | 15% | 20% |
+| Volatilidad | 15% | 10% | 5% |
+| Dividendo | 20% | 10% | 0% |
+| ROE | 25% | 15% | 0% |
+| PER | 15% | 15% | 0% |
+| RSI(14) | 0% | 10% | **50%** |
+
+Clasificación: `ALTA` (>15), `MEDIA` (>8), `BAJA` (≤8), `—` (sin datos)
+
+**Horizontes temporales:**
+- `corto`: días – 3 meses. Señales técnicas (RSI, momentum, rebotes).
+- `medio`: 3 meses – 18 meses. Mix fundamentales + momentum.
+- `largo`: 18 meses – varios años. Calidad del negocio + dividendo.
+
+`suggest_horizon(roe, pe, div, vol, mom3m)` infiere el horizonte óptimo automáticamente.
+`HORIZON_META` expone etiquetas, rangos y descripciones para UI y bot.
 
 ## Conversión FX a EUR (fetch_data.py)
 
@@ -103,10 +115,11 @@ Clasificación: `ALTA` (>15), `MEDIA` (>8), `BAJA` (≤8)
 2. `generate_csv.generate()` → descarga 5 años de histórico, convierte a EUR
 3. `scoring.score_watchlist()` → calcula score para cartera y watchlist
 4. `database.save_snapshot()` → guarda métricas diarias en SQLite
-5. `fetch_data.get_news()` → titulares recientes traducidos con Claude
-6. `ai_analysis.analyze()` → análisis completo con Claude
-7. `database.save_report()` → guarda informe en SQLite
-8. Bot envía el informe al Telegram configurado
+5. `database.save_portfolio_value()` → guarda valor total de cartera para gráfico de evolución
+6. `fetch_data.get_news()` → titulares recientes traducidos con Claude
+7. `ai_analysis.analyze()` → análisis completo con Claude
+8. `database.save_report()` → guarda informe en SQLite
+9. Bot envía el informe al Telegram configurado
 
 ## Comandos Telegram disponibles
 
@@ -115,7 +128,8 @@ Clasificación: `ALTA` (>15), `MEDIA` (>8), `BAJA` (≤8)
 | `/reporte` | Genera informe ahora |
 | `/cartera` | Vista de la cartera |
 | `/watchlist` | Watchlist ordenada por score |
-| `/rebalanceo` | Pesos actuales vs. objetivo |
+| `/oportunidades` | Top 3 oportunidades por horizonte (corto/medio/largo) |
+| `/rebalanceo` | Pesos actuales vs. objetivo + distribución por horizonte |
 | `/grafico <ticker>` | Gráfico de precio |
 | `/historial <ticker>` | Evolución drawdown 30 días |
 | `/fundamentos <ticker>` | Fundamentales |
@@ -127,6 +141,19 @@ Clasificación: `ALTA` (>15), `MEDIA` (>8), `BAJA` (≤8)
 | `/agregar <categoria> <ticker> <nombre> <sector> <region>` | Añadir ticker |
 | `/eliminar <ticker>` | Eliminar ticker |
 
+## Base de datos SQLite
+
+Tablas en `data/radar.db`:
+- **`portfolio`** — `ticker PK`, `shares`, `avg_price` (en EUR)
+- **`price_history`** — snapshots diarios con métricas: `price`, `drawdown_52w`, `momentum_3m/6m`, `volatility`, `dividend_yield`, `rsi`, `score`, `opportunity`; constraint UNIQUE en `(ticker, date)`
+- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `condition_type` (price/drawdown/score), `active`
+- **`alert_history`** — historial de alertas disparadas con `notified` flag
+- **`reports`** — informes guardados: `date`, `content`
+- **`tr_cache`** — caché clave-valor para datos Trade Republic (cash_eur, transacciones)
+- **`news_cache`** — traducciones de titulares (TTL 24h)
+- **`operations`** — historial de operaciones: `ticker`, `date`, `type` (buy/sell), `shares`, `price_eur`, `notes`
+- **`portfolio_value`** — valor total diario de la cartera: `date UNIQUE`, `total_eur`, `positions_count`
+
 ## Dashboard web (web.py)
 
 FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican `_is_auth(session)` y redirigen a `/login` si no está autenticado.
@@ -135,23 +162,35 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 
 | Ruta | Método | Descripción |
 |------|--------|-------------|
-| `/` | GET | Dashboard principal: cartera con PnL, watchlist por score, último informe |
-| `/rebalanceo` | GET | Pesos actuales vs. objetivo con acción recomendada (OK / Recortar / Añadir) |
+| `/` | GET | Dashboard principal: cartera con PnL, watchlist por score, último informe, gráfico de evolución |
+| `/oportunidades` | GET | Top activos por horizonte con oportunidad ALTA o MEDIA, columnas adaptadas al plazo |
+| `/rebalanceo` | GET | Pesos actuales vs. objetivo + distribución de cartera por horizonte |
+| `/screener` | GET | Screener completo con filtros Alpine.js (sector, región, score, drawdown, oportunidad) |
+| `/distribucion` | GET | Distribución de cartera por sector y región con barras de porcentaje |
+| `/simulador` | GET | Simulador de aportación: dado un importe, calcula cuánto comprar de cada posición |
+| `/benchmark` | GET | Comparativa cartera vs SPY (S&P500) y EWQ (Euro Stoxx) base 100 |
+| `/operaciones` | GET | Historial de operaciones buy/sell por ticker |
 | `/noticias` | GET | Titulares recientes por ticker, traducidos con Claude |
 | `/ticker/{ticker}` | GET | Detalle de un ticker: fundamentales, noticias, historial drawdown |
-| `/tickers` | GET | Gestión de cartera y watchlist |
+| `/tickers` | GET | Gestión de cartera y watchlist (con precio objetivo, notas/tesis, horizonte) |
 | `/posiciones` | GET | Lista de posiciones con PnL calculado |
 | `/alertas` | GET | Alertas activas; dropdown con tickers del CSV |
 | `/reportes` | GET | Últimos 10 informes Claude |
 | `/generar-reporte` | POST | Lanza pipeline completo en thread pool, redirige a `/` |
 | `/tickers/add` | POST | Añade ticker a tickers.yaml |
+| `/tickers/update` | POST | Actualiza ticker (horizonte, precio objetivo, notas) |
 | `/tickers/delete` | POST | Elimina ticker de tickers.yaml |
 | `/posiciones/add` | POST | Registra posición (shares + avg_price EUR) |
 | `/posiciones/delete` | POST | Elimina posición |
+| `/operaciones/add` | POST | Registra operación buy/sell |
+| `/operaciones/delete` | POST | Elimina operación por ID |
 | `/alertas/add` | POST | Crea alerta; infiere dirección (above/below) del precio actual |
 | `/alertas/delete` | POST | Desactiva alerta por ID |
 | `/chart/precio/{ticker}` | GET | PNG del precio último año (tema oscuro) |
 | `/chart/historial/{ticker}` | GET | PNG del drawdown histórico 30 días (tema oscuro) |
+| `/chart/valor-cartera` | GET | PNG de la evolución del valor total de cartera |
+| `/chart/benchmark` | GET | PNG comparativa cartera vs SPY/EWQ (base 100) |
+| `/cartera/valor-historico` | GET | JSON historial valor cartera 90 días |
 | `/login` | GET/POST | Formulario de login |
 | `/logout` | GET | Borra cookie de sesión |
 | `/health` | GET | Estado del sistema: SQLite ok/error, CSV existe, timestamp UTC |
@@ -236,6 +275,42 @@ docker exec market-radar-ai python3 -c "import sqlite3; conn = sqlite3.connect('
 ```
 
 Nota: el contenedor `market-radar-ai` se llama así en docker-compose. El contenedor web es `market-radar-web`.
+
+## Jobs periódicos (bot.py)
+
+| Job | Cuándo | Descripción |
+|-----|--------|-------------|
+| `job_daily_report` | Diario a `REPORT_HOUR:00` | Reporte completo con IA |
+| `job_check_exdividend` | Diario a 07:00 | Alerta si algún ticker tiene ex-dividend en ≤3 días |
+| `job_check_price_alerts` | Cada hora | Comprueba alertas de precio/drawdown/score |
+| `job_replay_unnotified_alerts` | Al arrancar (+30s) | Reenvía alertas perdidas mientras el bot estaba caído |
+| `job_vacuum_db` | Semanal (+5min) | Purga datos >1 año y VACUUM SQLite |
+| `job_check_claude_health` | Semanal (+2min) | Verifica que la API de Claude responde |
+
+## Campos extendidos en tickers.yaml
+
+Cada ticker admite los siguientes campos en su metadata:
+- `name` — nombre del activo
+- `block` — sector (ej. "Tecnología", "Financiero")
+- `region` — región (ej. "USA", "Europa", "Asia-Pacífico")
+- `target_weight` — peso objetivo en cartera (%) para rebalanceo
+- `horizon` — horizonte de inversión: `largo`, `medio` o `corto`
+- `target_price` — precio objetivo en EUR para calcular upside/downside
+- `notes` — tesis de inversión o notas libres (máx. 500 chars)
+
+## Correcciones técnicas implementadas
+
+- **Matplotlib thread-safety**: `_chart_lock = threading.Lock()` en bot.py y web.py; usado en todas las funciones que generan gráficos.
+- **Race condition CSV cache**: `_csv_cache_lock = threading.RLock()` en web.py protege lecturas/invalidaciones concurrentes.
+- **Memory leak sesiones**: `_cleanup_expired_state()` elimina sesiones y tokens expirados; se llama desde `_is_auth()` con throttle de 60s.
+- **VACUUM SQLite**: `_vacuum_lock = threading.Lock()` en database.py evita bloqueos concurrentes.
+- **Inyección YAML**: `_sanitize_name()` en web.py limpia caracteres de control del campo nombre antes de guardar en tickers.yaml.
+- **Contraseña inicial**: se escribe en `data/initial-password.txt` (chmod 600) en lugar de logs; el archivo se elimina tras cambiar credenciales.
+- **Validación alertas**: alertas de drawdown validan rango [-100, 0]; alertas de score validan rango [0, 100].
+- **TR timeout**: `asyncio.wait_for(..., timeout=30)` en comandos `/tr_setup` y `/sync_tr`.
+- **TR fallback**: ImportError capturado si el módulo `trade_republic` no está instalado.
+- **Schema tickers.yaml**: `_validate_tickers_schema()` comprueba estructura básica tras carga.
+- **Índice BD**: `idx_price_history_ticker_date` en `(ticker, date DESC)` para acelerar `get_ticker_history`.
 
 ## Trabajo pendiente / próximas funcionalidades
 

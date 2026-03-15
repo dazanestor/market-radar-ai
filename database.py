@@ -2,12 +2,15 @@ import hashlib
 import logging
 import os
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Optional
 from config import DATABASE
 
 logger = logging.getLogger("database")
+
+_vacuum_lock = threading.Lock()
 
 
 def init_db():
@@ -84,11 +87,35 @@ def init_db():
             fetched_at    TEXT
         )
         """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS operations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            date TEXT NOT NULL,
+            type TEXT NOT NULL,
+            shares REAL NOT NULL,
+            price_eur REAL NOT NULL,
+            notes TEXT
+        )
+        """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS portfolio_value (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT UNIQUE,
+            total_eur REAL NOT NULL,
+            positions_count INTEGER
+        )
+        """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
+        # Composite index for get_ticker_history queries (ticker + date DESC)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker_date ON price_history(ticker, date DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_alerts_active ON price_alerts(active)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_reports_date ON reports(date DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_triggered ON alert_history(triggered_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_notified ON alert_history(notified)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_operations_ticker ON operations(ticker)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_operations_date ON operations(date DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_value_date ON portfolio_value(date DESC)")
 
         # Migrations: add new columns if they don't exist yet
         _add_column_if_missing(conn, "price_alerts",  "condition_type",  "TEXT DEFAULT 'price'")
@@ -352,14 +379,86 @@ def purge_old_news_cache(days: int = 30) -> int:
 
 def vacuum_db() -> None:
     """Ejecuta VACUUM + WAL checkpoint para reducir tamaño del fichero SQLite."""
-    conn = sqlite3.connect(DATABASE)
-    try:
-        conn.isolation_level = None  # autocommit requerido para VACUUM
-        conn.execute("VACUUM")
-        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        logger.info("VACUUM completado.")
-    finally:
-        conn.close()
+    with _vacuum_lock:
+        conn = sqlite3.connect(DATABASE)
+        try:
+            conn.isolation_level = None  # autocommit requerido para VACUUM
+            conn.execute("VACUUM")
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            logger.info("VACUUM completado.")
+        finally:
+            conn.close()
+
+
+# ── operations (historial de operaciones) ──────────────────────────────────────
+
+def add_operation(ticker: str, date: str, op_type: str, shares: float, price_eur: float, notes: str = "") -> int:
+    """Registra una operación de compra/venta. Devuelve el ID insertado."""
+    with _db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO operations (ticker, date, type, shares, price_eur, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (ticker, date, op_type, shares, price_eur, notes or ""))
+        return cur.lastrowid
+
+
+def delete_operation(op_id: int) -> None:
+    with _db() as conn:
+        conn.cursor().execute("DELETE FROM operations WHERE id = ?", (op_id,))
+
+
+def get_operations(ticker: str = None, limit: int = 200) -> list:
+    """Devuelve operaciones ordenadas por fecha DESC. Filtra por ticker si se especifica."""
+    with _db() as conn:
+        c = conn.cursor()
+        if ticker:
+            c.execute("""
+                SELECT id, ticker, date, type, shares, price_eur, notes
+                FROM operations WHERE ticker = ?
+                ORDER BY date DESC, id DESC LIMIT ?
+            """, (ticker, limit))
+        else:
+            c.execute("""
+                SELECT id, ticker, date, type, shares, price_eur, notes
+                FROM operations ORDER BY date DESC, id DESC LIMIT ?
+            """, (limit,))
+        return c.fetchall()
+
+
+def count_operations() -> int:
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM operations")
+        row = c.fetchone()
+        return row[0] if row else 0
+
+
+# ── portfolio_value (evolución del valor) ──────────────────────────────────────
+
+def save_portfolio_value(total_eur: float, positions_count: int = 0) -> None:
+    """Guarda (o actualiza) el valor total de la cartera para hoy."""
+    today = date.today().isoformat()
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT INTO portfolio_value (date, total_eur, positions_count)
+            VALUES (?, ?, ?)
+            ON CONFLICT(date) DO UPDATE SET total_eur=excluded.total_eur,
+                positions_count=excluded.positions_count
+        """, (today, total_eur, positions_count))
+
+
+def get_portfolio_value_history(days: int = 365) -> list:
+    """Devuelve historial de valor total ordenado por fecha ASC."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT date, total_eur, positions_count
+            FROM portfolio_value
+            ORDER BY date ASC
+            LIMIT ?
+        """, (days,))
+        return c.fetchall()
 
 
 def get_cached_translation(headline: str, max_age_hours: int = 24) -> Optional[str]:

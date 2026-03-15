@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block page_title %}Operaciones{% endblock %}
+{% block content %}
+
+{% if saved %}
+<div class="alert-banner alert-success" style="background:#1a3a2a;border:1px solid #3fb950;border-radius:6px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#3fb950">
+  ✅ Operación de <strong>{{ saved }}</strong> registrada correctamente.
+</div>
+{% endif %}
+
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">Nueva operación</h2>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <form method="post" action="/operaciones/add" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Ticker</label>
+            <select name="ticker" class="form-control" required>
+              <option value="">Selecciona</option>
+              {% for t in all_tickers %}
+              <option value="{{ t.ticker }}">{{ t.ticker }} — {{ t.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Fecha</label>
+            <input type="date" name="date" class="form-control" required value="{{ ''|truncate(0) }}">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Tipo</label>
+            <select name="op_type" class="form-control" required>
+              <option value="buy">🟢 Compra</option>
+              <option value="sell">🔴 Venta</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Acciones</label>
+            <input type="number" name="shares" class="form-control" step="0.0001" min="0.0001" placeholder="Ej: 10" required>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Precio (€/acc)</label>
+            <input type="number" name="price_eur" class="form-control" step="0.01" min="0.01" placeholder="Ej: 150.00" required>
+          </div>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Notas (opcional)</label>
+          <input type="text" name="notes" class="form-control" maxlength="500" placeholder="Motivo de la operación...">
+        </div>
+        <button type="submit" class="btn btn-primary">Registrar operación</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px">
+  <div class="section-header">
+    <h2 class="section-title">Historial <span style="color:#8b949e;font-size:13px;font-weight:400">({{ count }} operaciones)</span></h2>
+  </div>
+  {% if not ops %}
+  <div class="card">
+    <div class="empty-state">
+      <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      No hay operaciones registradas aún.
+    </div>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Ticker</th>
+            <th>Tipo</th>
+            <th>Acciones</th>
+            <th>Precio/acc</th>
+            <th>Total</th>
+            <th class="hide-mobile">Notas</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for op in ops %}
+          {% set op_id, op_ticker, op_date, op_type, op_shares, op_price, op_notes = op %}
+          <tr>
+            <td style="color:#8b949e;font-size:12px">{{ op_date }}</td>
+            <td><a href="/ticker/{{ op_ticker }}" class="ticker-cell">{{ op_ticker }}</a></td>
+            <td>
+              {% if op_type == 'buy' %}
+              <span class="badge badge-green">Compra</span>
+              {% else %}
+              <span class="badge badge-red">Venta</span>
+              {% endif %}
+            </td>
+            <td>{{ "%.4g" % op_shares }}</td>
+            <td>{{ op_price | eur }}</td>
+            <td style="font-weight:600">{{ (op_shares * op_price) | eur }}</td>
+            <td class="hide-mobile" style="font-size:12px;color:#8b949e;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ op_notes }}">{{ op_notes or '—' }}</td>
+            <td>
+              <form method="post" action="/operaciones/delete" style="display:inline" onsubmit="return confirm('¿Eliminar operación?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="op_id" value="{{ op_id }}">
+                <button type="submit" class="btn btn-sm" style="color:#f85149;background:none;border:none;cursor:pointer;padding:2px 6px">✕</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

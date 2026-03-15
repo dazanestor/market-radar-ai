@@ -5,10 +5,12 @@ import datetime
 import io
 import math
 import os
+import threading
 import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
 
+import asyncio
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -42,6 +44,8 @@ logging.basicConfig(
     format="%(asctime)s — %(levelname)s — %(message)s",
     level=logging.INFO,
 )
+
+_chart_lock = threading.Lock()  # matplotlib no es thread-safe
 
 DRAWDOWN_ALERT_THRESHOLD = -20
 TELEGRAM_MAX_CHARS = 4096
@@ -94,10 +98,36 @@ def authorized(func):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_KNOWN_TICKERS_KEYS = {"portfolio", "watchlist", "tr_isin_map"}
+
+
+def _validate_tickers_schema(data: dict) -> dict:
+    """Valida y sanea la estructura básica de tickers.yaml. Devuelve solo las partes válidas."""
+    if not isinstance(data, dict):
+        logging.error("tickers.yaml: estructura inválida (se esperaba un dict)")
+        return {}
+    result = {}
+    for key, value in data.items():
+        if key not in _KNOWN_TICKERS_KEYS:
+            logging.warning(f"tickers.yaml: clave desconocida '{key}', ignorada")
+            continue
+        if key in ("portfolio", "watchlist"):
+            if value is None:
+                result[key] = {}
+            elif isinstance(value, dict):
+                result[key] = value
+            else:
+                logging.error(f"tickers.yaml: '{key}' debe ser un dict, ignorado")
+        else:
+            result[key] = value
+    return result
+
+
 def _load_tickers():
     try:
         with open("tickers.yaml") as f:
             data = yaml.safe_load(f) or {}
+        data = _validate_tickers_schema(data)
         return {k: (v or {}) for k, v in data.items()}
     except FileNotFoundError:
         return {}
@@ -157,8 +187,9 @@ def _chart_price(ticker, hist):
     fig.tight_layout()
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=120)
-    plt.close(fig)
+    with _chart_lock:
+        plt.savefig(buf, format="png", dpi=120)
+        plt.close(fig)
     buf.seek(0)
     return buf
 
@@ -182,8 +213,9 @@ def _chart_drawdown_history(ticker, rows):
     fig.tight_layout()
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=120)
-    plt.close(fig)
+    with _chart_lock:
+        plt.savefig(buf, format="png", dpi=120)
+        plt.close(fig)
     buf.seek(0)
     return buf
 
@@ -695,7 +727,11 @@ async def cmd_borrar_alerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @authorized
 async def cmd_tr_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from trade_republic import setup_device, complete_setup, is_configured
+    try:
+        from trade_republic import setup_device, complete_setup, is_configured
+    except ImportError:
+        await update.message.reply_text("❌ Trade Republic no está disponible (módulo no instalado).")
+        return
 
     if not is_configured():
         await update.message.reply_text(
@@ -706,17 +742,21 @@ async def cmd_tr_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         try:
-            msg = await asyncio.to_thread(setup_device)
+            msg = await asyncio.wait_for(asyncio.to_thread(setup_device), timeout=30)
             await update.message.reply_text(
                 f"📱 {msg}\n\nCuando recibas el SMS usa:\n`/tr_setup <codigo>`",
                 parse_mode="Markdown"
             )
+        except asyncio.TimeoutError:
+            await update.message.reply_text("❌ Tiempo de espera agotado al conectar con Trade Republic.")
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
     elif len(context.args) == 1:
         try:
-            msg = await asyncio.to_thread(complete_setup, context.args[0])
+            msg = await asyncio.wait_for(asyncio.to_thread(complete_setup, context.args[0]), timeout=30)
             await update.message.reply_text(f"✅ {msg}", parse_mode="Markdown")
+        except asyncio.TimeoutError:
+            await update.message.reply_text("❌ Tiempo de espera agotado al conectar con Trade Republic.")
         except Exception as e:
             await update.message.reply_text(f"❌ {e}")
     else:
@@ -730,12 +770,21 @@ async def cmd_tr_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @authorized
 async def cmd_sync_tr(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from trade_republic import sync_positions
+    try:
+        from trade_republic import sync_positions
+    except ImportError:
+        await update.message.reply_text("❌ Trade Republic no está disponible (módulo no instalado).")
+        return
 
     await update.message.reply_text("⏳ Conectando con Trade Republic...")
 
     try:
-        positions, cash_eur, transactions = await asyncio.to_thread(sync_positions)
+        positions, cash_eur, transactions = await asyncio.wait_for(
+            asyncio.to_thread(sync_positions), timeout=30
+        )
+    except asyncio.TimeoutError:
+        await update.message.reply_text("❌ Tiempo de espera agotado al conectar con Trade Republic.")
+        return
     except ValueError as e:
         await update.message.reply_text(f"❌ {e}")
         return
@@ -1005,6 +1054,51 @@ async def job_check_claude_health(context):
             logging.exception("Error enviando alerta de salud de Claude")
 
 
+async def job_check_exdividend(context: ContextTypes.DEFAULT_TYPE):
+    """Verifica si algún ticker tiene fecha ex-dividendo en los próximos 3 días."""
+    tickers = _load_tickers()
+    all_tickers = []
+    for cat in ("portfolio", "watchlist"):
+        for ticker, meta in (tickers.get(cat) or {}).items():
+            name = meta.get("name", ticker) if isinstance(meta, dict) else ticker
+            all_tickers.append((ticker, name))
+
+    if not all_tickers:
+        return
+
+    import datetime as _dt
+    today = _dt.date.today()
+    alerts = []
+
+    for ticker, name in all_tickers:
+        try:
+            info = yf.Ticker(ticker).info or {}
+            ex_date_ts = info.get("exDividendDate")
+            if not ex_date_ts:
+                continue
+            ex_date = _dt.date.fromtimestamp(ex_date_ts)
+            days_until = (ex_date - today).days
+            if 0 <= days_until <= 3:
+                div = info.get("dividendRate") or info.get("lastDividendValue")
+                div_str = f" (${div:.2f}/acción)" if div else ""
+                alerts.append(
+                    f"💰 *{ticker}* — {name}\n"
+                    f"  Ex-dividendo el {ex_date.strftime('%d/%m/%Y')} "
+                    f"(en {days_until} día{'s' if days_until != 1 else ''}){div_str}"
+                )
+        except Exception:
+            logging.debug(f"Error obteniendo ex-dividend date de {ticker}")
+
+    if alerts:
+        msg = "📅 *Próximas fechas ex-dividendo*\n\n" + "\n\n".join(alerts)
+        try:
+            await context.bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown"
+            )
+        except Exception:
+            logging.exception("Error enviando alerta ex-dividend")
+
+
 def _cleanup_matplotlib_cache():
     """Elimina ficheros de caché de matplotlib con más de 7 días."""
     mpl_dir = os.environ.get("MPLCONFIGDIR", "")
@@ -1055,6 +1149,8 @@ def main():
     tz = ZoneInfo(TIMEZONE)
     report_time = datetime.time(hour=REPORT_HOUR, minute=0, tzinfo=tz)
     app.job_queue.run_daily(job_daily_report, time=report_time)
+    exdiv_time = datetime.time(hour=7, minute=0, tzinfo=tz)
+    app.job_queue.run_daily(job_check_exdividend, time=exdiv_time)
     app.job_queue.run_repeating(job_check_price_alerts, interval=3600, first=60)
     app.job_queue.run_once(job_replay_unnotified_alerts, when=30)
     app.job_queue.run_repeating(job_vacuum_db, interval=7 * 86400, first=300)

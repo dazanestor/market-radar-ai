@@ -40,18 +40,24 @@ from slowapi.util import get_remote_address
 from ai_analysis import analyze
 from config import OUTPUT_DIR
 from database import (
+    add_operation,
     add_price_alert,
+    count_operations,
     count_reports,
     deactivate_alert,
+    delete_operation,
     delete_position,
     get_active_alerts,
     get_alert_history,
     get_all_positions,
+    get_operations,
+    get_portfolio_value_history,
     get_recent_reports,
     get_ticker_history,
     get_tr_cache,
     init_db,
     log_alert_triggered,
+    save_portfolio_value,
     save_report,
     save_snapshot,
     set_tr_cache,
@@ -65,9 +71,10 @@ logger = logging.getLogger("web")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-CREDENTIALS_FILE   = "data/credentials.json"
-TOTP_SECRET_FILE   = "data/totp_secret.key"
-DEFAULT_USERNAME   = "admin"
+CREDENTIALS_FILE      = "data/credentials.json"
+INITIAL_PASSWORD_FILE = "data/initial-password.txt"
+TOTP_SECRET_FILE      = "data/totp_secret.key"
+DEFAULT_USERNAME      = "admin"
 
 # Sesiones activas: session_id → expiry timestamp (monotonic)
 SESSION_EXPIRY    = 86400 * 30  # 30 días
@@ -90,9 +97,13 @@ _LOCKOUT_MAX      = 5
 _LOCKOUT_DURATION = 900  # 15 minutos (en segundos)
 _failed_logins: dict = {}
 
+# Limpieza periódica de sesiones y tokens expirados
+_last_cleanup: float = 0.0
+
 # Caché del CSV en memoria
 _csv_cache: dict = {"df": None, "ts": 0.0}
 _CSV_CACHE_TTL   = 300.0  # 5 minutos
+_csv_cache_lock  = threading.RLock()
 
 
 # ── Credential helpers ────────────────────────────────────────────────────────
@@ -138,14 +149,20 @@ def _load_credentials() -> dict:
         with open(CREDENTIALS_FILE, "w") as f:
             json.dump(creds, f)
         os.chmod(CREDENTIALS_FILE, 0o600)
-        logger.warning(
-            "\n" + "=" * 52 +
-            "\n  PRIMER ARRANQUE — Credenciales iniciales" +
-            f"\n  Usuario:     {DEFAULT_USERNAME}" +
-            f"\n  Contraseña:  {initial_password}" +
-            "\n  Cambia estas credenciales en el asistente de\n  primer acceso antes de usar la aplicación." +
-            "\n" + "=" * 52
+        initial_content = (
+            "=" * 52 + "\n"
+            "  PRIMER ARRANQUE — Credenciales iniciales\n"
+            f"  Usuario:     {DEFAULT_USERNAME}\n"
+            f"  Contraseña:  {initial_password}\n"
+            "  Cambia estas credenciales en el asistente de\n"
+            "  primer acceso antes de usar la aplicación.\n"
+            "  Elimina este archivo después de cambiar las credenciales.\n"
+            + "=" * 52 + "\n"
         )
+        with open(INITIAL_PASSWORD_FILE, "w") as f:
+            f.write(initial_content)
+        os.chmod(INITIAL_PASSWORD_FILE, 0o600)
+        logger.warning("Ver data/initial-password.txt para las credenciales iniciales")
         return creds
 
 
@@ -161,6 +178,11 @@ def _save_credentials(username: str, password: str, first_login: bool = False) -
         json.dump(creds, f)
     os.chmod(tmp, 0o600)
     os.replace(tmp, CREDENTIALS_FILE)
+    # Eliminar el archivo de contraseña inicial si existe
+    try:
+        os.remove(INITIAL_PASSWORD_FILE)
+    except FileNotFoundError:
+        pass
 
 
 # ── Pending tokens ────────────────────────────────────────────────────────────
@@ -316,9 +338,14 @@ def _create_session() -> str:
     return sid
 
 def _is_auth(session: Optional[str]) -> bool:
+    global _last_cleanup
+    now = _time.monotonic()
+    if now - _last_cleanup > 60:
+        _last_cleanup = now
+        _cleanup_expired_state()
     if not session or session not in _active_sessions:
         return False
-    if _time.monotonic() > _active_sessions[session]:
+    if now > _active_sessions[session]:
         del _active_sessions[session]
         return False
     return True
@@ -326,6 +353,16 @@ def _is_auth(session: Optional[str]) -> bool:
 def _invalidate_session(session: Optional[str]) -> None:
     if session:
         _active_sessions.pop(session, None)
+
+def _cleanup_expired_state() -> None:
+    """Elimina sesiones y tokens pendientes expirados para evitar crecimiento ilimitado."""
+    now = _time.monotonic()
+    expired_sessions = [sid for sid, exp in list(_active_sessions.items()) if now > exp]
+    for sid in expired_sessions:
+        _active_sessions.pop(sid, None)
+    expired_tokens = [tok for tok, exp in list(_pending_tokens.items()) if now > exp]
+    for tok in expired_tokens:
+        _pending_tokens.pop(tok, None)
 
 def _check_lockout(ip: str) -> bool:
     """Devuelve True si la IP está bloqueada por exceso de fallos."""
@@ -372,11 +409,40 @@ def _require_csrf(request: Request, token: Optional[str]) -> None:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_KNOWN_TICKERS_KEYS = {"portfolio", "watchlist", "tr_isin_map"}
+
+
+def _validate_tickers_schema(data: dict) -> dict:
+    """Valida y sanea la estructura básica de tickers.yaml. Devuelve solo las partes válidas."""
+    if not isinstance(data, dict):
+        logger.error("tickers.yaml: estructura inválida (se esperaba un dict)")
+        return {}
+    result = {}
+    for key, value in data.items():
+        if key not in _KNOWN_TICKERS_KEYS:
+            logger.warning("tickers.yaml: clave desconocida '%s', ignorada", key)
+            continue
+        if key in ("portfolio", "watchlist"):
+            if value is None:
+                result[key] = {}
+            elif isinstance(value, dict):
+                result[key] = value
+            else:
+                logger.error("tickers.yaml: '%s' debe ser un dict, ignorado", key)
+        else:
+            result[key] = value
+    return result
+
+
 def _load_tickers() -> dict:
     try:
         with open("tickers.yaml") as f:
-            return yaml.safe_load(f) or {}
+            data = yaml.safe_load(f) or {}
+        return _validate_tickers_schema(data)
     except FileNotFoundError:
+        return {}
+    except yaml.YAMLError as e:
+        logger.error("tickers.yaml inválido: %s", e)
         return {}
 
 
@@ -424,6 +490,11 @@ _COUNTRY_TO_REGION = {
 }
 
 
+def _sanitize_name(s: str) -> str:
+    """Elimina caracteres de control y limita la longitud para evitar inyección YAML."""
+    return re.sub(r'[\x00-\x1f\x7f]', '', s.strip())[:100]
+
+
 def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
     """Rellena block y region en meta usando yfinance si están vacíos."""
     if meta.get("block") and meta.get("region"):
@@ -443,23 +514,25 @@ def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
 
 
 def _read_csv() -> Optional[pd.DataFrame]:
-    now = _time.monotonic()
-    if _csv_cache["df"] is not None and now - _csv_cache["ts"] < _CSV_CACHE_TTL:
-        return _csv_cache["df"]
-    path = f"{OUTPUT_DIR}/precios_global.csv"
-    if os.path.exists(path):
-        try:
-            df = pd.read_csv(path)
-            _csv_cache["df"] = df
-            _csv_cache["ts"] = now
-            return df
-        except Exception:
-            logger.exception("Error leyendo CSV de precios")
-    return None
+    with _csv_cache_lock:
+        now = _time.monotonic()
+        if _csv_cache["df"] is not None and now - _csv_cache["ts"] < _CSV_CACHE_TTL:
+            return _csv_cache["df"]
+        path = f"{OUTPUT_DIR}/precios_global.csv"
+        if os.path.exists(path):
+            try:
+                df = pd.read_csv(path)
+                _csv_cache["df"] = df
+                _csv_cache["ts"] = now
+                return df
+            except Exception:
+                logger.exception("Error leyendo CSV de precios")
+        return None
 
 def _invalidate_csv_cache() -> None:
-    _csv_cache["df"] = None
-    _csv_cache["ts"] = 0.0
+    with _csv_cache_lock:
+        _csv_cache["df"] = None
+        _csv_cache["ts"] = 0.0
 
 
 def _safe_pct(v) -> Optional[float]:
@@ -514,6 +587,22 @@ def _do_generate_report():
             news_by_ticker[t] = []
     ai_report = analyze(portfolio_df, watchlist_df, macro=macro, news_by_ticker=news_by_ticker)
     save_report(ai_report)
+
+    # Guardar valor total de la cartera
+    try:
+        positions = get_all_positions()
+        total_val = 0.0
+        for ticker_p, shares_p, _ in positions:
+            row_p = df[df["ticker"] == ticker_p]
+            if not row_p.empty:
+                price_p = row_p.iloc[0].get("price")
+                if price_p and not (isinstance(price_p, float) and math.isnan(price_p)):
+                    total_val += shares_p * float(price_p)
+        if total_val > 0:
+            save_portfolio_value(total_val, len(positions))
+    except Exception:
+        logger.exception("Error guardando valor de cartera")
+
     _invalidate_csv_cache()
 
 
@@ -628,6 +717,99 @@ async def chart_historial(ticker: str, session: Optional[str] = Cookie(default=N
     fig = _make_history_chart(ticker.upper(), rows)
     if fig is None:
         raise HTTPException(404)
+    return _fig_to_response(fig)
+
+
+@app.get("/chart/valor-cartera")
+async def chart_valor_cartera(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        raise HTTPException(401)
+    rows = get_portfolio_value_history(days=365)
+    if len(rows) < 2:
+        raise HTTPException(404, "Sin historial suficiente")
+
+    def _make():
+        dates = pd.to_datetime([r[0] for r in rows])
+        values = [r[1] for r in rows]
+        fig, ax = plt.subplots(figsize=(9, 3.5))
+        _style_ax(ax, fig)
+        ax.fill_between(dates, values, alpha=0.15, color=_C_BLUE)
+        ax.plot(dates, values, color=_C_BLUE, linewidth=1.8)
+        ax.scatter([dates[-1]], [values[-1]], color=_C_GREEN, zorder=5, s=50)
+        ax.set_title("Evolución del valor de la cartera", fontsize=12, pad=8)
+        ax.set_ylabel("Valor (€)", fontsize=9)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"€{v:,.0f}"))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+        fig.autofmt_xdate(rotation=30)
+        fig.tight_layout()
+        return fig
+
+    with _chart_lock:
+        fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)
+    return _fig_to_response(fig)
+
+
+@app.get("/cartera/valor-historico")
+async def valor_historico(session: Optional[str] = Cookie(default=None)):
+    from fastapi.responses import JSONResponse
+    if not _is_auth(session):
+        raise HTTPException(401)
+    rows = get_portfolio_value_history(days=90)
+    return JSONResponse([{"date": r[0], "total": r[1]} for r in rows])
+
+
+@app.get("/chart/benchmark")
+async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        raise HTTPException(401)
+
+    rows = get_portfolio_value_history(days=365)
+    if len(rows) < 5:
+        raise HTTPException(404, "Sin historial suficiente (se necesitan al menos 5 días)")
+
+    start_date = rows[0][0]
+
+    def _make():
+        try:
+            spy = yf.Ticker("SPY").history(start=start_date)["Close"]
+            ewq = yf.Ticker("EWQ").history(start=start_date)["Close"]
+        except Exception:
+            spy = pd.Series(dtype=float)
+            ewq = pd.Series(dtype=float)
+
+        dates_pf = pd.to_datetime([r[0] for r in rows])
+        values_pf = [r[1] for r in rows]
+
+        # Normalize to 100 at start
+        base_pf = values_pf[0]
+        norm_pf = [v / base_pf * 100 for v in values_pf]
+
+        fig, ax = plt.subplots(figsize=(9, 4))
+        _style_ax(ax, fig)
+
+        ax.plot(dates_pf, norm_pf, color=_C_BLUE, linewidth=2, label="Mi cartera", zorder=3)
+
+        if not spy.empty:
+            spy_norm = spy / spy.iloc[0] * 100
+            ax.plot(spy.index, spy_norm.values, color=_C_GREEN, linewidth=1.2, linestyle="--", label="SPY (S&P500)", alpha=0.8)
+
+        if not ewq.empty:
+            ewq_norm = ewq / ewq.iloc[0] * 100
+            ax.plot(ewq.index, ewq_norm.values, color="#d29922", linewidth=1.2, linestyle="--", label="EWQ (Euro Stoxx)", alpha=0.8)
+
+        ax.axhline(100, color=_C_TEXT, linewidth=0.6, linestyle=":")
+        ax.set_title(f"Comparativa vs benchmark (base 100 desde {start_date})", fontsize=11, pad=8)
+        ax.set_ylabel("Rendimiento (base 100)", fontsize=9)
+        ax.legend(fontsize=8, facecolor=_C_CARD, edgecolor=_C_GRID, labelcolor=_C_FG)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+        fig.autofmt_xdate(rotation=30)
+        fig.tight_layout()
+        return fig
+
+    with _chart_lock:
+        fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)
     return _fig_to_response(fig)
 
 
@@ -986,18 +1168,21 @@ async def dashboard(
         else:
             data_age = _dt.datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M")
 
+    has_value_history = len(get_portfolio_value_history(days=365)) >= 2
+
     return templates.TemplateResponse("dashboard.html", {
-        "request":     request,
-        "portfolio":   portfolio,
-        "watchlist":   watchlist,
-        "total_value": total_value if total_value else None,
-        "last_report": reports[0] if reports else None,
-        "has_data":    df is not None,
-        "n_alerts":    len(get_active_alerts()),
-        "n_tickers":   len(portfolio) + len(watchlist),
-        "tr_cash":     tr_cash,
-        "data_age":    data_age,
-        "error":       error,
+        "request":           request,
+        "portfolio":         portfolio,
+        "watchlist":         watchlist,
+        "total_value":       total_value if total_value else None,
+        "last_report":       reports[0] if reports else None,
+        "has_data":          df is not None,
+        "n_alerts":          len(get_active_alerts()),
+        "n_tickers":         len(portfolio) + len(watchlist),
+        "tr_cash":           tr_cash,
+        "data_age":          data_age,
+        "error":             error,
+        "has_value_history": has_value_history,
     })
 
 
@@ -1334,6 +1519,8 @@ async def tickers_add(
     region:        str = Form(...),
     target_weight: str = Form(""),
     horizon:       str = Form(""),
+    target_price:  str = Form(""),
+    notes:         str = Form(""),
     csrf_token:    Optional[str] = Form(default=None),
 ):
     if not _is_auth(session):
@@ -1342,7 +1529,7 @@ async def tickers_add(
     tickers = _load_tickers()
     if categoria not in tickers:
         tickers[categoria] = {}
-    entry: dict = {"name": nombre, "block": bloque, "region": region}
+    entry: dict = {"name": _sanitize_name(nombre), "block": bloque, "region": region}
     if target_weight:
         try:
             entry["target_weight"] = float(target_weight)
@@ -1350,6 +1537,13 @@ async def tickers_add(
             pass
     if horizon in ("largo", "medio", "corto"):
         entry["horizon"] = horizon
+    if target_price:
+        try:
+            entry["target_price"] = float(target_price)
+        except ValueError:
+            pass
+    if notes:
+        entry["notes"] = notes.strip()[:500]
     tickers[categoria][ticker.strip().upper()] = entry
     _save_tickers(tickers)
     return RedirectResponse("/tickers", status_code=303)
@@ -1366,6 +1560,8 @@ async def tickers_update(
     region:        str = Form(""),
     target_weight: str = Form(""),
     horizon:       str = Form(""),
+    target_price:  str = Form(""),
+    notes:         str = Form(""),
     csrf_token:    Optional[str] = Form(default=None),
 ):
     if not _is_auth(session):
@@ -1373,12 +1569,19 @@ async def tickers_update(
     _require_csrf(request, csrf_token)
     tickers = _load_tickers()
     meta = (tickers.get(categoria) or {}).get(ticker, {}) or {}
-    if nombre:        meta["name"]          = nombre
+    if nombre:        meta["name"]          = _sanitize_name(nombre)
     if bloque:        meta["block"]         = bloque
     if region:        meta["region"]        = region
     if target_weight: meta["target_weight"] = float(target_weight)
     if horizon in ("largo", "medio", "corto"):
         meta["horizon"] = horizon
+    if target_price:
+        try:
+            meta["target_price"] = float(target_price)
+        except ValueError:
+            pass
+    if notes is not None:
+        meta["notes"] = notes.strip()[:500]
     tickers.setdefault(categoria, {})[ticker] = meta
     _save_tickers(tickers)
     return RedirectResponse("/tickers", status_code=303)
@@ -1505,6 +1708,258 @@ async def posiciones_delete(
     return RedirectResponse("/posiciones", status_code=303)
 
 
+# ── Operaciones ───────────────────────────────────────────────────────────────
+
+@app.get("/operaciones", response_class=HTMLResponse)
+async def operaciones_page(
+    request: Request,
+    ticker: Optional[str] = None,
+    saved: Optional[str] = None,
+    session: Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    df = _read_csv()
+    ticker_filter = ticker.upper() if ticker else None
+    ops = get_operations(ticker=ticker_filter, limit=200)
+    tickers_yaml = _load_tickers()
+    all_tickers = []
+    for cat in ("portfolio", "watchlist"):
+        for t, meta in (tickers_yaml.get(cat) or {}).items():
+            name = meta.get("name", t) if isinstance(meta, dict) else t
+            all_tickers.append({"ticker": t, "name": name})
+    all_tickers.sort(key=lambda x: x["ticker"])
+
+    # Compute current prices for P&L calculation
+    prices = {}
+    if df is not None:
+        for _, row in df.iterrows():
+            prices[row["ticker"]] = row.get("price")
+
+    return templates.TemplateResponse("operaciones.html", {
+        "request": request,
+        "ops": ops,
+        "all_tickers": all_tickers,
+        "ticker_filter": ticker_filter,
+        "saved": saved,
+        "count": count_operations(),
+    })
+
+
+@app.post("/operaciones/add")
+async def operaciones_add(
+    request:    Request,
+    session:    Optional[str] = Cookie(default=None),
+    ticker:     str   = Form(...),
+    date:       str   = Form(...),
+    op_type:    str   = Form(...),
+    shares:     float = Form(...),
+    price_eur:  float = Form(...),
+    notes:      str   = Form(""),
+    csrf_token: Optional[str] = Form(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    _require_csrf(request, csrf_token)
+    t = ticker.strip().upper()
+    if op_type not in ("buy", "sell") or shares <= 0 or price_eur <= 0:
+        return RedirectResponse("/operaciones", status_code=303)
+    add_operation(t, date, op_type, shares, price_eur, notes.strip()[:500])
+    return RedirectResponse(f"/operaciones?saved={t}", status_code=303)
+
+
+@app.post("/operaciones/delete")
+async def operaciones_delete(
+    request:    Request,
+    session:    Optional[str] = Cookie(default=None),
+    op_id:      int = Form(...),
+    csrf_token: Optional[str] = Form(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    _require_csrf(request, csrf_token)
+    delete_operation(op_id)
+    return RedirectResponse("/operaciones", status_code=303)
+
+
+# ── Distribución ───────────────────────────────────────────────────────────────
+
+@app.get("/distribucion", response_class=HTMLResponse)
+async def distribucion_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    df = _read_csv()
+    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+
+    by_sector = {}
+    by_region = {}
+    total = 0.0
+
+    if df is not None:
+        for _, row in df.iterrows():
+            ticker = row["ticker"]
+            price = row.get("price")
+            if not price or _is_nan(price):
+                continue
+            cat = row.get("category", "watchlist")
+            if cat == "portfolio" and ticker in positions:
+                shares, _ = positions[ticker]
+                value = shares * float(price)
+            else:
+                continue  # Only show distribution for portfolio positions
+
+            total += value
+            sector = row.get("block") or "Sin sector"
+            region = row.get("region") or "Sin región"
+
+            by_sector[sector] = by_sector.get(sector, 0.0) + value
+            by_region[region] = by_region.get(region, 0.0) + value
+
+    def _to_pct_list(d, total):
+        items = sorted(d.items(), key=lambda x: -x[1])
+        return [{"label": k, "value": v, "pct": round(v / total * 100, 1) if total else 0} for k, v in items]
+
+    return templates.TemplateResponse("distribucion.html", {
+        "request": request,
+        "by_sector": _to_pct_list(by_sector, total),
+        "by_region": _to_pct_list(by_region, total),
+        "total": total,
+        "has_data": df is not None,
+        "has_positions": bool(positions),
+    })
+
+
+# ── Simulador de aportación ───────────────────────────────────────────────────
+
+@app.get("/simulador", response_class=HTMLResponse)
+async def simulador_page(
+    request: Request,
+    importe: float = 0.0,
+    session: Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    df = _read_csv()
+    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+    suggestions = []
+
+    if df is not None and importe > 0 and positions:
+        rows_data = []
+        total_value = 0.0
+        for _, row in df[df["category"] == "portfolio"].iterrows():
+            ticker = row["ticker"]
+            if ticker not in positions:
+                continue
+            price = row.get("price")
+            if not price or _is_nan(price):
+                continue
+            shares, _ = positions[ticker]
+            value = shares * float(price)
+            total_value += value
+            try:
+                tw = float(row.get("target_weight")) if row.get("target_weight") and not _is_nan(row.get("target_weight", float("nan"))) else None
+            except (TypeError, ValueError):
+                tw = None
+            rows_data.append({
+                "ticker": ticker,
+                "name": row["name"],
+                "price": float(price),
+                "value": value,
+                "target_w": tw,
+                "score": row.get("score", 0) or 0,
+            })
+
+        total_with_new = total_value + importe
+
+        for r in rows_data:
+            r["current_w"] = r["value"] / total_value * 100 if total_value else 0
+            r["target_w_eff"] = r["target_w"] if r["target_w"] else (100 / len(rows_data) if rows_data else 0)
+
+        # Compute how much each position needs to reach target weight in new total
+        for r in rows_data:
+            target_value = total_with_new * r["target_w_eff"] / 100
+            deficit = target_value - r["value"]
+            r["deficit"] = max(0, deficit)
+
+        total_deficit = sum(r["deficit"] for r in rows_data)
+
+        for r in rows_data:
+            if total_deficit > 0:
+                alloc = importe * r["deficit"] / total_deficit
+            else:
+                # Equal distribution if no deficits
+                alloc = importe / len(rows_data) if rows_data else 0
+            r["alloc"] = round(alloc, 2)
+            r["shares_to_buy"] = alloc / r["price"] if r["price"] > 0 and alloc > 0 else 0
+
+        suggestions = [r for r in rows_data if r["alloc"] > 0.01]
+        suggestions.sort(key=lambda x: -x["alloc"])
+
+    return templates.TemplateResponse("simulador.html", {
+        "request": request,
+        "importe": importe,
+        "suggestions": suggestions,
+        "has_data": df is not None,
+        "has_positions": bool(positions),
+    })
+
+
+# ── Benchmark ─────────────────────────────────────────────────────────────────
+
+@app.get("/benchmark", response_class=HTMLResponse)
+async def benchmark_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    positions = get_all_positions()
+    has_positions = bool(positions)
+    value_history = get_portfolio_value_history(days=365)
+    has_history = len(value_history) >= 5
+
+    return templates.TemplateResponse("benchmark.html", {
+        "request": request,
+        "has_positions": has_positions,
+        "has_history": has_history,
+        "value_history": value_history,
+    })
+
+
+# ── Screener ───────────────────────────────────────────────────────────────────
+
+@app.get("/screener", response_class=HTMLResponse)
+async def screener_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    df = _read_csv()
+    rows = []
+    sectors = set()
+    regions = set()
+
+    if df is not None:
+        df_s = score_watchlist(df)
+        for _, row in df_s.iterrows():
+            d = row.to_dict()
+            sector = d.get("block") or ""
+            region = d.get("region") or ""
+            if sector:
+                sectors.add(sector)
+            if region:
+                regions.add(region)
+            rows.append(d)
+        rows.sort(key=lambda x: -(x.get("score") or 0))
+
+    return templates.TemplateResponse("screener.html", {
+        "request": request,
+        "rows": rows,
+        "sectors": sorted(sectors),
+        "regions": sorted(regions),
+        "has_data": df is not None,
+    })
+
+
 # ── Alertas ───────────────────────────────────────────────────────────────────
 
 @app.get("/alertas", response_class=HTMLResponse)
@@ -1536,9 +1991,27 @@ async def alertas_add(
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
+    t = ticker.strip().upper()
+
+    if condition_type == "drawdown":
+        # Los drawdowns son porcentajes negativos (-100 a 0)
+        if target_price > 0:
+            target_price = -target_price
+        if abs(target_price) > 100:
+            return RedirectResponse("/alertas?error=rango", status_code=303)
+        add_price_alert(t, target_price, "below", condition_type=condition_type,
+                        condition_value=target_price)
+        return RedirectResponse("/alertas", status_code=303)
+    elif condition_type == "score":
+        # El score debe estar entre 0 y 100
+        if not (0 <= target_price <= 100):
+            return RedirectResponse("/alertas?error=rango", status_code=303)
+        add_price_alert(t, target_price, "above", condition_type=condition_type,
+                        condition_value=target_price)
+        return RedirectResponse("/alertas", status_code=303)
+
     if not (0 < target_price < 1_000_000):
         return RedirectResponse("/alertas", status_code=303)
-    t = ticker.strip().upper()
 
     if condition_type in ("drawdown", "score"):
         # Para alertas de drawdown/score, guardamos target_price como condition_value

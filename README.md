@@ -28,7 +28,7 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - Monitoreo de cartera personal y watchlist de acciones
 - Descarga de precios históricos, dividendos y fundamentales via yfinance
 - **Todos los precios convertidos automáticamente a EUR** con tipos de cambio en tiempo real
-- Scoring multi-factor (drawdown, momentum, volatilidad, dividendos, ROE, PER)
+- Scoring multi-factor con **pesos diferenciados por horizonte de inversión** (corto/medio/largo plazo), incluyendo RSI(14)
 - Análisis diario automatizado con Claude (Anthropic) incluyendo contexto macro
 - Noticias recientes por ticker en el análisis, con caché en BD (24h TTL)
 - Alertas de precio, drawdown y score configurables desde el dashboard web
@@ -41,6 +41,14 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - Exportación de cartera y watchlist a CSV; importación masiva de tickers desde CSV
 - Indicador de frescura de datos en el dashboard
 - Notificación automática por Telegram si el reporte diario falla
+- **Historial de operaciones** buy/sell con registro de fecha, precio y notas de inversión
+- **Evolución de cartera**: gráfico histórico del valor total, actualizado en cada reporte
+- **Distribución por sector y región**: visualización de concentración de la cartera
+- **Simulador de aportación**: calcula qué comprar dado un importe para respetar pesos objetivo
+- **Comparativa vs benchmark**: rendimiento de cartera vs SPY (S&P500) y EWQ (Euro Stoxx) en base 100
+- **Screener reactivo**: filtra todos los tickers por sector, región, score, drawdown y oportunidad
+- **Precio objetivo y notas por ticker**: `target_price` y `notes` en tickers.yaml
+- **Alertas ex-dividend**: aviso automático en Telegram 3 días antes de la fecha de ex-dividendo
 - Despliegue con Docker usando imagen pre-compilada de GitHub Container Registry (GHCR)
 - CI/CD con GitHub Actions: build automático multi-arquitectura (amd64 + arm64) en cada push a `main`
 

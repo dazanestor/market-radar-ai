@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block page_title %}Screener{% endblock %}
+{% block content %}
+
+{% if not has_data %}
+<div class="card"><div class="empty-state">Sin datos de precios. Pulsa <strong>Generar reporte</strong> primero.</div></div>
+{% elif not rows %}
+<div class="card"><div class="empty-state">No hay tickers configurados. Ve a <a href="/tickers" class="text-accent">Tickers</a>.</div></div>
+{% else %}
+
+<div x-data="{
+  search: '',
+  sector: '',
+  region: '',
+  minScore: '',
+  maxDd: '',
+  opp: '',
+  cat: ''
+}" x-init="$watch('search', () => applyFilters($el));
+           $watch('sector', () => applyFilters($el));
+           $watch('region', () => applyFilters($el));
+           $watch('minScore', () => applyFilters($el));
+           $watch('maxDd', () => applyFilters($el));
+           $watch('opp', () => applyFilters($el));
+           $watch('cat', () => applyFilters($el))">
+
+<!-- Filters -->
+<div class="card" style="margin-bottom:16px">
+  <div class="card-body" style="padding:12px 16px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
+      <input type="text" x-model="search" placeholder="Buscar ticker/nombre..." class="form-control" style="font-size:12px">
+      <select x-model="sector" class="form-control" style="font-size:12px">
+        <option value="">Todos los sectores</option>
+        {% for s in sectors %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      </select>
+      <select x-model="region" class="form-control" style="font-size:12px">
+        <option value="">Todas las regiones</option>
+        {% for r in regions %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+      </select>
+      <select x-model="opp" class="form-control" style="font-size:12px">
+        <option value="">Cualquier oportunidad</option>
+        <option value="ALTA">Alta</option>
+        <option value="MEDIA">Media</option>
+        <option value="BAJA">Baja</option>
+      </select>
+      <select x-model="cat" class="form-control" style="font-size:12px">
+        <option value="">Cartera y watchlist</option>
+        <option value="portfolio">Solo cartera</option>
+        <option value="watchlist">Solo watchlist</option>
+      </select>
+      <input type="number" x-model="minScore" placeholder="Score mín." class="form-control" style="font-size:12px" step="0.1" min="0">
+      <input type="number" x-model="maxDd" placeholder="Drawdown máx. (%)" class="form-control" style="font-size:12px" step="0.1" max="0">
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Activo</th>
+          <th>Cat.</th>
+          <th>Score</th>
+          <th>Oportunidad</th>
+          <th>Drawdown 52s</th>
+          <th class="hide-mobile">Mom 3m</th>
+          <th class="hide-mobile">Div. Yield</th>
+          <th class="hide-mobile">RSI</th>
+          <th class="hide-mobile">Sector</th>
+          <th class="hide-mobile">Región</th>
+        </tr>
+      </thead>
+      <tbody id="screener-rows">
+        {% for r in rows %}
+        <tr data-ticker="{{ r.ticker }}" data-name="{{ r.name }}" data-sector="{{ r.block or '' }}" data-region="{{ r.region or '' }}" data-score="{{ r.score or 0 }}" data-dd="{{ r.drawdown_52w or 0 }}" data-opp="{{ r.opportunity or '' }}" data-cat="{{ r.category or '' }}">
+          <td>
+            <a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a>
+            <div style="font-size:11px;color:#8b949e">{{ r.name }}</div>
+          </td>
+          <td>
+            {% if r.category == 'portfolio' %}
+            <span class="badge badge-blue">cartera</span>
+            {% else %}
+            <span class="badge" style="background:#21262d;color:#8b949e;border:1px solid #30363d">watch</span>
+            {% endif %}
+          </td>
+          <td style="font-weight:600">{{ r.score or '—' }}</td>
+          <td><span class="{{ r.opportunity | opp_class }}">{{ r.opportunity or '—' }}</span></td>
+          <td class="{{ r.drawdown_52w | dd_class }}">{{ r.drawdown_52w | pct if r.drawdown_52w else '—' }}</td>
+          <td class="hide-mobile">{{ r.momentum_3m | pct if r.momentum_3m else '—' }}</td>
+          <td class="hide-mobile">{{ r.dividend_yield | pct if r.dividend_yield else '—' }}</td>
+          <td class="hide-mobile" style="color:{% if r.rsi and r.rsi < 30 %}#3fb950{% elif r.rsi and r.rsi > 70 %}#f85149{% else %}#8b949e{% endif %}">{{ "%.0f"|format(r.rsi) if r.rsi else '—' }}</td>
+          <td class="hide-mobile" style="font-size:12px;color:#8b949e">{{ r.block or '—' }}</td>
+          <td class="hide-mobile" style="font-size:12px;color:#8b949e">{{ r.region or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<script>
+function applyFilters(root) {
+  var search   = root.querySelector('[x-model="search"]').value.toLowerCase();
+  var sector   = root.querySelector('[x-model="sector"]').value;
+  var region   = root.querySelector('[x-model="region"]').value;
+  var minScore = root.querySelector('[x-model="minScore"]').value;
+  var maxDd    = root.querySelector('[x-model="maxDd"]').value;
+  var opp      = root.querySelector('[x-model="opp"]').value;
+  var cat      = root.querySelector('[x-model="cat"]').value;
+
+  document.querySelectorAll('#screener-rows tr[data-ticker]').forEach(function(r) {
+    var show = true;
+    if (search && !r.dataset.ticker.toLowerCase().includes(search) && !r.dataset.name.toLowerCase().includes(search)) show = false;
+    if (sector && r.dataset.sector !== sector) show = false;
+    if (region && r.dataset.region !== region) show = false;
+    if (minScore && parseFloat(r.dataset.score || 0) < parseFloat(minScore)) show = false;
+    if (maxDd && parseFloat(r.dataset.dd || 0) > parseFloat(maxDd)) show = false;
+    if (opp && r.dataset.opp !== opp) show = false;
+    if (cat && r.dataset.cat !== cat) show = false;
+    r.style.display = show ? '' : 'none';
+  });
+}
+</script>
+
+{% endif %}
+{% endblock %}

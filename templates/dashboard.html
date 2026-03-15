@@ -55,6 +55,17 @@
 </div>
 {% else %}
 
+{% if has_value_history %}
+<div class="section" style="margin-top:20px;margin-bottom:20px">
+  <div class="section-header">
+    <h2 class="section-title">Evolución de la cartera</h2>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <img src="/chart/valor-cartera" alt="Evolución cartera" style="width:100%;display:block" loading="lazy">
+  </div>
+</div>
+{% endif %}
+
 <!-- ── Portfolio ── -->
 <div class="section">
   <div class="section-header">

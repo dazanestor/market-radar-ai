@@ -30,12 +30,17 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - **Todos los precios convertidos automáticamente a EUR** con tipos de cambio en tiempo real
 - Scoring multi-factor (drawdown, momentum, volatilidad, dividendos, ROE, PER)
 - Análisis diario automatizado con Claude (Anthropic) incluyendo contexto macro
-- Noticias recientes por ticker en el análisis
-- Alertas automáticas de precio configurables
+- Noticias recientes por ticker en el análisis, con caché en BD (24h TTL)
+- Alertas de precio, drawdown y score configurables desde el dashboard web
+- Historial de alertas disparadas
 - Gráficos de precio e historial de drawdown enviados por Telegram
 - Control completo desde Telegram: añadir/eliminar tickers, registrar posiciones, ver rebalanceo
 - `/posicion` añade el ticker al radar automáticamente obteniendo nombre, sector y país de yfinance
-- Historial persistente en SQLite
+- Historial persistente en SQLite con backups automáticos diarios (últimos 7)
+- Dashboard web con autenticación segura: usuario/contraseña bcrypt + 2FA TOTP, bloqueo por IP, CSRF
+- Exportación de cartera y watchlist a CSV; importación masiva de tickers desde CSV
+- Indicador de frescura de datos en el dashboard
+- Notificación automática por Telegram si el reporte diario falla
 - Despliegue con Docker usando imagen pre-compilada de GitHub Container Registry (GHCR)
 - CI/CD con GitHub Actions: build automático multi-arquitectura (amd64 + arm64) en cada push a `main`
 
@@ -182,9 +187,11 @@ docker compose logs -f
 | `MODEL` | No | `claude-haiku-4-5-20251001` | Modelo de Claude a usar |
 | `REPORT_HOUR` | No | `8` | Hora del reporte diario (formato 24h) |
 | `TIMEZONE` | No | `Europe/Madrid` | Zona horaria del reporte (`Europe/Madrid`, `America/New_York`, etc.) |
-| `WEB_PASSWORD` | No | — | Contraseña del dashboard web. Si se omite, no hay autenticación |
 | `WEB_PORT` | No | `8589` | Puerto del dashboard web |
 | `MPLCONFIGDIR` | No | `/app/output/.matplotlib` | Directorio de caché de matplotlib (configurado automáticamente en Docker) |
+| `TR_PHONE` | No | — | Teléfono Trade Republic (formato `+34600000000`) |
+| `TR_PIN` | No | — | PIN de Trade Republic |
+| `TR_COOKIES_FILE` | No | `data/tr_cookies.txt` | Ruta al fichero de cookies de Trade Republic |
 
 ### Tickers (`tickers.yaml`)
 
@@ -258,7 +265,7 @@ Ejemplo:
 
 | Comando | Descripción |
 |---|---|
-| `/alerta <ticker> <precio>` | Crea alerta. Si el precio objetivo es menor al actual → alerta al bajar. Si es mayor → alerta al subir |
+| `/alerta <ticker> <precio>` | Crea alerta de precio. Si el precio objetivo es menor al actual → alerta al bajar. Si es mayor → alerta al subir |
 | `/mis_alertas` | Lista todas las alertas activas con su ID |
 | `/borrar_alerta <id>` | Desactiva una alerta por ID |
 
@@ -268,7 +275,9 @@ Ejemplo:
 /alerta V 280         ← avisa cuando Visa suba a 280
 ```
 
-Las alertas se comprueban cada hora automáticamente. Una vez disparada, se desactiva.
+Las alertas se comprueban cada hora automáticamente. Una vez disparada, se desactiva y queda registrada en el historial.
+
+Desde el dashboard web también puedes crear alertas por **drawdown** (ej: avisa cuando el drawdown supere el 20%) y por **score** (ej: avisa cuando el score baje de 10).
 
 ### Configuración
 
@@ -302,14 +311,17 @@ market-radar-ai/
 ├── config.py           # variables de entorno
 ├── tickers.yaml        # tickers configurados
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.yml  # servicios: init, bot, web, backup
 ├── requirements.txt
 ├── templates/          # plantillas Jinja2 del dashboard web
 ├── .github/
 │   └── workflows/
 │       └── docker-publish.yml  # CI/CD: build y push a GHCR en cada push a main
-├── data/               # base de datos SQLite (creado en runtime)
-│   └── radar.db
+├── data/               # base de datos SQLite y credenciales (creado en runtime)
+│   ├── radar.db
+│   ├── credentials.json
+│   ├── totp_secret.key
+│   └── backups/        # snapshots automáticos diarios (últimos 7)
 └── output/             # CSV con último snapshot (creado en runtime)
     └── precios_global.csv
 ```
@@ -350,10 +362,22 @@ Snapshot diario de cada ticker. Se guarda una entrada por ticker por día.
 | `score` / `opportunity` | Puntuación y nivel de oportunidad |
 
 ### `price_alerts`
-Alertas de precio activas o disparadas.
+Alertas activas o disparadas. Soporta tres tipos de condición:
+- **price** — precio de mercado supera/baja de un umbral
+- **drawdown** — drawdown desde máximo 52s supera un umbral
+- **score** — score del activo supera un umbral
+
+### `alert_history`
+Historial de alertas disparadas: ticker, tipo, valor objetivo, precio en el momento del disparo y timestamp.
 
 ### `reports`
 Historial de análisis generados por Claude.
+
+### `news_cache`
+Caché de traducciones de titulares (SHA-256 del titular como clave, TTL 24h). Reduce llamadas a la API de Claude.
+
+### `tr_cache`
+Caché de datos de Trade Republic (posiciones y saldo).
 
 ---
 
@@ -395,10 +419,11 @@ Clasificación final:
 ### Comprobación de alertas (cada hora)
 
 ```
-1. get_active_alerts()     → obtiene alertas activas de BD
+1. get_active_alerts()     → obtiene alertas activas de BD (precio, drawdown, score)
 2. yf.Ticker.history()     → precio actual por ticker
-3. Comprueba condición     → below/above según dirección
-4. Si se cumple:           → notifica por Telegram y desactiva alerta
+3. Lee CSV para alertas    → drawdown y score del último snapshot
+4. Comprueba condición     → precio below/above, drawdown >, score <
+5. Si se cumple:           → notifica por Telegram, desactiva alerta, guarda en alert_history
 ```
 
 ---
@@ -411,19 +436,26 @@ Accede desde el navegador a `http://<IP-servidor>:8589`.
 
 ### Funcionalidades
 
-- **Dashboard** — cartera con P&L, watchlist por score y último informe Claude
+- **Dashboard** — cartera con P&L, watchlist por score, último informe Claude e indicador de frescura de datos; el valor total incluye liquidez de Trade Republic si está disponible
 - **Rebalanceo** — peso actual vs. objetivo con acción recomendada (Añadir / Recortar / OK)
-- **Noticias** — titulares recientes por ticker traducidos al español
+- **Noticias** — titulares recientes por ticker traducidos al español (con caché 24h); muestra timestamp de actualización
 - **Ticker detalle** — fundamentales, métricas técnicas, historial drawdown y noticias
-- **Tickers** — añadir y eliminar activos de portfolio y watchlist
-- **Posiciones** — registrar y eliminar posiciones con P&L en euros
-- **Alertas** — crear y eliminar alertas de precio
-- **Reportes** — historial de análisis Claude
-- **Generar reporte** — lanza el pipeline completo desde el navegador
+- **Tickers** — añadir/eliminar activos; importar en masa desde CSV; exportar cartera o watchlist a CSV; badge visual para tickers con posición registrada
+- **Posiciones** — registrar y eliminar posiciones con P&L en euros; sincronización con Trade Republic; feedback visual al guardar
+- **Alertas** — crear alertas de precio, drawdown y score; historial de alertas disparadas
+- **Reportes** — historial paginado de análisis Claude (10 por página)
+- **Generar reporte** — lanza el pipeline completo desde el navegador (máx. 2 por minuto); muestra error si el pipeline falla
+- **`/health`** — endpoint JSON con estado de la base de datos, existencia del CSV y timestamp UTC; útil para healthchecks externos
 
 ### Autenticación
 
-Configura `WEB_PASSWORD` en el `.env` para proteger el acceso con contraseña. Si se omite, el dashboard es accesible sin autenticación.
+El dashboard usa autenticación segura basada en credenciales almacenadas en `data/credentials.json` (bcrypt):
+
+- **Primer acceso**: se fuerza un asistente de configuración para establecer usuario y contraseña, seguido de la configuración de 2FA TOTP (compatible con Google Authenticator, Authy, etc.)
+- **2FA TOTP**: obligatorio tras el primer acceso; se puede deshabilitar desde `Ajustes → 2FA`
+- **Bloqueo por IP**: tras 5 intentos fallidos, la IP queda bloqueada 15 minutos
+- **CSRF**: token global en todos los formularios POST
+- **Sesiones**: UUID por sesión, expiran en 30 días; se invalidan al hacer logout
 
 ---
 

@@ -28,8 +28,8 @@
     .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 199; cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .sidebar-overlay.open { display: block; }
     /* Hamburger siempre visible */
-    .hamburger { display: flex; align-items: center; background: none; border: none; cursor: pointer; padding: 4px; color: #8b949e; flex-shrink: 0; }
-    .hamburger:hover { color: #e6edf3; }
+    .hamburger { display: flex !important; align-items: center; background: none; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; padding: 6px 8px; color: #8b949e; flex-shrink: 0; }
+    .hamburger:hover { color: #e6edf3; border-color: #8b949e; }
     /* Botón ✕ dentro del sidebar, siempre visible */
     .sidebar-close { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #8b949e; padding: 4px 6px; margin-left: auto; line-height: 1; border-radius: 4px; }
     .sidebar-close:hover { color: #e6edf3; background: #21262d; }

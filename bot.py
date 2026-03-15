@@ -22,7 +22,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from generate_csv import generate
-from scoring import score_watchlist
+from scoring import score_watchlist, score_by_horizon, HORIZON_META
 from ai_analysis import analyze, check_api_health
 from fetch_data import get_macro_context, get_news, to_eur, clear_fx_cache
 from database import (
@@ -243,6 +243,7 @@ async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/reporte — análisis completo con IA ahora\n"
         "/cartera — posiciones del portfolio\n"
         "/watchlist — oportunidades en watchlist\n"
+        "/oportunidades — top oportunidades por horizonte (corto/medio/largo)\n"
         "/rebalanceo — pesos actuales vs objetivos\n"
         "/grafico `<ticker>` — chart de precio último año\n"
         "/fundamentos `<ticker>` — PER, P/B, ROE, margen, deuda y noticias\n"
@@ -334,6 +335,42 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(line)
 
     await _reply_long(update, "\n\n".join(lines))
+
+@authorized
+async def cmd_oportunidades(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    df = _read_last_csv()
+    if df is None:
+        await update.message.reply_text("Sin datos aún. Ejecuta /reporte primero.")
+        return
+
+    df_s = score_by_horizon(df)
+    lines = ["*⚡ OPORTUNIDADES POR HORIZONTE*\n"]
+    found = False
+
+    for h_key in ("corto", "medio", "largo"):
+        h = HORIZON_META[h_key]
+        rows = df_s[df_s["horizon"] == h_key].copy()
+        rows = rows[rows["opportunity"].isin(["ALTA", "MEDIA"])]
+        rows = rows.sort_values("score", ascending=False).head(3)
+        if rows.empty:
+            continue
+        found = True
+        lines.append(f"{h['emoji']} *{h['label'].upper()}* _{h['range']}_")
+        for _, row in rows.iterrows():
+            opp   = row.get("opportunity", "—")
+            emoji = "🟢" if opp == "ALTA" else "🟡"
+            rsi_s = f"  RSI: {row['rsi']:.0f}" if pd.notna(row.get("rsi")) else ""
+            lines.append(
+                f"{emoji} *{row['ticker']}* — {row['name']}  `{opp}` Score: {row['score']}\n"
+                f"  Caída: {row['drawdown_52w']:.1f}%{rsi_s}"
+            )
+        lines.append("")
+
+    if not found:
+        lines.append("No hay oportunidades detectadas. Asigna horizontes a tus tickers con /agregar o desde el dashboard.")
+
+    await _reply_long(update, "\n".join(lines))
+
 
 @authorized
 async def cmd_rebalanceo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -998,8 +1035,9 @@ def main():
     app.add_handler(CommandHandler("ayuda", cmd_ayuda))
     app.add_handler(CommandHandler("reporte", cmd_reporte))
     app.add_handler(CommandHandler("cartera", cmd_cartera))
-    app.add_handler(CommandHandler("watchlist", cmd_watchlist))
-    app.add_handler(CommandHandler("rebalanceo", cmd_rebalanceo))
+    app.add_handler(CommandHandler("watchlist",      cmd_watchlist))
+    app.add_handler(CommandHandler("oportunidades",  cmd_oportunidades))
+    app.add_handler(CommandHandler("rebalanceo",     cmd_rebalanceo))
     app.add_handler(CommandHandler("grafico", cmd_grafico))
     app.add_handler(CommandHandler("fundamentos", cmd_fundamentos))
     app.add_handler(CommandHandler("historial", cmd_historial))

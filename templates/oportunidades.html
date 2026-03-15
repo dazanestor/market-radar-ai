@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block page_title %}Oportunidades{% endblock %}
+
+{% block content %}
+
+{% if not has_data %}
+<div class="card">
+  <div class="empty-state">
+    <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    Sin datos. Pulsa <strong>Generar reporte</strong> para obtener precios y métricas.
+  </div>
+</div>
+{% elif total_opps == 0 %}
+<div class="card">
+  <div class="empty-state">
+    No hay oportunidades detectadas actualmente. Asigna un horizonte a tus tickers desde <a href="/tickers" class="text-accent">Tickers</a>.
+  </div>
+</div>
+{% else %}
+
+<div style="font-size:12px;color:#8b949e;margin-bottom:18px">
+  El sistema detecta oportunidades clasificando cada activo según su horizonte asignado y aplicando un algoritmo de puntuación específico para ese plazo. Solo se muestran activos con oportunidad <strong style="color:#e6edf3">ALTA</strong> o <strong style="color:#e6edf3">MEDIA</strong>.
+</div>
+
+{% for h_key in ['corto', 'medio', 'largo'] %}
+{% set h = horizon_meta[h_key] %}
+{% set rows = by_horizon[h_key] %}
+<div class="section">
+  <div class="section-header">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 class="section-title">{{ h.emoji }} {{ h.label }}</h2>
+      <span class="badge {{ h.color }}">{{ h.range }}</span>
+      <span class="badge badge-gray">{{ rows | length }} activo{{ 's' if rows | length != 1 else '' }}</span>
+    </div>
+  </div>
+  <div style="font-size:12px;color:#8b949e;margin-bottom:10px">{{ h.desc }}</div>
+
+  {% if rows %}
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Activo</th>
+            <th>Score<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Cifra calculada con los factores más relevantes para este horizonte. A mayor número, más atractivo.')">ⓘ</button></th>
+            <th>Oportunidad</th>
+            <th class="hide-mobile">Precio</th>
+            <th>Caída 52s<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Distancia porcentual desde el máximo de los últimos 12 meses.')">ⓘ</button></th>
+            {% if h_key == 'corto' %}
+            <th class="hide-mobile">RSI<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Índice de fuerza relativa (14 días). Por debajo de 30 indica sobreventa — posible señal de rebote.')">ⓘ</button></th>
+            <th class="hide-mobile">Mom 3m<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Rendimiento acumulado en los últimos 3 meses.')">ⓘ</button></th>
+            {% elif h_key == 'medio' %}
+            <th class="hide-mobile">Mom 3m<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Rendimiento acumulado en los últimos 3 meses.')">ⓘ</button></th>
+            <th class="hide-mobile">RSI<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Índice de fuerza relativa (14 días). Por debajo de 30 indica sobreventa.')">ⓘ</button></th>
+            {% else %}
+            <th class="hide-mobile">ROE<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Rentabilidad sobre recursos propios. Mide la eficiencia con la que el negocio genera beneficio sobre el capital invertido.')">ⓘ</button></th>
+            <th class="hide-mobile">Div Yield<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Retribución anual al accionista como porcentaje de la cotización actual.')">ⓘ</button></th>
+            {% endif %}
+            <th class="hide-mobile">Tend.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>
+              <a href="/ticker/{{ row.ticker }}" class="ticker-cell">{{ row.ticker }}</a>
+              <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ row.name }}</div>
+            </td>
+            <td class="text-accent" style="font-weight:600">{{ row.score | num }}</td>
+            <td><span class="{{ row.opportunity | opp_class }}">{{ row.opportunity }}</span></td>
+            <td class="hide-mobile">{{ row.price | eur }}</td>
+            <td class="{{ row.drawdown_52w | dd_class }}">{{ row.drawdown_52w | pct }}</td>
+            {% if h_key in ('corto', 'medio') %}
+            <td class="hide-mobile">
+              {% if row.momentum_3m is not none %}
+              <span class="{{ row.momentum_3m | pnl_class }}">{{ row.momentum_3m | pct }}</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td class="hide-mobile">
+              {% if row.rsi is not none %}
+              <span class="{% if row.rsi < 30 %}text-positive{% elif row.rsi > 70 %}text-negative{% else %}text-muted{% endif %}">
+                {{ "%.0f"|format(row.rsi) }}
+              </span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            {% else %}
+            <td class="hide-mobile">
+              {% if row.roe is not none %}
+              <span class="{% if row.roe > 15 %}text-positive{% else %}text-muted{% endif %}">{{ row.roe | pct }}</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td class="hide-mobile text-muted">{{ row.dividend_yield | pct }}</td>
+            {% endif %}
+            <td class="hide-mobile">
+              {% if row.trend == 'mejorando' %}<span class="text-positive">↑</span>
+              {% elif row.trend == 'empeorando' %}<span class="text-negative">↓</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="empty-state" style="padding:20px">
+      Sin oportunidades en {{ h.label.lower() }} ahora mismo.
+      {% if h_key == 'corto' %}Busca activos con RSI bajo 30 y caídas recientes fuertes.
+      {% elif h_key == 'medio' %}Busca activos con buen momentum y drawdown moderado.
+      {% else %}Busca negocios de calidad (ROE alto, dividendo) cotizando bajo su máximo anual.
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock %}

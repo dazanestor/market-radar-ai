@@ -18,9 +18,10 @@
           <tr>
             <th>Ticker</th>
             <th>Nombre</th>
-            <th>Bloque</th>
-            <th>Región</th>
-            {% if cat_key == 'portfolio' %}<th>Peso objetivo</th>{% endif %}
+            <th class="hide-mobile">Bloque</th>
+            <th class="hide-mobile">Región</th>
+            {% if cat_key == 'portfolio' %}<th class="hide-mobile">Peso objetivo</th>{% endif %}
+            <th>Horizonte</th>
             <th></th>
           </tr>
         </thead>
@@ -34,11 +35,25 @@
               {% endif %}
             </td>
             <td>{{ meta.name }}</td>
-            <td class="text-muted">{{ meta.block or "—" }}</td>
-            <td class="text-muted">{{ meta.region or "—" }}</td>
+            <td class="text-muted hide-mobile">{{ meta.block or "—" }}</td>
+            <td class="text-muted hide-mobile">{{ meta.region or "—" }}</td>
             {% if cat_key == 'portfolio' %}
-            <td class="text-muted">{{ meta.target_weight ~ "%" if meta.target_weight is not none else "—" }}</td>
+            <td class="text-muted hide-mobile">{{ meta.target_weight ~ "%" if meta.target_weight is not none else "—" }}</td>
             {% endif %}
+            <td>
+              {% set h = meta.horizon %}
+              <form method="post" action="/tickers/update" style="display:inline-flex;align-items:center;gap:4px">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="ticker" value="{{ ticker }}">
+                <input type="hidden" name="categoria" value="{{ cat_key }}">
+                <select name="horizon" class="form-input" style="padding:3px 6px;font-size:11px;width:auto" onchange="this.form.submit()">
+                  <option value="" {% if not h %}selected{% endif %}>—</option>
+                  <option value="corto"  {% if h == 'corto'  %}selected{% endif %}>⚡ Corto</option>
+                  <option value="medio"  {% if h == 'medio'  %}selected{% endif %}>📈 Medio</option>
+                  <option value="largo"  {% if h == 'largo'  %}selected{% endif %}>🏦 Largo</option>
+                </select>
+              </form>
+            </td>
             <td style="text-align:right">
               <form method="post" action="/tickers/delete" style="display:inline" onsubmit="return confirm('¿Eliminar {{ ticker }}?')">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -65,6 +80,7 @@
     loading: false,
     selected: false,
     ticker: '', nombre: '', bloque: '', region: '',
+    horizon: '', horizonLabel: '', horizonRange: '', horizonDesc: '',
     async search() {
       if (this.query.length < 2) { this.results = []; return; }
       this.loading = true;
@@ -79,11 +95,18 @@
       this.results = [];
       this.selected = true;
       this.bloque = ''; this.region = '';
+      this.horizon = ''; this.horizonLabel = ''; this.horizonRange = ''; this.horizonDesc = '';
       const r = await fetch('/tickers/info?ticker=' + encodeURIComponent(item.ticker));
       const info = await r.json();
-      if (info.block)  this.bloque = info.block;
-      if (info.region) this.region = info.region;
-      if (info.name)   this.nombre = info.name;
+      if (info.block)   this.bloque = info.block;
+      if (info.region)  this.region = info.region;
+      if (info.name)    this.nombre = info.name;
+      if (info.horizon) {
+        this.horizon      = info.horizon;
+        this.horizonLabel = info.horizon_label;
+        this.horizonRange = info.horizon_range;
+        this.horizonDesc  = info.horizon_desc;
+      }
     }
   }">
     <button @click="open = !open" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:#8b949e;font-size:13px;padding:0">
@@ -142,6 +165,23 @@
           {% else %}
           <input type="hidden" name="target_weight" value="">
           {% endif %}
+          <div>
+            <label class="form-label">Horizonte
+              <button type="button" class="help-btn" onclick="event.stopPropagation();showHelp(this,'Clasifica el activo según el plazo de inversión previsto: corto (días–3m), medio (3m–18m) o largo (18m–varios años). Afecta al algoritmo de puntuación y a la página Oportunidades.')">ⓘ</button>
+            </label>
+            <select name="horizon" class="form-input" x-model="horizon">
+              <option value="">Sin asignar</option>
+              <option value="corto">⚡ Corto plazo</option>
+              <option value="medio">📈 Medio plazo</option>
+              <option value="largo">🏦 Largo plazo</option>
+            </select>
+          </div>
+        </div>
+        <!-- Sugerencia automática de horizonte -->
+        <div x-show="horizonLabel" x-cloak style="margin-top:10px;padding:9px 12px;background:#21262d;border-radius:6px;border:1px solid #30363d;font-size:12px;color:#c9d1d9">
+          <strong style="color:#e6edf3">Sugerencia:</strong> <span x-text="horizonLabel"></span>
+          <span style="color:#8b949e;margin-left:6px" x-text="'(' + horizonRange + ')'"></span>
+          — <span x-text="horizonDesc"></span>
         </div>
         <div style="margin-top:12px">
           <button type="submit" class="btn btn-primary btn-sm">Añadir ticker</button>

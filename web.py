@@ -59,7 +59,7 @@ from database import (
 )
 from fetch_data import get_macro_context, get_news
 from generate_csv import generate
-from scoring import score_watchlist
+from scoring import score_watchlist, score_by_horizon, suggest_horizon, HORIZON_META
 
 logger = logging.getLogger("web")
 
@@ -1044,13 +1044,15 @@ async def rebalanceo_page(request: Request, session: Optional[str] = Cookie(defa
                 tw = float(row.get("target_weight")) if row.get("target_weight") and not _is_nan(row.get("target_weight", float("nan"))) else None
             except (TypeError, ValueError):
                 tw = None
+            horizon_val = row.get("horizon")
             rows_data.append({
-                "ticker": ticker,
-                "name":   row["name"],
-                "shares": shares,
-                "price":  float(price),
-                "value":  value,
+                "ticker":   ticker,
+                "name":     row["name"],
+                "shares":   shares,
+                "price":    float(price),
+                "value":    value,
                 "target_w": tw,
+                "horizon":  horizon_val if horizon_val and str(horizon_val) != "nan" else None,
             })
 
     total = sum(r["value"] for r in rows_data) if rows_data else 0.0
@@ -1078,6 +1080,41 @@ async def rebalanceo_page(request: Request, session: Optional[str] = Cookie(defa
         "total":         total,
         "has_positions": bool(positions),
         "has_data":      df is not None,
+        "horizon_meta":  HORIZON_META,
+    })
+
+
+# ── Oportunidades ─────────────────────────────────────────────────────────────
+
+@app.get("/oportunidades", response_class=HTMLResponse)
+async def oportunidades_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    df = _read_csv()
+    by_horizon: dict = {h: [] for h in ("corto", "medio", "largo")}
+
+    if df is not None:
+        df_s = score_by_horizon(df)
+        for _, row in df_s.iterrows():
+            h = row.get("horizon") or "medio"
+            if h not in by_horizon:
+                h = "medio"
+            if row.get("opportunity") in ("ALTA", "MEDIA"):
+                by_horizon[h].append(row.to_dict())
+
+        # Ordenar cada horizonte por score descendente
+        for h in by_horizon:
+            by_horizon[h].sort(key=lambda r: -(r.get("score") or 0))
+
+    total_opps = sum(len(v) for v in by_horizon.values())
+
+    return templates.TemplateResponse("oportunidades.html", {
+        "request":      request,
+        "by_horizon":   by_horizon,
+        "horizon_meta": HORIZON_META,
+        "total_opps":   total_opps,
+        "has_data":     df is not None,
     })
 
 
@@ -1234,14 +1271,37 @@ async def tickers_info(ticker: str = "", session: Optional[str] = Cookie(default
         return JSONResponse({})
     def _do_info():
         import yfinance as yf
+        import math as _math
         try:
-            info = yf.Ticker(ticker).info or {}
+            stock = yf.Ticker(ticker)
+            info  = stock.info or {}
             sector  = info.get("sector", "")
             country = info.get("country", "")
+            roe     = info.get("returnOnEquity")
+            pe      = info.get("trailingPE")
+            div     = info.get("dividendYield")
+            # volatility: std anualizada de últimos 252 días
+            vol = None
+            try:
+                h = stock.history(period="1y")
+                if not h.empty:
+                    ret = h["Close"].pct_change().dropna()
+                    vol = float(ret.std() * (252 ** 0.5) * 100) if not ret.empty else None
+            except Exception:
+                pass
+            roe_pct  = round(roe * 100, 1)  if roe  and not _math.isnan(roe)  else None
+            div_pct  = round(div * 100, 1)  if div  and not _math.isnan(div)  else None
+            pe_val   = round(pe, 1)         if pe   and not _math.isnan(pe)   else None
+            mom3m    = None  # no disponible en este endpoint rápido
+            horizon  = suggest_horizon(roe_pct, pe_val, div_pct, vol, mom3m)
             return {
-                "name":   info.get("longName") or info.get("shortName", ticker),
-                "block":  _SECTOR_TO_BLOCK.get(sector, sector),
-                "region": _COUNTRY_TO_REGION.get(country, country),
+                "name":            info.get("longName") or info.get("shortName", ticker),
+                "block":           _SECTOR_TO_BLOCK.get(sector, sector),
+                "region":          _COUNTRY_TO_REGION.get(country, country),
+                "horizon":         horizon,
+                "horizon_label":   HORIZON_META[horizon]["label"],
+                "horizon_range":   HORIZON_META[horizon]["range"],
+                "horizon_desc":    HORIZON_META[horizon]["desc"],
             }
         except Exception:
             return {}
@@ -1273,6 +1333,7 @@ async def tickers_add(
     bloque:        str = Form(...),
     region:        str = Form(...),
     target_weight: str = Form(""),
+    horizon:       str = Form(""),
     csrf_token:    Optional[str] = Form(default=None),
 ):
     if not _is_auth(session):
@@ -1287,6 +1348,8 @@ async def tickers_add(
             entry["target_weight"] = float(target_weight)
         except ValueError:
             pass
+    if horizon in ("largo", "medio", "corto"):
+        entry["horizon"] = horizon
     tickers[categoria][ticker.strip().upper()] = entry
     _save_tickers(tickers)
     return RedirectResponse("/tickers", status_code=303)
@@ -1302,6 +1365,7 @@ async def tickers_update(
     bloque:        str = Form(""),
     region:        str = Form(""),
     target_weight: str = Form(""),
+    horizon:       str = Form(""),
     csrf_token:    Optional[str] = Form(default=None),
 ):
     if not _is_auth(session):
@@ -1313,6 +1377,8 @@ async def tickers_update(
     if bloque:        meta["block"]         = bloque
     if region:        meta["region"]        = region
     if target_weight: meta["target_weight"] = float(target_weight)
+    if horizon in ("largo", "medio", "corto"):
+        meta["horizon"] = horizon
     tickers.setdefault(categoria, {})[ticker] = meta
     _save_tickers(tickers)
     return RedirectResponse("/tickers", status_code=303)

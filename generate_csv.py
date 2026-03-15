@@ -42,6 +42,19 @@ def _extract_fundamentals(info):
         "market_cap_b":   market_cap_eur,
     }
 
+def _rsi(close, period=14):
+    """RSI de N períodos sobre la serie de precios de cierre."""
+    delta = close.diff().dropna()
+    if len(delta) < period:
+        return None
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, float("nan"))
+    rsi_series = 100 - (100 / (1 + rs))
+    last = rsi_series.dropna()
+    return round(float(last.iloc[-1]), 1) if not last.empty else None
+
+
 def _detect_trend(ticker):
     history = get_trend(ticker, days=5)
     if len(history) < 2:
@@ -104,6 +117,7 @@ def generate():
                 daily_returns = close.pct_change().dropna()
                 volatility = daily_returns.tail(252).std() * (252 ** 0.5) * 100 if not daily_returns.empty else None
 
+                rsi_val = _rsi(close)
                 div_yield = _dividend_yield(dividends, price_orig)
                 fundamentals = _extract_fundamentals(info)
                 trend = _detect_trend(ticker)
@@ -123,12 +137,14 @@ def generate():
                     "block": meta.get("block", "—"),
                     "region": meta.get("region", "—"),
                     "target_weight": meta.get("target_weight"),
+                    "horizon": meta.get("horizon"),
                     "price": round(price, 2),
                     "drawdown_52w": round(drawdown, 2),
                     "momentum_3m": _safe_round(momentum_3m),
                     "momentum_6m": _safe_round(momentum_6m),
                     "volatility": _safe_round(volatility),
                     "dividend_yield": round(div_yield, 2),
+                    "rsi": rsi_val,
                     "trend": trend,
                     "pnl": _safe_round(pnl),
                     **fundamentals,

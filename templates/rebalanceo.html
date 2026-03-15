@@ -100,10 +100,61 @@
 <div style="margin-top:14px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
   <p style="font-size:12px;color:#8b949e;margin:0">
     ℹ️ La acción se calcula comparando el peso actual con el objetivo. <strong>±2%</strong> de margen → OK.
-    Configura el peso objetivo editando <code style="background:#21262d;padding:1px 5px;border-radius:3px">tickers.yaml</code>
-    o desde <a href="/tickers" class="text-accent">Tickers</a>.
+    Configura el peso objetivo desde <a href="/tickers" class="text-accent">Tickers</a>.
   </p>
 </div>
+
+<!-- ── Distribución por horizonte ── -->
+{% set horizon_rows = rows | selectattr('horizon') | list %}
+{% if horizon_rows %}
+<div class="section" style="margin-top:28px">
+  <div class="section-header">
+    <h2 class="section-title">Distribución por horizonte</h2>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      {% for h_key in ['corto', 'medio', 'largo'] %}
+      {% set h = horizon_meta[h_key] %}
+      {% set h_rows = rows | selectattr('horizon', 'equalto', h_key) | list %}
+      {% set h_total = h_rows | sum(attribute='value') %}
+      {% set h_pct = (h_total / total * 100) if total else 0 %}
+      <div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="badge {{ h.color }}">{{ h.emoji }} {{ h.label }}</span>
+            <span style="font-size:11px;color:#8b949e">{{ h.range }}</span>
+          </div>
+          <span style="font-size:13px;font-weight:600;color:#e6edf3">
+            {{ h_total | eur }} · {{ "%.1f"|format(h_pct) }}%
+            <span style="color:#8b949e;font-weight:400">({{ h_rows | length }} activo{{ 's' if h_rows | length != 1 else '' }})</span>
+          </span>
+        </div>
+        <div style="height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+          <div style="height:100%;border-radius:4px;width:{{ [h_pct, 100] | min | round(1) }}%;
+            background:{% if h_key == 'corto' %}#f85149{% elif h_key == 'medio' %}#d29922{% else %}#58a6ff{% endif %}">
+          </div>
+        </div>
+        {% if h_rows %}
+        <div style="margin-top:6px;font-size:11px;color:#8b949e">
+          {% for r in h_rows | sort(attribute='value', reverse=true) %}
+          <span style="margin-right:10px">{{ r.ticker }} <strong style="color:#e6edf3">{{ "%.1f"|format(r.current_w) }}%</strong></span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {% set unassigned = rows | rejectattr('horizon') | list %}
+      {% if unassigned %}
+      <div style="margin-top:8px;padding:8px 12px;background:#21262d;border-radius:6px;font-size:12px;color:#8b949e">
+        Sin horizonte asignado: {% for r in unassigned %}<span style="color:#e6edf3">{{ r.ticker }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+        — <a href="/tickers" class="text-accent">Asignar en Tickers →</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% endif %}
 {% endblock %}

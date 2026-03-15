@@ -32,6 +32,7 @@ def init_db():
             momentum_6m REAL,
             volatility REAL,
             dividend_yield REAL,
+            rsi REAL,
             score REAL,
             opportunity TEXT,
             UNIQUE(ticker, date)
@@ -90,9 +91,10 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_alert_history_notified ON alert_history(notified)")
 
         # Migrations: add new columns if they don't exist yet
-        _add_column_if_missing(conn, "price_alerts", "condition_type", "TEXT DEFAULT 'price'")
-        _add_column_if_missing(conn, "price_alerts", "condition_value", "REAL")
-        _add_column_if_missing(conn, "alert_history", "notified", "INTEGER DEFAULT 0")
+        _add_column_if_missing(conn, "price_alerts",  "condition_type",  "TEXT DEFAULT 'price'")
+        _add_column_if_missing(conn, "price_alerts",  "condition_value", "REAL")
+        _add_column_if_missing(conn, "alert_history", "notified",        "INTEGER DEFAULT 0")
+        _add_column_if_missing(conn, "price_history", "rsi",             "REAL")
 
 
 def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:
@@ -125,12 +127,13 @@ def save_snapshot(rows):
             c.execute("""
             INSERT OR REPLACE INTO price_history
                 (ticker, date, price, drawdown_52w, momentum_3m, momentum_6m,
-                 volatility, dividend_yield, score, opportunity)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 volatility, dividend_yield, rsi, score, opportunity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 row["ticker"], row["date"], row["price"], row["drawdown_52w"],
                 row.get("momentum_3m"), row.get("momentum_6m"),
                 row.get("volatility"), row.get("dividend_yield"),
+                row.get("rsi"),
                 row.get("score"), row.get("opportunity")
             ))
 

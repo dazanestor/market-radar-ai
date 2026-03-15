@@ -507,15 +507,6 @@ def _make_qr_svg(uri: str) -> str:
     return buf.getvalue()
 
 
-@app.get("/qr")
-async def qr_code(uri: str, session: Optional[str] = Cookie(default=None), setup_pending: Optional[str] = Cookie(default=None)):
-    # Permitir acceso con sesión válida o durante el setup inicial
-    if not _is_auth(session) and setup_pending not in _pending_tokens:
-        raise HTTPException(status_code=403)
-    svg = _make_qr_svg(uri)
-    return Response(content=svg, media_type="image/svg+xml",
-                    headers={"Cache-Control": "no-store"})
-
 
 # ── Login ─────────────────────────────────────────────────────────────────────
 
@@ -595,6 +586,7 @@ async def first_login_page(request: Request, setup_pending: Optional[str] = Cook
         "request": request,
         "totp_secret": totp_secret,
         "totp_uri": totp_uri,
+        "qr_svg": _make_qr_svg(totp_uri),
         "error": "",
     })
 
@@ -632,6 +624,7 @@ async def first_login_submit(
             "request": request,
             "totp_secret": totp_secret,
             "totp_uri": totp_uri,
+            "qr_svg": _make_qr_svg(totp_uri),
             "error": " ".join(errors),
             "form_username": username,
         })
@@ -663,6 +656,7 @@ async def totp_setup_page(request: Request, session: Optional[str] = Cookie(defa
         "enabled": enabled,
         "secret": secret,
         "uri": uri,
+        "qr_svg": _make_qr_svg(uri) if not enabled else "",
         "ok": ok,
         "disabled": disabled,
     })
@@ -682,7 +676,7 @@ async def totp_setup(
         uri = totp.provisioning_uri(name="Market Radar AI", issuer_name="MarketRadar")
         return templates.TemplateResponse("2fa_setup.html", {
             "request": request, "enabled": False, "secret": secret,
-            "uri": uri, "ok": "", "disabled": "",
+            "uri": uri, "qr_svg": _make_qr_svg(uri), "ok": "", "disabled": "",
             "error": "Código incorrecto. Vuelve a escanear el QR e inténtalo.",
         })
     os.makedirs("data", exist_ok=True)

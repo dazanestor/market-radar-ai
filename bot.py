@@ -26,6 +26,7 @@ from database import (
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
     REPORT_HOUR, TIMEZONE,
+    TELEGRAM_MAX_CHARS, DRAWDOWN_ALERT_THRESHOLD,
 )
 
 
@@ -41,12 +42,15 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-DRAWDOWN_ALERT_THRESHOLD = -20
-TELEGRAM_MAX_CHARS = 4096
-
-
 def _fmt(price):
     return f"€{price:.2f}"
+
+
+def _md_escape(text: str) -> str:
+    """Escapa caracteres especiales de Markdown v1 de Telegram."""
+    for ch in ("_", "*", "`", "["):
+        text = text.replace(ch, f"\\{ch}")
+    return text
 
 
 def _split_text(text, limit=TELEGRAM_MAX_CHARS):
@@ -268,7 +272,7 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 logging.exception("Error guardando historial de alerta")
             deactivate_alert(alert_id)
-            msg = f"{icon} *Alerta disparada*\n*{ticker}*: {msg_detail}"
+            msg = f"{icon} *Alerta disparada*\n*{_md_escape(ticker)}*: {_md_escape(msg_detail)}"
             try:
                 await context.bot.send_message(
                     chat_id=_chat_id(), text=msg, parse_mode="Markdown"
@@ -294,7 +298,7 @@ async def job_replay_unnotified_alerts(context):
         else:
             arrow = "bajado a" if direction == "below" else "subido a"
             detail = f"Precio {arrow} €{price_at:.2f} el {triggered_at} (objetivo €{target:.2f})"
-        msg = f"🔔 *Alerta pendiente* (bot estaba caído)\n*{ticker}*: {detail}"
+        msg = f"🔔 *Alerta pendiente* (bot estaba caído)\n*{_md_escape(ticker)}*: {_md_escape(detail)}"
         try:
             await context.bot.send_message(
                 chat_id=_chat_id(), text=msg, parse_mode="Markdown"
@@ -361,7 +365,7 @@ async def job_check_exdividend(context: ContextTypes.DEFAULT_TYPE):
                 div = info.get("dividendRate") or info.get("lastDividendValue")
                 div_str = f" (${div:.2f}/acción)" if div else ""
                 alerts.append(
-                    f"💰 *{ticker}* — {name}\n"
+                    f"💰 *{_md_escape(ticker)}* — {_md_escape(name)}\n"
                     f"  Ex-dividendo el {ex_date.strftime('%d/%m/%Y')} "
                     f"(en {days_until} día{'s' if days_until != 1 else ''}){div_str}"
                 )

@@ -139,9 +139,10 @@ def get_news(ticker, n=3, translate=False):
         items     = yf.Ticker(ticker).news or []
         headlines = []
         for item in items[:n]:
-            title     = item.get("title") or item.get("content", {}).get("title", "")
-            publisher = (item.get("publisher") or
-                         item.get("content", {}).get("provider", {}).get("displayName", ""))
+            content   = item.get("content") if isinstance(item.get("content"), dict) else {}
+            provider  = content.get("provider") if isinstance(content.get("provider"), dict) else {}
+            title     = item.get("title") or content.get("title", "")
+            publisher = item.get("publisher") or provider.get("displayName", "")
             ts        = item.get("providerPublishTime")
             if not title:
                 continue

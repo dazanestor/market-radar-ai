@@ -31,7 +31,7 @@ def _extract_fundamentals(info):
     market_cap = info.get("marketCap")
     currency = info.get("currency", "USD")
     _cap_eur = to_eur(market_cap, currency) if market_cap else None
-    market_cap_eur = round(_cap_eur / 1e9, 1) if _cap_eur is not None else None
+    market_cap_eur = round(_cap_eur / 1e9, 1) if _cap_eur is not None and not math.isnan(_cap_eur) else None
     return {
         "pe_ratio":       val(info.get("trailingPE")),
         "pb_ratio":       val(info.get("priceToBook")),
@@ -111,8 +111,8 @@ def generate():
                 base_6m_raw = close.iloc[-126] if len(close) >= 126 else None
                 base_3m_eur = to_eur(base_3m_raw, currency) if base_3m_raw is not None else None
                 base_6m_eur = to_eur(base_6m_raw, currency) if base_6m_raw is not None else None
-                momentum_3m = (price / base_3m_eur - 1) * 100 if base_3m_eur and base_3m_eur > 0 else None
-                momentum_6m = (price / base_6m_eur - 1) * 100 if base_6m_eur and base_6m_eur > 0 else None
+                momentum_3m = (price / base_3m_eur - 1) * 100 if base_3m_eur and not math.isnan(base_3m_eur) and base_3m_eur > 0 else None
+                momentum_6m = (price / base_6m_eur - 1) * 100 if base_6m_eur and not math.isnan(base_6m_eur) and base_6m_eur > 0 else None
 
                 daily_returns = close.pct_change().dropna()
                 volatility = daily_returns.tail(252).std() * (252 ** 0.5) * 100 if not daily_returns.empty else None

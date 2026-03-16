@@ -11,14 +11,12 @@ from scoring import score_watchlist
 from ai_analysis import analyze
 from database import init_db, save_snapshot, save_report, vacuum_db, effective
 from fetch_data import get_macro_context, get_news
+from config import TELEGRAM_MAX_CHARS, DRAWDOWN_ALERT_THRESHOLD
 
 logging.basicConfig(
     format="%(asctime)s — %(levelname)s — %(message)s",
     level=logging.INFO,
 )
-
-TELEGRAM_MAX_CHARS = 4096
-DRAWDOWN_ALERT_THRESHOLD = -20
 
 def _split_text(text, limit=TELEGRAM_MAX_CHARS):
     chunks = []

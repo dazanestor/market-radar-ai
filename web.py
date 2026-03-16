@@ -67,7 +67,7 @@ from database import (
     delete_setting,
     get_all_settings,
 )
-from fetch_data import get_macro_context, get_news
+from fetch_data import get_news
 from generate_csv import generate
 from scoring import score_watchlist, score_by_horizon, suggest_horizon, HORIZON_META
 
@@ -104,6 +104,7 @@ _failed_logins: dict = {}
 
 # Limpieza periódica de sesiones y tokens expirados
 _last_cleanup: float = 0.0
+_cleanup_lock = threading.Lock()
 
 # Caché del CSV en memoria
 _csv_cache: dict = {"df": None, "ts": 0.0}
@@ -124,8 +125,8 @@ def _verify_password(password: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
-        # Timing-safe: consumir tiempo similar al de un checkpw real
-        bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(4))
+        # Timing-safe: consumir tiempo similar al de un checkpw real (mismo coste que _hash_password)
+        bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(12))
         return False
 
 
@@ -347,8 +348,10 @@ def _is_auth(session: Optional[str]) -> bool:
     global _last_cleanup
     now = _time.monotonic()
     if now - _last_cleanup > 60:
-        _last_cleanup = now
-        _cleanup_expired_state()
+        with _cleanup_lock:
+            if now - _last_cleanup > 60:
+                _last_cleanup = now
+                _cleanup_expired_state()
     if not session or session not in _active_sessions:
         return False
     if now > _active_sessions[session]:
@@ -1813,7 +1816,11 @@ async def tickers_update(
     if nombre:        meta["name"]          = _sanitize_name(nombre)
     if bloque:        meta["block"]         = bloque
     if region:        meta["region"]        = region
-    if target_weight: meta["target_weight"] = float(target_weight)
+    if target_weight:
+        try:
+            meta["target_weight"] = float(target_weight)
+        except ValueError:
+            pass
     if horizon in ("largo", "medio", "corto"):
         meta["horizon"] = horizon
     if target_price:
@@ -2580,13 +2587,16 @@ async def export_portfolio(session: Optional[str] = Cookie(default=None)):
 
     def _gen():
         buf = io.StringIO()
-        w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else
-                           ["ticker", "name", "price", "drawdown_52w", "momentum_3m",
-                            "score", "shares", "avg_price", "value_eur", "pnl_pct"])
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
-        yield buf.getvalue()
+        try:
+            w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else
+                               ["ticker", "name", "price", "drawdown_52w", "momentum_3m",
+                                "score", "shares", "avg_price", "value_eur", "pnl_pct"])
+            w.writeheader()
+            for r in rows:
+                w.writerow(r)
+            yield buf.getvalue()
+        finally:
+            buf.close()
 
     return StreamingResponse(
         _gen(),
@@ -2616,13 +2626,16 @@ async def export_watchlist(session: Optional[str] = Cookie(default=None)):
 
     def _gen():
         buf = io.StringIO()
-        w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else
-                           ["ticker", "name", "price", "score", "opportunity",
-                            "drawdown_52w", "momentum_3m", "dividend_yield", "pe_ratio"])
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
-        yield buf.getvalue()
+        try:
+            w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else
+                               ["ticker", "name", "price", "score", "opportunity",
+                                "drawdown_52w", "momentum_3m", "dividend_yield", "pe_ratio"])
+            w.writeheader()
+            for r in rows:
+                w.writerow(r)
+            yield buf.getvalue()
+        finally:
+            buf.close()
 
     return StreamingResponse(
         _gen(),

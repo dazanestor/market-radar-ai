@@ -17,6 +17,10 @@ TR_COOKIES_FILE = os.getenv("TR_COOKIES_FILE", "data/tr_cookies.txt")
 DATABASE   = "data/radar.db"
 OUTPUT_DIR = "output"
 
+# Constantes compartidas entre bot.py y scheduler.py
+TELEGRAM_MAX_CHARS       = 4096
+DRAWDOWN_ALERT_THRESHOLD = -20
+
 try:
     REPORT_HOUR = int(os.getenv("REPORT_HOUR", "8"))
     if not 0 <= REPORT_HOUR <= 23:

@@ -116,6 +116,7 @@ _csv_cache_lock  = threading.RLock()
 # ── Credential helpers ────────────────────────────────────────────────────────
 
 _USERNAME_RE = re.compile(r'^[a-zA-Z0-9_\-\.]{3,32}$')
+_TICKER_RE   = re.compile(r'^[A-Z0-9.\-]{1,12}$')
 
 
 def _hash_password(password: str) -> str:
@@ -883,7 +884,7 @@ async def health():
     return JSONResponse({
         "status":     status,
         "csv_exists": os.path.exists(csv_path),
-        "timestamp":  datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "timestamp":  datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
 
@@ -1351,7 +1352,6 @@ async def dashboard(
     csv_path = f"{OUTPUT_DIR}/precios_global.csv"
     data_age = None
     if os.path.exists(csv_path):
-        import datetime as _dt
         mtime = os.path.getmtime(csv_path)
         age_sec = _time.time() - mtime
         if age_sec < 3600:
@@ -1359,7 +1359,7 @@ async def dashboard(
         elif age_sec < 86400:
             data_age = f"hace {int(age_sec // 3600)} h"
         else:
-            data_age = _dt.datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M")
+            data_age = datetime.datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M")
 
     has_value_history = len(get_portfolio_value_history(days=365)) >= 2
 
@@ -1519,8 +1519,7 @@ async def noticias_page(request: Request, session: Optional[str] = Cookie(defaul
                 result.append({"ticker": ticker, "name": name, "category": cat, "items": items})
         return result
 
-    import datetime as _dt
-    fetch_start = _dt.datetime.now()
+    fetch_start = datetime.datetime.now()
     news_data = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_all)
     portfolio_news  = [n for n in news_data if n["category"] == "portfolio"]
     watchlist_news  = [n for n in news_data if n["category"] == "watchlist"]
@@ -2514,11 +2513,10 @@ async def tr_historial_page(
 
 def _make_tr_history_chart(items: list, timeframe: str):
     """Genera el gráfico de valor del depósito TR en el tiempo."""
-    import datetime as dt
     times, values = [], []
     for item in items:
         try:
-            times.append(dt.datetime.fromtimestamp(item["time_ms"] / 1000, tz=dt.timezone.utc))
+            times.append(datetime.datetime.fromtimestamp(item["time_ms"] / 1000, tz=datetime.timezone.utc))
             values.append(item["value"])
         except (KeyError, TypeError, ValueError):
             pass
@@ -2668,8 +2666,6 @@ async def export_watchlist(session: Optional[str] = Cookie(default=None)):
 
 
 # ── Importación masiva de tickers ─────────────────────────────────────────────
-
-_TICKER_RE = re.compile(r'^[A-Z0-9.\-]{1,12}$')
 
 @app.post("/tickers/import")
 async def tickers_import(

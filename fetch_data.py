@@ -102,6 +102,8 @@ def translate_headlines(headlines: list) -> list:
                 messages=[{"role": "user", "content": prompt}],
             )
             translated: list[str] = []
+            if not response.content:
+                raise ValueError("Respuesta vacía de Claude")
             for line in response.content[0].text.strip().split("\n"):
                 line = line.strip()
                 if not line:

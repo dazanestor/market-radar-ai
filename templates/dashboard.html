@@ -92,7 +92,7 @@
         </thead>
         <tbody>
           {% for row in portfolio %}
-          <tr x-data="{ chartOpen: false }">
+          <tr>
             <td>
               <a href="/ticker/{{ row.ticker }}" class="ticker-cell">{{ row.ticker }}</a>
               <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ row.name }}</div>

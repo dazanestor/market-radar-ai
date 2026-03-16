@@ -456,15 +456,15 @@ def save_portfolio_value(total_eur: float, positions_count: int = 0) -> None:
 
 
 def get_portfolio_value_history(days: int = 365) -> list:
-    """Devuelve historial de valor total ordenado por fecha ASC."""
+    """Devuelve historial de valor total ordenado por fecha ASC (últimos `days` días)."""
     with _db() as conn:
         c = conn.cursor()
         c.execute("""
             SELECT date, total_eur, positions_count
             FROM portfolio_value
+            WHERE date >= date('now', ?)
             ORDER BY date ASC
-            LIMIT ?
-        """, (days,))
+        """, (f"-{days} days",))
         return c.fetchall()
 
 

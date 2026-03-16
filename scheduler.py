@@ -9,9 +9,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from generate_csv import generate
 from scoring import score_watchlist
 from ai_analysis import analyze
-from database import init_db, save_snapshot, save_report, vacuum_db
+from database import init_db, save_snapshot, save_report, vacuum_db, effective
 from fetch_data import get_macro_context, get_news
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 logging.basicConfig(
     format="%(asctime)s — %(levelname)s — %(message)s",
@@ -35,13 +34,19 @@ def _split_text(text, limit=TELEGRAM_MAX_CHARS):
 
 
 def send_telegram(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    token   = effective("TELEGRAM_BOT_TOKEN",   env_fallback=TELEGRAM_BOT_TOKEN)
+    chat_id = effective("TELEGRAM_CHAT_ID",      env_fallback=TELEGRAM_CHAT_ID)
+    if not token or not chat_id:
+        logging.warning("send_telegram: credenciales Telegram no configuradas, omitiendo envío.")
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
     for chunk in _split_text(text):
         try:
-            resp = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "parse_mode": "Markdown"}, timeout=15)
+            resp = requests.post(url, json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}, timeout=15)
             if not resp.json().get("ok"):
                 try:
-                    requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk}, timeout=15)
+                    requests.post(url, json={"chat_id": chat_id, "text": chunk}, timeout=15)
                 except requests.RequestException as e:
                     logging.error(f"Error en reintento sin Markdown: {e}")
         except requests.RequestException as e:

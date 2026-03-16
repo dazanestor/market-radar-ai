@@ -92,6 +92,7 @@ _csrf_state: dict = {
     "previous":   None,
     "rotated_at": _time.monotonic(),
 }
+_csrf_lock = threading.Lock()
 
 # Tokens temporales en memoria: token → timestamp de expiración
 _pending_tokens: dict = {}
@@ -386,10 +387,12 @@ def _rotate_csrf_if_needed() -> None:
     """Rota el CSRF token cada 24h y actualiza el global de Jinja2."""
     now = _time.monotonic()
     if now - _csrf_state["rotated_at"] >= _CSRF_ROTATION:
-        _csrf_state["previous"]   = _csrf_state["current"]
-        _csrf_state["current"]    = secrets.token_urlsafe(32)
-        _csrf_state["rotated_at"] = now
-        templates.env.globals["csrf_token"] = _csrf_state["current"]
+        with _csrf_lock:
+            if now - _csrf_state["rotated_at"] >= _CSRF_ROTATION:
+                _csrf_state["previous"]   = _csrf_state["current"]
+                _csrf_state["current"]    = secrets.token_urlsafe(32)
+                _csrf_state["rotated_at"] = now
+                templates.env.globals["csrf_token"] = _csrf_state["current"]
 
 
 def _validate_csrf(token: Optional[str]) -> bool:
@@ -657,8 +660,10 @@ def _style_ax(ax, fig):
 def _fig_to_response(fig) -> Response:
     with _chart_lock:
         buf = io.BytesIO()
-        plt.savefig(buf, format="png", dpi=110, facecolor=_C_BG, bbox_inches="tight")
-        plt.close(fig)
+        try:
+            plt.savefig(buf, format="png", dpi=110, facecolor=_C_BG, bbox_inches="tight")
+        finally:
+            plt.close(fig)
     buf.seek(0)
     return Response(content=buf.read(), media_type="image/png",
                     headers={"Cache-Control": "public, max-age=300"})
@@ -1587,7 +1592,7 @@ async def tickers_search(q: str = "", session: Optional[str] = Cookie(default=No
     from fastapi.responses import JSONResponse
     if not _is_auth(session):
         return JSONResponse([])
-    if len(q) < 2:
+    if len(q) < 2 or len(q) > 50:
         return JSONResponse([])
     def _do_search():
         import yfinance as yf
@@ -2232,20 +2237,15 @@ async def alertas_add(
     if not (0 < target_price < 1_000_000):
         return RedirectResponse("/alertas", status_code=303)
 
-    if condition_type in ("drawdown", "score"):
-        # Para alertas de drawdown/score, guardamos target_price como condition_value
-        add_price_alert(t, target_price, "above", condition_type=condition_type,
-                        condition_value=target_price)
-    else:
-        df = _read_csv()
-        direction = "below"
-        if df is not None:
-            row = df[df["ticker"] == t]
-            if not row.empty:
-                current = row.iloc[0].get("price")
-                if current and not _is_nan(current):
-                    direction = "below" if target_price < current else "above"
-        add_price_alert(t, target_price, direction, condition_type="price")
+    df = _read_csv()
+    direction = "below"
+    if df is not None:
+        row = df[df["ticker"] == t]
+        if not row.empty:
+            current = row.iloc[0].get("price")
+            if current and not _is_nan(current):
+                direction = "below" if target_price < current else "above"
+    add_price_alert(t, target_price, direction, condition_type="price")
     return RedirectResponse("/alertas", status_code=303)
 
 

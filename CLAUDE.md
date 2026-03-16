@@ -306,6 +306,15 @@ Cada ticker admite los siguientes campos en su metadata:
 - **TR fallback**: ImportError capturado si el módulo `trade_republic` no está instalado.
 - **Schema tickers.yaml**: `_validate_tickers_schema()` comprueba estructura básica tras carga.
 - **Índice BD**: `idx_price_history_ticker_date` en `(ticker, date DESC)` para acelerar `get_ticker_history`.
+- **CSRF rotation thread-safe**: `_rotate_csrf_if_needed()` usa double-checked locking con `_csrf_lock` para evitar race condition entre workers.
+- **`_fig_to_response` try/finally**: `plt.close(fig)` se llama en `finally` para garantizar liberación de memoria incluso si `savefig` falla.
+- **Dead code alertas**: bloque inalcanzable `if condition_type in ("drawdown", "score")` eliminado de `alertas_add` (los casos ya retornan antes).
+- **`tickers_search` max length**: consultas de más de 50 caracteres retornan `[]` sin llamar a yfinance.
+- **scheduler.py usa `effective()`**: `send_telegram` lee `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` desde BD (con fallback a env) en tiempo de ejecución.
+- **`get_portfolio_value_history` SQL corregido**: usar filtro por fecha (`WHERE date >= date('now', ?)`) en lugar de `LIMIT` que devolvía los registros más antiguos.
+- **Config sin sys.exit**: `config.py` no hace `sys.exit()` al arrancar; todas las vars son opcionales con defaults vacíos.
+- **Bot wait loop**: `bot.py main()` espera en bucle hasta que `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` estén disponibles (BD o env) antes de arrancar.
+- **`ai_analysis.py` y `fetch_data.py` leen config de BD**: `_get_client()` y `_effective_model()` leen `ANTHROPIC_API_KEY` y `MODEL` desde BD en cada invocación.
 
 ## Trabajo pendiente / próximas funcionalidades
 

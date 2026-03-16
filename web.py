@@ -5,6 +5,7 @@ Uso: uvicorn web:app --host 0.0.0.0 --port 8589
 """
 import asyncio
 import csv
+import datetime
 import io
 import json
 import logging
@@ -30,7 +31,7 @@ import yaml
 import yfinance as yf
 
 from fastapi import Cookie, FastAPI, Form, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -352,11 +353,14 @@ def _is_auth(session: Optional[str]) -> bool:
             if now - _last_cleanup > 60:
                 _last_cleanup = now
                 _cleanup_expired_state()
-    if not session or session not in _active_sessions:
+    if not session:
         return False
-    if now > _active_sessions[session]:
-        del _active_sessions[session]
-        return False
+    with _cleanup_lock:
+        if session not in _active_sessions:
+            return False
+        if now > _active_sessions[session]:
+            del _active_sessions[session]
+            return False
     return True
 
 def _invalidate_session(session: Optional[str]) -> None:
@@ -792,7 +796,6 @@ async def chart_valor_cartera(session: Optional[str] = Cookie(default=None)):
 
 @app.get("/cartera/valor-historico")
 async def valor_historico(session: Optional[str] = Cookie(default=None)):
-    from fastapi.responses import JSONResponse
     if not _is_auth(session):
         raise HTTPException(401)
     rows = get_portfolio_value_history(days=90)
@@ -857,8 +860,11 @@ async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
 
 def _make_qr_svg(uri: str) -> str:
     buf = io.BytesIO()
-    segno.make_qr(uri).save(buf, kind="svg", scale=4, border=1, xmldecl=False, nl=False)
-    return buf.getvalue().decode("utf-8")
+    try:
+        segno.make_qr(uri).save(buf, kind="svg", scale=4, border=1, xmldecl=False, nl=False)
+        return buf.getvalue().decode("utf-8")
+    finally:
+        buf.close()
 
 
 
@@ -866,8 +872,6 @@ def _make_qr_svg(uri: str) -> str:
 
 @app.get("/health")
 async def health():
-    import datetime as _dt
-    from fastapi.responses import JSONResponse
     status = "ok"
     try:
         from database import _db
@@ -879,7 +883,7 @@ async def health():
     return JSONResponse({
         "status":     status,
         "csv_exists": os.path.exists(csv_path),
-        "timestamp":  _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "timestamp":  datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
     })
 
 
@@ -1334,7 +1338,12 @@ async def dashboard(
     reports = get_recent_reports(n=1)
 
     tr_cash_row = get_tr_cache("cash_eur")
-    tr_cash = float(tr_cash_row[0]) if tr_cash_row else None
+    tr_cash = None
+    if tr_cash_row:
+        try:
+            tr_cash = float(tr_cash_row[0])
+        except (TypeError, ValueError):
+            tr_cash = None
     if tr_cash and total_value is not None:
         total_value += tr_cash
 
@@ -1410,7 +1419,8 @@ async def rebalanceo_page(request: Request, session: Optional[str] = Cookie(defa
                 continue
             value = shares * float(price)
             try:
-                tw = float(row.get("target_weight")) if row.get("target_weight") and not _is_nan(row.get("target_weight", float("nan"))) else None
+                _tw_raw = row.get("target_weight")
+                tw = float(_tw_raw) if _tw_raw is not None and not _is_nan(_tw_raw) else None
             except (TypeError, ValueError):
                 tw = None
             horizon_val = row.get("horizon")
@@ -1592,7 +1602,6 @@ async def ticker_detalle(ticker: str, request: Request,
 
 @app.get("/tickers/search")
 async def tickers_search(q: str = "", session: Optional[str] = Cookie(default=None)):
-    from fastapi.responses import JSONResponse
     if not _is_auth(session):
         return JSONResponse([])
     if len(q) < 2 or len(q) > 50:
@@ -1635,7 +1644,6 @@ async def tickers_search(q: str = "", session: Optional[str] = Cookie(default=No
 
 @app.get("/tickers/info")
 async def tickers_info(ticker: str = "", session: Optional[str] = Cookie(default=None)):
-    from fastapi.responses import JSONResponse
     if not _is_auth(session) or not ticker:
         return JSONResponse({})
     def _do_info():
@@ -1663,6 +1671,8 @@ async def tickers_info(ticker: str = "", session: Optional[str] = Cookie(default
             pe_val   = round(pe, 1)         if pe   and not _math.isnan(pe)   else None
             mom3m    = None  # no disponible en este endpoint rápido
             horizon  = suggest_horizon(roe_pct, pe_val, div_pct, vol, mom3m)
+            if horizon not in HORIZON_META:
+                horizon = "medio"
             return {
                 "name":            info.get("longName") or info.get("shortName", ticker),
                 "block":           _SECTOR_TO_BLOCK.get(sector, sector),
@@ -1770,9 +1780,13 @@ async def tickers_add(
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
+    if categoria not in ("portfolio", "watchlist"):
+        return RedirectResponse("/tickers", status_code=303)
+    t = ticker.strip().upper()
+    if not _TICKER_RE.match(t):
+        return RedirectResponse("/tickers?error=ticker_invalido", status_code=303)
     tickers = _load_tickers()
-    if categoria not in tickers:
-        tickers[categoria] = {}
+    tickers.setdefault(categoria, {})
     entry: dict = {"name": _sanitize_name(nombre), "block": bloque, "region": region}
     if target_weight:
         try:
@@ -1788,7 +1802,7 @@ async def tickers_add(
             pass
     if notes:
         entry["notes"] = notes.strip()[:500]
-    tickers[categoria][ticker.strip().upper()] = entry
+    tickers[categoria][t] = entry
     _save_tickers(tickers)
     return RedirectResponse("/tickers", status_code=303)
 
@@ -1811,8 +1825,12 @@ async def tickers_update(
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
+    if categoria not in ("portfolio", "watchlist"):
+        return RedirectResponse("/tickers", status_code=303)
     tickers = _load_tickers()
-    meta = (tickers.get(categoria) or {}).get(ticker, {}) or {}
+    if ticker not in tickers.get(categoria, {}):
+        return RedirectResponse("/tickers", status_code=303)
+    meta = tickers[categoria][ticker]
     if nombre:        meta["name"]          = _sanitize_name(nombre)
     if bloque:        meta["block"]         = bloque
     if region:        meta["region"]        = region
@@ -1993,6 +2011,10 @@ async def operaciones_add(
     t = ticker.strip().upper()
     if op_type not in ("buy", "sell") or shares <= 0 or price_eur <= 0:
         return RedirectResponse("/operaciones", status_code=303)
+    try:
+        datetime.date.fromisoformat(date)
+    except ValueError:
+        return RedirectResponse("/operaciones", status_code=303)
     add_operation(t, date, op_type, shares, price_eur, notes.strip()[:500])
     return RedirectResponse(f"/operaciones?saved={t}", status_code=303)
 
@@ -2088,7 +2110,8 @@ async def simulador_page(
             value = shares * float(price)
             total_value += value
             try:
-                tw = float(row.get("target_weight")) if row.get("target_weight") and not _is_nan(row.get("target_weight", float("nan"))) else None
+                _tw_raw = row.get("target_weight")
+                tw = float(_tw_raw) if _tw_raw is not None and not _is_nan(_tw_raw) else None
             except (TypeError, ValueError):
                 tw = None
             rows_data.append({
@@ -2226,9 +2249,9 @@ async def alertas_add(
 
     if condition_type == "drawdown":
         # Los drawdowns son porcentajes negativos (-100 a 0)
-        if target_price > 0:
-            target_price = -target_price
-        if abs(target_price) > 100:
+        # Normalizar: si el usuario introduce positivo, convertir a negativo
+        target_price = -abs(target_price)
+        if not (-100 <= target_price < 0):
             return RedirectResponse("/alertas?error=rango", status_code=303)
         add_price_alert(t, target_price, "below", condition_type=condition_type,
                         condition_value=target_price)

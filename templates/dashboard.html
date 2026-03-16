@@ -19,7 +19,7 @@
 <div class="stat-grid">
   <div class="stat-card">
     <div class="stat-label">Valor cartera</div>
-    <div class="stat-value">{{ total_value | eur if total_value else "—" }}</div>
+    <div class="stat-value">{{ total_value | eur if total_value is not none else "—" }}</div>
     <div class="stat-sub">{% if tr_cash is not none %}posiciones + liquidez TR{% else %}posiciones registradas{% endif %}</div>
   </div>
   <div class="stat-card">
@@ -141,7 +141,7 @@
         <tfoot>
           <tr style="border-top:2px solid #30363d;font-weight:600;color:#8b949e;font-size:12px">
             <td colspan="7">Total</td>
-            <td>{{ total_value | eur if total_value else "—" }}</td>
+            <td>{{ total_value | eur if total_value is not none else "—" }}</td>
             <td class="{{ total_pnl_eur | sum | pnl_class }}">{{ total_pnl_eur | sum | eur }}</td>
             <td class="hide-mobile"></td>
           </tr>

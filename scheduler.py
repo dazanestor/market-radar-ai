@@ -11,25 +11,12 @@ from scoring import score_watchlist
 from ai_analysis import analyze
 from database import init_db, save_snapshot, save_report, vacuum_db, effective
 from fetch_data import get_macro_context, get_news
-from config import TELEGRAM_MAX_CHARS, DRAWDOWN_ALERT_THRESHOLD
+from config import TELEGRAM_MAX_CHARS, DRAWDOWN_ALERT_THRESHOLD, split_telegram_text
 
 logging.basicConfig(
     format="%(asctime)s — %(levelname)s — %(message)s",
     level=logging.INFO,
 )
-
-def _split_text(text, limit=TELEGRAM_MAX_CHARS):
-    chunks = []
-    while len(text) > limit:
-        split_at = text.rfind('\n', 0, limit)
-        if split_at <= 0:
-            split_at = limit
-        chunks.append(text[:split_at])
-        text = text[split_at:].lstrip('\n')
-    if text:
-        chunks.append(text)
-    return chunks
-
 
 def send_telegram(text):
     from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -39,7 +26,7 @@ def send_telegram(text):
         logging.warning("send_telegram: credenciales Telegram no configuradas, omitiendo envío.")
         return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    for chunk in _split_text(text):
+    for chunk in split_telegram_text(text):
         try:
             resp = requests.post(url, json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}, timeout=15)
             if not resp.json().get("ok"):

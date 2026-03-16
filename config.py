@@ -21,6 +21,20 @@ OUTPUT_DIR = "output"
 TELEGRAM_MAX_CHARS       = 4096
 DRAWDOWN_ALERT_THRESHOLD = -20
 
+
+def split_telegram_text(text: str, limit: int = TELEGRAM_MAX_CHARS) -> list:
+    """Divide un texto largo en bloques respetando saltos de línea."""
+    chunks = []
+    while len(text) > limit:
+        split_at = text.rfind('\n', 0, limit)
+        if split_at <= 0:
+            split_at = limit
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip('\n')
+    if text:
+        chunks.append(text)
+    return chunks
+
 try:
     REPORT_HOUR = int(os.getenv("REPORT_HOUR", "8"))
     if not 0 <= REPORT_HOUR <= 23:

@@ -68,7 +68,7 @@ from database import (
     delete_setting,
     get_all_settings,
 )
-from fetch_data import get_news
+from fetch_data import get_macro_context, get_news
 from generate_csv import generate
 from scoring import score_watchlist, score_by_horizon, suggest_horizon, HORIZON_META
 

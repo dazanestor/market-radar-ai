@@ -27,6 +27,7 @@ from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
     REPORT_HOUR, TIMEZONE,
     TELEGRAM_MAX_CHARS, DRAWDOWN_ALERT_THRESHOLD,
+    split_telegram_text,
 )
 
 
@@ -53,18 +54,7 @@ def _md_escape(text: str) -> str:
     return text
 
 
-def _split_text(text, limit=TELEGRAM_MAX_CHARS):
-    """Divide texto en bloques respetando saltos de línea."""
-    chunks = []
-    while len(text) > limit:
-        split_at = text.rfind('\n', 0, limit)
-        if split_at <= 0:
-            split_at = limit
-        chunks.append(text[:split_at])
-        text = text[split_at:].lstrip('\n')
-    if text:
-        chunks.append(text)
-    return chunks
+_split_text = split_telegram_text
 
 
 async def _send_long(bot, chat_id, text, parse_mode="Markdown"):

@@ -2922,33 +2922,32 @@ async def chart_correlacion(session: Optional[str] = Cookie(default=None)):
         rets = df.pct_change().dropna()
         corr = rets.corr()
 
-        with _chart_lock:
-            n   = len(corr)
-            fig, ax = plt.subplots(figsize=(max(5, n * 0.7 + 1), max(4, n * 0.7)))
-            fig.patch.set_facecolor("#161b22")
-            ax.set_facecolor("#161b22")
+        n   = len(corr)
+        fig, ax = plt.subplots(figsize=(max(5, n * 0.7 + 1), max(4, n * 0.7)))
+        fig.patch.set_facecolor("#161b22")
+        ax.set_facecolor("#161b22")
 
-            data = corr.values
-            im   = ax.imshow(data, cmap="RdYlGn", vmin=-1, vmax=1, aspect="auto")
+        data = corr.values
+        im   = ax.imshow(data, cmap="RdYlGn", vmin=-1, vmax=1, aspect="auto")
 
-            tls = list(corr.columns)
-            ax.set_xticks(range(n)); ax.set_yticks(range(n))
-            ax.set_xticklabels(tls, rotation=45, ha="right", fontsize=8, color="#c9d1d9")
-            ax.set_yticklabels(tls, fontsize=8, color="#c9d1d9")
-            for spine in ax.spines.values():
-                spine.set_edgecolor("#30363d")
+        tls = list(corr.columns)
+        ax.set_xticks(range(n)); ax.set_yticks(range(n))
+        ax.set_xticklabels(tls, rotation=45, ha="right", fontsize=8, color="#c9d1d9")
+        ax.set_yticklabels(tls, fontsize=8, color="#c9d1d9")
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#30363d")
 
-            for i in range(n):
-                for j in range(n):
-                    val = data[i, j]
-                    ax.text(j, i, f"{val:.2f}", ha="center", va="center",
-                            fontsize=7, color="white" if abs(val) > 0.5 else "#c9d1d9")
+        for i in range(n):
+            for j in range(n):
+                val = data[i, j]
+                ax.text(j, i, f"{val:.2f}", ha="center", va="center",
+                        fontsize=7, color="white" if abs(val) > 0.5 else "#c9d1d9")
 
-            cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-            cbar.ax.tick_params(colors="#8b949e", labelsize=7)
-            ax.set_title("Correlación de retornos (1 año)", color="#e6edf3", fontsize=11, pad=10)
-            fig.tight_layout(pad=1.5)
-            return _fig_to_response(fig)
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.ax.tick_params(colors="#8b949e", labelsize=7)
+        ax.set_title("Correlación de retornos (1 año)", color="#e6edf3", fontsize=11, pad=10)
+        fig.tight_layout(pad=1.5)
+        return _fig_to_response(fig)
 
     result = await asyncio.get_running_loop().run_in_executor(_executor, _compute_and_render)
     if result is None:
@@ -3101,23 +3100,22 @@ async def chart_riesgo_returns(session: Optional[str] = Cookie(default=None)):
         port_rets = _fetch()
         if port_rets is None:
             return None
-        with _chart_lock:
-            fig, ax = plt.subplots(figsize=(7, 3))
-            fig.patch.set_facecolor("#161b22")
-            ax.set_facecolor("#21262d")
-            vals = port_rets.values * 100
-            var95 = float(np.percentile(vals, 5))
-            ax.hist(vals, bins=50, color="#1f6feb", alpha=0.7, edgecolor="none")
-            ax.axvline(var95, color="#f85149", linewidth=1.5, linestyle="--",
-                       label=f"VaR 95%: {var95:.2f}%")
-            ax.legend(fontsize=8, labelcolor="#e6edf3", facecolor="#21262d", edgecolor="#30363d")
-            ax.tick_params(colors="#8b949e", labelsize=8)
-            ax.set_xlabel("Retorno diario (%)", color="#8b949e", fontsize=9)
-            ax.set_ylabel("Frecuencia", color="#8b949e", fontsize=9)
-            ax.set_title("Distribución de retornos diarios", color="#e6edf3", fontsize=10)
-            for spine in ax.spines.values(): spine.set_edgecolor("#30363d")
-            fig.tight_layout(pad=1.0)
-            return _fig_to_response(fig)
+        fig, ax = plt.subplots(figsize=(7, 3))
+        fig.patch.set_facecolor("#161b22")
+        ax.set_facecolor("#21262d")
+        vals = port_rets.values * 100
+        var95 = float(np.percentile(vals, 5))
+        ax.hist(vals, bins=50, color="#1f6feb", alpha=0.7, edgecolor="none")
+        ax.axvline(var95, color="#f85149", linewidth=1.5, linestyle="--",
+                   label=f"VaR 95%: {var95:.2f}%")
+        ax.legend(fontsize=8, labelcolor="#e6edf3", facecolor="#21262d", edgecolor="#30363d")
+        ax.tick_params(colors="#8b949e", labelsize=8)
+        ax.set_xlabel("Retorno diario (%)", color="#8b949e", fontsize=9)
+        ax.set_ylabel("Frecuencia", color="#8b949e", fontsize=9)
+        ax.set_title("Distribución de retornos diarios", color="#e6edf3", fontsize=10)
+        for spine in ax.spines.values(): spine.set_edgecolor("#30363d")
+        fig.tight_layout(pad=1.0)
+        return _fig_to_response(fig)
 
     resp = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_and_render)
     if resp is None:
@@ -3171,30 +3169,29 @@ async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
         paths, initial = _simulate()
         if paths is None:
             return None
-        with _chart_lock:
-            n_days = paths.shape[1]
-            fig, ax = plt.subplots(figsize=(8, 4))
-            fig.patch.set_facecolor("#161b22")
-            ax.set_facecolor("#21262d")
-            for p in paths[:200]:
-                ax.plot(p, color="#1f6feb", alpha=0.02, linewidth=0.5)
-            pct5  = np.percentile(paths, 5,  axis=0)
-            pct50 = np.percentile(paths, 50, axis=0)
-            pct95 = np.percentile(paths, 95, axis=0)
-            x = np.arange(n_days)
-            ax.fill_between(x, pct5, pct95, alpha=0.15, color="#58a6ff")
-            ax.plot(x, pct50, color="#3fb950", linewidth=1.5, label="Mediana")
-            ax.plot(x, pct5,  color="#f85149", linewidth=1.0, linestyle="--", label="Percentil 5%")
-            ax.plot(x, pct95, color="#58a6ff", linewidth=1.0, linestyle="--", label="Percentil 95%")
-            ax.axhline(initial, color="#8b949e", linewidth=0.8, linestyle=":", label="Valor actual")
-            ax.legend(fontsize=8, labelcolor="#e6edf3", facecolor="#21262d", edgecolor="#30363d")
-            ax.tick_params(colors="#8b949e", labelsize=8)
-            ax.set_xlabel("Días de trading", color="#8b949e", fontsize=9)
-            ax.set_ylabel("Valor cartera (€)", color="#8b949e", fontsize=9)
-            ax.set_title("Simulación Monte Carlo — 1 año (1000 escenarios)", color="#e6edf3", fontsize=10)
-            for spine in ax.spines.values(): spine.set_edgecolor("#30363d")
-            fig.tight_layout(pad=1.0)
-            return _fig_to_response(fig)
+        n_days = paths.shape[1]
+        fig, ax = plt.subplots(figsize=(8, 4))
+        fig.patch.set_facecolor("#161b22")
+        ax.set_facecolor("#21262d")
+        for p in paths[:200]:
+            ax.plot(p, color="#1f6feb", alpha=0.02, linewidth=0.5)
+        pct5  = np.percentile(paths, 5,  axis=0)
+        pct50 = np.percentile(paths, 50, axis=0)
+        pct95 = np.percentile(paths, 95, axis=0)
+        x = np.arange(n_days)
+        ax.fill_between(x, pct5, pct95, alpha=0.15, color="#58a6ff")
+        ax.plot(x, pct50, color="#3fb950", linewidth=1.5, label="Mediana")
+        ax.plot(x, pct5,  color="#f85149", linewidth=1.0, linestyle="--", label="Percentil 5%")
+        ax.plot(x, pct95, color="#58a6ff", linewidth=1.0, linestyle="--", label="Percentil 95%")
+        ax.axhline(initial, color="#8b949e", linewidth=0.8, linestyle=":", label="Valor actual")
+        ax.legend(fontsize=8, labelcolor="#e6edf3", facecolor="#21262d", edgecolor="#30363d")
+        ax.tick_params(colors="#8b949e", labelsize=8)
+        ax.set_xlabel("Días de trading", color="#8b949e", fontsize=9)
+        ax.set_ylabel("Valor cartera (€)", color="#8b949e", fontsize=9)
+        ax.set_title("Simulación Monte Carlo — 1 año (1000 escenarios)", color="#e6edf3", fontsize=10)
+        for spine in ax.spines.values(): spine.set_edgecolor("#30363d")
+        fig.tight_layout(pad=1.0)
+        return _fig_to_response(fig)
 
     resp = await asyncio.get_running_loop().run_in_executor(_executor, _simulate_and_render)
     if resp is None:

@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+{% block page_title %}Dividendos estimados{% endblock %}
+
+{% block content %}
+<p style="font-size:12px;color:#8b949e;margin:0 0 18px">
+  Estimación basada en el histórico de pagos de los últimos 12 meses (yfinance).
+  Los importes son aproximados; la distribución trimestral refleja los meses en que cada activo ha pagado históricamente.
+</p>
+
+{% if not rows %}
+  <div class="empty-state">
+    <svg width="36" height="36" fill="none" stroke="#484f58" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    <div style="margin-top:8px">No hay activos con historial de dividendos en tu cartera.</div>
+    <div style="margin-top:4px;font-size:11px">Asegúrate de tener posiciones registradas y de haber generado un reporte reciente.</div>
+  </div>
+{% else %}
+
+<!-- ── Stat cards ── -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:20px">
+  <div class="stat-card">
+    <div class="stat-label">Q1 (Ene–Mar)</div>
+    <div class="stat-value" style="font-size:18px">{{ totals.q1_eur | eur }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Q2 (Abr–Jun)</div>
+    <div class="stat-value" style="font-size:18px">{{ totals.q2_eur | eur }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Q3 (Jul–Sep)</div>
+    <div class="stat-value" style="font-size:18px">{{ totals.q3_eur | eur }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Q4 (Oct–Dic)</div>
+    <div class="stat-value" style="font-size:18px">{{ totals.q4_eur | eur }}</div>
+  </div>
+  <div class="stat-card" style="border-color:rgba(88,166,255,0.3)">
+    <div class="stat-label">Anual estimado</div>
+    <div class="stat-value" style="font-size:18px;color:#58a6ff">{{ totals.annual_eur | eur }}</div>
+    <div class="stat-sub">{{ rows | length }} activo{{ 's' if rows | length != 1 else '' }} con dividendo</div>
+  </div>
+</div>
+
+<!-- ── Barra visual trimestral ── -->
+{% set max_q = [totals.q1_eur, totals.q2_eur, totals.q3_eur, totals.q4_eur] | max %}
+{% if max_q and max_q > 0 %}
+<div class="card" style="margin-bottom:20px;padding:16px 20px">
+  <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:#8b949e;margin-bottom:12px">Distribución trimestral</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end">
+    {% for label, val in [('Q1 Ene–Mar', totals.q1_eur), ('Q2 Abr–Jun', totals.q2_eur), ('Q3 Jul–Sep', totals.q3_eur), ('Q4 Oct–Dic', totals.q4_eur)] %}
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div style="font-size:12px;font-weight:600;color:#e6edf3">{{ val | eur }}</div>
+      <div style="width:100%;background:#21262d;border-radius:4px;overflow:hidden;height:60px;display:flex;align-items:flex-end">
+        <div style="width:100%;background:#1f6feb;border-radius:4px;height:{% if max_q > 0 %}{{ [(val / max_q * 100) | round | int, 4] | max }}{% else %}4{% endif %}%;transition:height 0.3s"></div>
+      </div>
+      <div style="font-size:10px;color:#8b949e;text-align:center">{{ label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Tabla detalle por ticker ── -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Detalle por activo — {{ year }}</span>
+    <span style="font-size:11px;color:#8b949e">Estimación basada en histórico</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Activo<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ticker e identificador del activo en cartera.')">ⓘ</button></th>
+          <th class="hide-mobile">Frec.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Frecuencia de pago histórica: mensual, trimestral, semestral o anual.')">ⓘ</button></th>
+          <th>Q1<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Estimación de dividendo en enero–marzo, basado en los meses en que el activo ha pagado históricamente.')">ⓘ</button></th>
+          <th>Q2<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Estimación de dividendo en abril–junio.')">ⓘ</button></th>
+          <th>Q3<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Estimación de dividendo en julio–septiembre.')">ⓘ</button></th>
+          <th>Q4<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Estimación de dividendo en octubre–diciembre.')">ⓘ</button></th>
+          <th>Anual est.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Suma de los cuatro trimestres estimados, en euros, para tus acciones.')">ⓘ</button></th>
+          <th class="hide-mobile">Yield s/coste<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Dividendo anual estimado dividido entre el valor actual de la posición a precio de mercado.')">ⓘ</button></th>
+          <th class="hide-mobile">Próx. ex-div.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Fecha ex-dividendo próxima según yfinance. Debes tener las acciones antes de esta fecha para cobrar el dividendo.')">ⓘ</button></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>
+            <a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a>
+            <div style="font-size:11px;color:#8b949e;margin-top:1px;max-width:160px;overflow:hidden;text-overflow:ellipsis">{{ r.name }}</div>
+          </td>
+          <td class="hide-mobile">
+            {% if r.frequency == 'mensual' %}
+              <span class="badge badge-blue">mensual</span>
+            {% elif r.frequency == 'trimestral' %}
+              <span class="badge badge-green">trimestral</span>
+            {% elif r.frequency == 'semestral' %}
+              <span class="badge badge-yellow">semestral</span>
+            {% else %}
+              <span class="badge badge-gray">anual</span>
+            {% endif %}
+          </td>
+          <td class="{% if r.q1_eur > 0 %}text-accent{% else %}text-muted{% endif %}">
+            {{ r.q1_eur | eur if r.q1_eur > 0 else "—" }}
+          </td>
+          <td class="{% if r.q2_eur > 0 %}text-accent{% else %}text-muted{% endif %}">
+            {{ r.q2_eur | eur if r.q2_eur > 0 else "—" }}
+          </td>
+          <td class="{% if r.q3_eur > 0 %}text-accent{% else %}text-muted{% endif %}">
+            {{ r.q3_eur | eur if r.q3_eur > 0 else "—" }}
+          </td>
+          <td class="{% if r.q4_eur > 0 %}text-accent{% else %}text-muted{% endif %}">
+            {{ r.q4_eur | eur if r.q4_eur > 0 else "—" }}
+          </td>
+          <td style="font-weight:600;color:#e6edf3">{{ r.annual_eur | eur }}</td>
+          <td class="hide-mobile">
+            {% if r.yield_pct is not none %}
+              <span class="{% if r.yield_pct >= 4 %}text-positive{% elif r.yield_pct >= 2 %}text-accent{% else %}text-muted{% endif %}">
+                {{ r.yield_pct | num }}%
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="hide-mobile">
+            {% if r.next_exdate %}
+              <span style="font-size:12px;color:#8b949e">{{ r.next_exdate }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+
+        <!-- Fila total -->
+        <tr style="border-top:2px solid #30363d;font-weight:600;color:#8b949e;font-size:12px">
+          <td colspan="2">Total</td>
+          <td class="text-accent">{{ totals.q1_eur | eur }}</td>
+          <td class="text-accent">{{ totals.q2_eur | eur }}</td>
+          <td class="text-accent">{{ totals.q3_eur | eur }}</td>
+          <td class="text-accent">{{ totals.q4_eur | eur }}</td>
+          <td style="color:#e6edf3;font-size:14px">{{ totals.annual_eur | eur }}</td>
+          <td class="hide-mobile"></td>
+          <td class="hide-mobile"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}

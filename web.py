@@ -2576,6 +2576,141 @@ async def chart_tr_historial(
 
 # ── Reportes ──────────────────────────────────────────────────────────────────
 
+# ── Dividendos ────────────────────────────────────────────────────────────────
+
+@app.get("/dividendos", response_class=HTMLResponse)
+async def dividendos_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+
+    def _fetch():
+        from collections import defaultdict
+        results = []
+        for ticker, (shares, _avg) in positions.items():
+            try:
+                stock  = yf.Ticker(ticker)
+                info   = {}
+                try:
+                    info = stock.info or {}
+                except Exception:
+                    pass
+                currency = info.get("currency", "USD")
+
+                divs = stock.dividends
+                if divs is None or divs.empty:
+                    continue
+
+                # Normalizar zona horaria
+                if divs.index.tz is None:
+                    divs.index = divs.index.tz_localize("UTC")
+                else:
+                    divs.index = divs.index.tz_convert("UTC")
+
+                # Últimos 2 años para detectar el patrón; al menos último año para cuantías
+                cutoff_2y  = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=2)
+                cutoff_1y  = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=1)
+                recent_2y  = divs[divs.index >= cutoff_2y]
+                recent_1y  = divs[divs.index >= cutoff_1y]
+
+                if recent_2y.empty:
+                    continue
+
+                # Base de estimación: último año si hay datos, si no los 2 años
+                base = recent_1y if not recent_1y.empty else recent_2y
+                n_months_base = max(1, (pd.Timestamp.now(tz="UTC") - base.index[0]).days / 30.44)
+
+                # Promedio por mes calendario (qué meses paga y cuánto)
+                monthly_avg: dict = defaultdict(list)
+                for dt, amount in base.items():
+                    monthly_avg[dt.month].append(float(amount))
+                monthly_est = {m: sum(v) / len(v) for m, v in monthly_avg.items()}
+
+                # Distribución trimestral
+                quarterly_raw = {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}
+                for month, avg_div in monthly_est.items():
+                    quarterly_raw[(month - 1) // 3 + 1] += avg_div
+
+                # Convertir a EUR multiplicando por las acciones
+                quarterly_eur = {}
+                for q, raw in quarterly_raw.items():
+                    converted = to_eur(raw * shares, currency)
+                    quarterly_eur[q] = round(converted, 2) if converted and not math.isnan(converted) else 0.0
+
+                annual_eur = sum(quarterly_eur.values())
+                if annual_eur <= 0:
+                    continue
+
+                # Precio actual para calcular yield sobre coste
+                price_eur  = None
+                try:
+                    hist = stock.history(period="2d")
+                    if not hist.empty:
+                        p = to_eur(float(hist["Close"].iloc[-1]), currency)
+                        if p and not math.isnan(p):
+                            price_eur = p
+                except Exception:
+                    pass
+                current_value = shares * price_eur if price_eur else None
+                yield_pct = round(annual_eur / current_value * 100, 2) if current_value and current_value > 0 else None
+
+                # Próxima fecha ex-dividendo
+                next_exdate = None
+                ex_ts = info.get("exDividendDate")
+                if ex_ts:
+                    try:
+                        next_exdate = datetime.date.fromtimestamp(ex_ts).isoformat()
+                    except (OSError, OverflowError, ValueError):
+                        pass
+
+                # Frecuencia estimada
+                n_pay = len(recent_1y) if not recent_1y.empty else len(recent_2y) // 2
+                if n_pay >= 10:
+                    frequency = "mensual"
+                elif n_pay >= 3:
+                    frequency = "trimestral"
+                elif n_pay >= 2:
+                    frequency = "semestral"
+                else:
+                    frequency = "anual"
+
+                results.append({
+                    "ticker":      ticker,
+                    "name":        info.get("longName") or info.get("shortName") or ticker,
+                    "shares":      shares,
+                    "q1_eur":      quarterly_eur[1],
+                    "q2_eur":      quarterly_eur[2],
+                    "q3_eur":      quarterly_eur[3],
+                    "q4_eur":      quarterly_eur[4],
+                    "annual_eur":  round(annual_eur, 2),
+                    "yield_pct":   yield_pct,
+                    "frequency":   frequency,
+                    "next_exdate": next_exdate,
+                })
+            except Exception:
+                logger.exception("Error calculando dividendos de %s", ticker)
+
+        return sorted(results, key=lambda x: -x["annual_eur"])
+
+    rows = await asyncio.get_running_loop().run_in_executor(_executor, _fetch)
+
+    totals = {
+        "q1_eur":     round(sum(r["q1_eur"]    for r in rows), 2),
+        "q2_eur":     round(sum(r["q2_eur"]    for r in rows), 2),
+        "q3_eur":     round(sum(r["q3_eur"]    for r in rows), 2),
+        "q4_eur":     round(sum(r["q4_eur"]    for r in rows), 2),
+        "annual_eur": round(sum(r["annual_eur"] for r in rows), 2),
+    }
+
+    return templates.TemplateResponse("dividendos.html", {
+        "request": request,
+        "rows":    rows,
+        "totals":  totals,
+        "year":    datetime.date.today().year,
+    })
+
+
 # ── Exportaciones ─────────────────────────────────────────────────────────────
 
 @app.get("/export/portfolio")

@@ -104,6 +104,24 @@
   </p>
 </div>
 
+<!-- ── Sugerencia IA ── -->
+<div style="margin-top:20px" x-data="{ loading: false, result: '', err: '' }">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🤖 Sugerencia IA</span>
+      <button @click="if(!result && !loading){ loading=true; fetch('/rebalanceo/sugerencia').then(r=>r.json()).then(d=>{ if(d.error) err=d.error; else result=d.text; loading=false }).catch(()=>{ err='Error de conexión'; loading=false }) }"
+              class="btn btn-sm" :disabled="loading" x-show="!result">
+        <span x-show="!loading">Analizar rebalanceo con IA</span>
+        <span x-show="loading" style="color:#8b949e">Analizando…</span>
+      </button>
+    </div>
+    <div class="card-body" x-show="result || err">
+      <div x-show="result" style="font-size:13px;color:#c9d1d9;line-height:1.7;white-space:pre-wrap" x-text="result"></div>
+      <div x-show="err" x-text="err" style="color:#f85149;font-size:12px"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Distribución por horizonte ── -->
 {% set horizon_rows = rows | selectattr('horizon') | list %}
 {% if horizon_rows %}

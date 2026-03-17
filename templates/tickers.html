@@ -183,6 +183,7 @@
         results: [],
         loading: false,
         selected: false,
+        suggestingMeta: false,
         ticker: '', nombre: '', bloque: '', region: '',
         horizon: '', horizonLabel: '', horizonRange: '', horizonDesc: '',
         async search() {
@@ -292,8 +293,15 @@
               <span style="color:#8b949e;margin-left:6px" x-text="'(' + horizonRange + ')'"></span>
               — <span x-text="horizonDesc"></span>
             </div>
-            <div style="margin-top:12px">
+            <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <button type="submit" class="btn btn-primary btn-sm">Añadir ticker</button>
+              <button type="button" class="btn btn-sm"
+                :disabled="suggestingMeta || !ticker"
+                @click="if(ticker){ suggestingMeta=true; fetch('/tickers/suggest-meta?ticker='+encodeURIComponent(ticker)).then(r=>r.json()).then(d=>{ if(d.horizon) horizon=d.horizon; if(d.notes) $el.closest('form').querySelector('[name=notes]').value=d.notes; suggestingMeta=false }).catch(()=>{ suggestingMeta=false }) }"
+                style="color:#8b949e;border-color:#30363d">
+                <span x-show="!suggestingMeta">🤖 Sugerir horizonte y tesis</span>
+                <span x-show="suggestingMeta">Consultando IA…</span>
+              </button>
             </div>
           </form>
         </div>

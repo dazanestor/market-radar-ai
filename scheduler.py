@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from generate_csv import generate
 from scoring import score_watchlist
-from ai_analysis import analyze
+from ai_analysis import analyze, summarize_report
 from database import init_db, save_snapshot, save_report, vacuum_db, effective
 from fetch_data import get_macro_context, get_news
 from config import TELEGRAM_MAX_CHARS, DRAWDOWN_ALERT_THRESHOLD, split_telegram_text
@@ -72,6 +72,12 @@ def run():
 
     save_report(ai_report)
 
+    # Generar versión corta para Telegram (3 líneas)
+    try:
+        short = summarize_report(ai_report)
+    except Exception:
+        short = ""
+
     drawdown_alerts = []
     for _, row in df.iterrows():
         if row["drawdown_52w"] < DRAWDOWN_ALERT_THRESHOLD:
@@ -81,7 +87,7 @@ def run():
         if row.get("trend") == "empeorando":
             drawdown_alerts.append(f"📉 *{row['ticker']}*: drawdown en tendencia creciente esta semana")
 
-    message = ai_report
+    message = short if short else ai_report
     if drawdown_alerts:
         message = "\n".join(drawdown_alerts) + "\n\n" + message
     if errors:

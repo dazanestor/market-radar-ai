@@ -38,7 +38,14 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from ai_analysis import analyze
+from ai_analysis import (
+    analyze,
+    explain_ticker,
+    suggest_rebalance,
+    detect_news_patterns,
+    analyze_operations,
+    suggest_ticker_meta,
+)
 from config import OUTPUT_DIR
 from database import (
     add_operation,
@@ -2709,6 +2716,190 @@ async def dividendos_page(request: Request, session: Optional[str] = Cookie(defa
         "totals":  totals,
         "year":    datetime.date.today().year,
     })
+
+
+# ── Endpoints de análisis IA on-demand ────────────────────────────────────────
+
+@app.get("/ticker/{ticker}/analizar")
+async def ticker_analizar(
+    ticker: str,
+    session: Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        return JSONResponse({"error": "Ticker inválido"}, status_code=400)
+
+    df      = _read_csv()
+    csv_row = None
+    if df is not None:
+        r = df[df["ticker"] == ticker]
+        if not r.empty:
+            csv_row = r.iloc[0].to_dict()
+
+    tickers_data = _load_tickers()
+    notes = ""
+    for cat in ("portfolio", "watchlist"):
+        meta = (tickers_data.get(cat) or {}).get(ticker)
+        if isinstance(meta, dict):
+            notes = meta.get("notes", "") or ""
+            break
+
+    def _fetch():
+        try:
+            info = yf.Ticker(ticker).info or {}
+        except Exception:
+            info = {}
+        return {
+            "name":           info.get("longName") or info.get("shortName") or ticker,
+            "pe_ratio":       info.get("trailingPE"),
+            "pb_ratio":       info.get("priceToBook"),
+            "roe":            _safe_pct(info.get("returnOnEquity")),
+            "profit_margin":  _safe_pct(info.get("profitMargins")),
+            "debt_equity":    info.get("debtToEquity"),
+            "revenue_growth": _safe_pct(info.get("revenueGrowth")),
+        }
+
+    fundamentals = await asyncio.get_running_loop().run_in_executor(_executor, _fetch)
+    text = await asyncio.get_running_loop().run_in_executor(
+        _executor, explain_ticker, ticker, notes, csv_row, fundamentals
+    )
+    if not text:
+        return JSONResponse({"error": "No se pudo generar el análisis"}, status_code=500)
+    return JSONResponse({"text": text})
+
+
+@app.get("/rebalanceo/sugerencia")
+async def rebalanceo_sugerencia(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+
+    df        = _read_csv()
+    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+    rows_data = []
+
+    if df is not None:
+        for _, row in df[df["category"] == "portfolio"].iterrows():
+            t = row["ticker"]
+            if t not in positions:
+                continue
+            shares, _ = positions[t]
+            price = row.get("price")
+            if not price or _is_nan(price):
+                continue
+            value = shares * float(price)
+            try:
+                _tw_raw = row.get("target_weight")
+                tw = float(_tw_raw) if _tw_raw is not None and not _is_nan(_tw_raw) else None
+            except (TypeError, ValueError):
+                tw = None
+            rows_data.append({
+                "ticker":    t,
+                "name":      row["name"],
+                "value":     value,
+                "target_w":  tw,
+                "horizon":   row.get("horizon") if row.get("horizon") and str(row.get("horizon")) != "nan" else None,
+                "score":     row.get("score"),
+            })
+
+    total = sum(r["value"] for r in rows_data) if rows_data else 0.0
+    for r in rows_data:
+        r["current_w"] = r["value"] / total * 100 if total else 0.0
+        r["diff"] = (r["current_w"] - r["target_w"]) if r["target_w"] is not None else None
+
+    rows_data.sort(key=lambda x: -x["value"])
+
+    text = await asyncio.get_running_loop().run_in_executor(
+        _executor, suggest_rebalance, rows_data, total
+    )
+    if not text:
+        return JSONResponse({"error": "No se pudo generar la sugerencia"}, status_code=500)
+    return JSONResponse({"text": text})
+
+
+@app.get("/noticias/analizar")
+async def noticias_analizar(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+
+    tickers_data = _load_tickers()
+    all_tickers  = []
+    for cat in ("portfolio", "watchlist"):
+        for t in (tickers_data.get(cat) or {}):
+            all_tickers.append(t)
+
+    def _fetch_all():
+        from fetch_data import get_news, translate_headlines
+        result = {}
+        for t in all_tickers[:20]:
+            headlines = get_news(t, n=3, translate=False)
+            if headlines:
+                result[t] = headlines
+        # traducir en bloque
+        all_hl = [h for hl in result.values() for h in hl]
+        if all_hl:
+            translated = translate_headlines(all_hl)
+            idx = 0
+            for t in result:
+                n = len(result[t])
+                result[t] = translated[idx:idx+n]
+                idx += n
+        return result
+
+    headlines_by_ticker = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_all)
+    text = await asyncio.get_running_loop().run_in_executor(
+        _executor, detect_news_patterns, headlines_by_ticker
+    )
+    if not text:
+        return JSONResponse({"error": "No se pudo detectar patrones"}, status_code=500)
+    return JSONResponse({"text": text})
+
+
+@app.get("/operaciones/analizar")
+async def operaciones_analizar(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+
+    ops = get_operations(limit=50)
+    df  = _read_csv()
+    current_prices: dict = {}
+    if df is not None:
+        for _, row in df.iterrows():
+            p = row.get("price")
+            if p and not _is_nan(p):
+                current_prices[row["ticker"]] = float(p)
+
+    text = await asyncio.get_running_loop().run_in_executor(
+        _executor, analyze_operations, ops, current_prices
+    )
+    if not text:
+        return JSONResponse({"error": "No se pudo generar el análisis"}, status_code=500)
+    return JSONResponse({"text": text})
+
+
+@app.get("/tickers/suggest-meta")
+async def tickers_suggest_meta(
+    ticker:  str = "",
+    session: Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        return JSONResponse({}, status_code=401)
+    ticker = ticker.strip().upper()
+    if not _TICKER_RE.match(ticker):
+        return JSONResponse({})
+
+    def _fetch():
+        try:
+            return yf.Ticker(ticker).info or {}
+        except Exception:
+            return {}
+
+    info   = await asyncio.get_running_loop().run_in_executor(_executor, _fetch)
+    result = await asyncio.get_running_loop().run_in_executor(
+        _executor, suggest_ticker_meta, ticker, info
+    )
+    return JSONResponse(result)
 
 
 # ── Exportaciones ─────────────────────────────────────────────────────────────

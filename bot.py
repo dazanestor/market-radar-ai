@@ -15,7 +15,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes
 
 from generate_csv import generate
 from scoring import score_watchlist
-from ai_analysis import analyze, check_api_health
+from ai_analysis import analyze, check_api_health, summarize_alerts, summarize_report
 from fetch_data import get_macro_context, get_news, to_eur, clear_fx_cache
 from database import (
     init_db, save_snapshot, save_report,
@@ -154,7 +154,14 @@ async def _run_report(bot, chat_id):
 
     save_report(ai_report)
 
-    message = ai_report
+    # Generar versión corta para Telegram (3 líneas)
+    loop = asyncio.get_running_loop()
+    try:
+        short = await loop.run_in_executor(None, summarize_report, ai_report)
+    except Exception:
+        short = ai_report
+
+    message = short if short else ai_report
     if alerts:
         message = "\n".join(alerts) + "\n\n" + message
     if errors:
@@ -186,8 +193,10 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
     if not alerts:
         return
 
-    tickers_needed = list({a[1] for a in alerts})
-    prices = {}
+    tickers_needed   = list({a[1] for a in alerts})
+    prices           = {}
+    triggered_msgs   = []
+    triggered_history = []
     clear_fx_cache()
 
     csv_data = {}
@@ -262,15 +271,36 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 logging.exception("Error guardando historial de alerta")
             deactivate_alert(alert_id)
-            msg = f"{icon} *Alerta disparada*\n*{_md_escape(ticker)}*: {_md_escape(msg_detail)}"
+            triggered_msgs.append(
+                f"{icon} *Alerta disparada*\n*{_md_escape(ticker)}*: {_md_escape(msg_detail)}"
+            )
+            triggered_history.append(history_id)
+
+    # Enviar alertas: si hay ≥2, añadir resumen contextualizado de Claude
+    if triggered_msgs:
+        if len(triggered_msgs) >= 2:
+            try:
+                plain_alerts = [m.replace("*", "") for m in triggered_msgs]
+                summary = await asyncio.get_running_loop().run_in_executor(
+                    None, summarize_alerts, plain_alerts
+                )
+                if summary:
+                    triggered_msgs.insert(0, f"🤖 *Resumen IA*: {_md_escape(summary)}")
+            except Exception:
+                logging.exception("Error generando resumen de alertas con IA")
+        for msg in triggered_msgs:
             try:
                 await context.bot.send_message(
                     chat_id=_chat_id(), text=msg, parse_mode="Markdown"
                 )
-                if history_id:
-                    mark_alert_notified(history_id)
             except Exception:
-                logging.exception("Error enviando notificación de alerta %s", ticker)
+                logging.exception("Error enviando notificación de alerta")
+        for history_id in triggered_history:
+            if history_id:
+                try:
+                    mark_alert_notified(history_id)
+                except Exception:
+                    pass
 
 
 async def job_replay_unnotified_alerts(context):

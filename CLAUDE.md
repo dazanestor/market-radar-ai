@@ -15,6 +15,7 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - **Config**: `tickers.yaml` (PyYAML) para cartera y watchlist
 - **Visualización**: `matplotlib` con backend Agg (sin display), tema oscuro
 - **Despliegue**: Docker + Docker Compose, publicado en GHCR, multi-arquitectura (amd64 + arm64)
+- **Web Push PWA**: `push_utils.py` — notificaciones push al navegador sin dependencias externas (VAPID RFC 8292 + cifrado RFC 8291 con `cryptography` y `requests` ya disponibles)
 
 ## Estructura del proyecto
 
@@ -26,6 +27,7 @@ fetch_data.py       # Wrappers yfinance: precios, dividendos, fundamentales, FX,
 scoring.py          # Algoritmo de puntuación multi-factor (6 factores → score)
 ai_analysis.py      # Integración Claude: genera el análisis diario
 web.py              # Dashboard FastAPI: reportes, posiciones, alertas, rebalanceo
+push_utils.py       # Web Push VAPID: genera claves, cifra payload, envía push al navegador
 database.py         # CRUD SQLite: portfolio, price_history, price_alerts, reports
 config.py           # Parsing y validación de variables de entorno
 tickers.yaml        # Cartera y watchlist del usuario (editado via comandos Telegram)
@@ -76,6 +78,7 @@ Tablas en `data/radar.db`:
 - **`reports`** — informes guardados: `date`, `content`
 - **`news_cache`** — caché de traducciones de titulares: `headline_hash PK`, `translation`, `fetched_at` (TTL 24h)
 - **`tr_cache`** — caché de Trade Republic: `key PK`, `value`, `updated`
+- **`push_subscriptions`** — suscripciones Web Push: `endpoint UNIQUE`, `p256dh`, `auth`, `user_agent`, `created`
 - **Backups automáticos**: el servicio `backup` en docker-compose copia `radar.db` a `data/backups/radar_YYYYMMDD.db` cada 24h, conservando los últimos 7 snapshots.
 
 ## Algoritmo de scoring (scoring.py)
@@ -212,6 +215,13 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 
 | Ruta | Método | Descripción |
 |------|--------|-------------|
+| `/sw.js` | GET | Service Worker para Web Push (sin autenticación) |
+| `/manifest.json` | GET | Manifest PWA (sin autenticación) |
+| `/icon-192.png` / `/icon-512.png` | GET | Iconos PWA generados con matplotlib |
+| `/push/vapid-public-key` | GET | Clave pública VAPID para suscripción del navegador |
+| `/push/subscribe` | POST | Registra suscripción push del navegador |
+| `/push/unsubscribe` | POST | Elimina suscripción push (body JSON con `endpoint` + `csrf_token`) |
+| `/push/test` | POST | Envía notificación push de prueba a todas las suscripciones activas |
 | `/export/portfolio` | GET | Descarga cartera como CSV |
 | `/export/watchlist` | GET | Descarga watchlist como CSV |
 | `/tickers/import` | POST | Importa tickers desde CSV |
@@ -320,6 +330,7 @@ Cada ticker admite los siguientes campos en su metadata:
 
 - **Tests automatizados**: no hay suite de tests. Validación manual via Telegram/scheduler.
 - **CSRF no en formularios de login/setup**: los endpoints de login no necesitan CSRF (no requieren sesión previa); el CSRF token global cubre todos los formularios de usuario autenticado.
+- **Web Push require HTTPS en producción**: los Service Workers solo se registran en orígenes seguros. En `localhost` funciona sin TLS. En producción se necesita reverse proxy con TLS (Cloudflare Tunnel, Caddy, nginx).
 - **Alertas por drawdown/score en Telegram bot**: el comando `/alerta` solo crea alertas de precio. Las alertas por drawdown/score solo se crean desde el dashboard web.
 
 ## CI/CD

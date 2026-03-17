@@ -24,6 +24,12 @@ from database import (
     purge_old_price_history, purge_old_news_cache, effective,
     get_all_positions,
 )
+try:
+    from push_utils import send_push_to_all as _send_push_to_all
+    _PUSH_AVAILABLE = True
+except Exception:
+    _PUSH_AVAILABLE = False
+    def _send_push_to_all(*a, **kw): return 0
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
     REPORT_HOUR, TIMEZONE,
@@ -170,6 +176,20 @@ async def _run_report(bot, chat_id):
 
     await _send_long(bot, chat_id, message)
 
+    # Web Push: notificar al navegador que el informe está listo
+    if _PUSH_AVAILABLE:
+        try:
+            asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: _send_push_to_all(
+                    "Informe diario listo",
+                    "El análisis de mercado está disponible en el dashboard.",
+                    "/reportes",
+                ),
+            )
+        except Exception:
+            logging.exception("Error enviando Web Push de informe")
+
 
 # ── Jobs periódicos ───────────────────────────────────────────────────────────
 
@@ -313,6 +333,18 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
                     mark_alert_notified(history_id)
                 except Exception:
                     pass
+        # Web Push al navegador en paralelo
+        if _PUSH_AVAILABLE:
+            try:
+                plain = "; ".join(
+                    m.replace("*", "").replace("\n", " ") for m in triggered_msgs[:3]
+                )
+                asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: _send_push_to_all("Alerta de mercado", plain[:120], "/alertas"),
+                )
+            except Exception:
+                logging.exception("Error enviando Web Push de alertas")
 
 
 async def job_replay_unnotified_alerts(context):

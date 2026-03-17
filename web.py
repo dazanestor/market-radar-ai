@@ -75,6 +75,8 @@ from database import (
     set_setting,
     delete_setting,
     get_all_settings,
+    upsert_push_subscription,
+    delete_push_subscription,
 )
 from fetch_data import get_macro_context, get_news, to_eur
 from generate_csv import generate
@@ -3665,6 +3667,166 @@ async def reportes_page(
         "total_pages":  total_pages,
         "total":        total,
     })
+
+
+# ── Web Push PWA ──────────────────────────────────────────────────────────────
+
+_SW_JS = r"""
+self.addEventListener('push', function(event) {
+  var data = {};
+  try { data = event.data.json(); } catch(e) { data = {title:'Market Radar AI', body: event.data ? event.data.text() : ''}; }
+  var title = data.title || 'Market Radar AI';
+  var options = {
+    body:  data.body  || '',
+    icon:  data.icon  || '/icon-192.png',
+    badge: '/icon-192.png',
+    data:  { url: data.url || '/' },
+    requireInteraction: false,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  var url = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/';
+  event.waitUntil(clients.openWindow(url));
+});
+"""
+
+_ICON_PNG_CACHE: dict = {}
+
+
+def _generate_icon_png(size: int) -> bytes:
+    if size in _ICON_PNG_CACHE:
+        return _ICON_PNG_CACHE[size]
+    buf = io.BytesIO()
+    with _chart_lock:
+        fig, ax = plt.subplots(figsize=(size / 100, size / 100), dpi=100)
+        fig.patch.set_facecolor("#161b22")
+        ax.set_facecolor("#161b22")
+        ax.text(0.5, 0.5, "MR", ha="center", va="center",
+                fontsize=int(size * 0.35), fontweight="bold", color="#58a6ff",
+                transform=ax.transAxes)
+        ax.axis("off")
+        try:
+            fig.savefig(buf, format="png", bbox_inches="tight", facecolor="#161b22")
+        finally:
+            plt.close(fig)
+    _ICON_PNG_CACHE[size] = buf.getvalue()
+    return _ICON_PNG_CACHE[size]
+
+
+@app.get("/sw.js")
+async def service_worker():
+    return Response(
+        content=_SW_JS,
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=0", "Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/manifest.json")
+async def pwa_manifest():
+    data = {
+        "name": "Market Radar AI",
+        "short_name": "Market Radar",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0d1117",
+        "theme_color": "#161b22",
+        "icons": [
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }
+    return Response(
+        content=json.dumps(data),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/icon-192.png")
+async def icon_192():
+    png = await asyncio.get_running_loop().run_in_executor(_executor, _generate_icon_png, 192)
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/icon-512.png")
+async def icon_512():
+    png = await asyncio.get_running_loop().run_in_executor(_executor, _generate_icon_png, 512)
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/push/vapid-public-key")
+async def push_vapid_public_key():
+    from push_utils import get_or_create_vapid_keys
+    _, pub_b64 = await asyncio.get_running_loop().run_in_executor(
+        _executor, get_or_create_vapid_keys
+    )
+    return JSONResponse({"publicKey": pub_b64})
+
+
+@app.post("/push/subscribe")
+async def push_subscribe(
+    request:    Request,
+    session:    Optional[str] = Cookie(default=None),
+    csrf_token: Optional[str] = Form(default=None),
+    endpoint:   str = Form(...),
+    p256dh:     str = Form(...),
+    auth:       str = Form(...),
+):
+    if not _is_auth(session):
+        raise HTTPException(status_code=401)
+    _require_csrf(request, csrf_token)
+    if not endpoint.startswith("https://"):
+        raise HTTPException(status_code=400, detail="endpoint inválido")
+    ua = request.headers.get("user-agent", "")[:200]
+    upsert_push_subscription(endpoint, p256dh, auth, ua)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/push/unsubscribe")
+async def push_unsubscribe(
+    request: Request,
+    session: Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        raise HTTPException(status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400)
+    if not _validate_csrf(body.get("csrf_token", "")):
+        raise HTTPException(status_code=403, detail="CSRF inválido")
+    endpoint = body.get("endpoint", "")
+    if endpoint:
+        delete_push_subscription(endpoint)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/push/test")
+@limiter.limit("3/minute")
+async def push_test(
+    request:    Request,
+    session:    Optional[str] = Cookie(default=None),
+    csrf_token: Optional[str] = Form(default=None),
+):
+    if not _is_auth(session):
+        raise HTTPException(status_code=401)
+    _require_csrf(request, csrf_token)
+    from push_utils import send_push_to_all
+    sent = await asyncio.get_running_loop().run_in_executor(
+        _executor,
+        lambda: send_push_to_all(
+            "Market Radar AI",
+            "Notificación de prueba. El sistema funciona correctamente.",
+            "/alertas",
+        ),
+    )
+    return JSONResponse({"sent": sent})
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

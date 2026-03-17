@@ -113,6 +113,16 @@ def init_db():
             updated TEXT
         )
         """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            endpoint   TEXT NOT NULL UNIQUE,
+            p256dh     TEXT NOT NULL,
+            auth       TEXT NOT NULL,
+            user_agent TEXT,
+            created    TEXT NOT NULL
+        )
+        """)
         # Migrations: add new columns before creating indexes that depend on them
         _add_column_if_missing(conn, "price_alerts",  "condition_type",  "TEXT DEFAULT 'price'")
         _add_column_if_missing(conn, "price_alerts",  "condition_value", "REAL")
@@ -129,6 +139,7 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_operations_ticker ON operations(ticker)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_operations_date ON operations(date DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_value_date ON portfolio_value(date DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON push_subscriptions(endpoint)")
 
 
 def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:
@@ -529,3 +540,32 @@ def get_cached_translation(headline: str, max_age_hours: int = 24) -> Optional[s
     except Exception:
         return None
     return row[0]
+
+
+# ── push_subscriptions ────────────────────────────────────────────────────────
+
+def upsert_push_subscription(endpoint: str, p256dh: str, auth: str, user_agent: str = "") -> None:
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, created)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(endpoint) DO UPDATE SET
+                p256dh=excluded.p256dh,
+                auth=excluded.auth,
+                user_agent=excluded.user_agent
+        """, (endpoint, p256dh, auth, user_agent,
+              datetime.now().isoformat(timespec="minutes")))
+
+
+def delete_push_subscription(endpoint: str) -> None:
+    with _db() as conn:
+        conn.cursor().execute(
+            "DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,)
+        )
+
+
+def get_all_push_subscriptions() -> list:
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions")
+        return c.fetchall()

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Market Radar AI{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2358a6ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='2'/><path d='M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14'/></svg>">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#161b22">
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://unpkg.com/alpinejs@3/dist/cdn.min.js"></script>
   <style>
@@ -323,6 +325,10 @@
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
         Cerrar sesión
       </a>
+      <button id="push-btn" onclick="togglePushNotifications()" class="nav-link" style="width:100%;background:none;border:none;cursor:pointer;font-size:12px;text-align:left;display:none" title="Notificaciones push">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <span id="push-btn-label">Activar alertas push</span>
+      </button>
     </div>
   </aside>
 
@@ -382,6 +388,74 @@
     var open = saved !== null ? saved === '1' : window.innerWidth >= DESKTOP;
     _sidebarSetState(open);
   });
+</script>
+<script>
+// ── Web Push / Service Worker ────────────────────────────────────────────────
+(function() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  var btn = document.getElementById('push-btn');
+  if (btn) btn.style.display = 'flex';
+  var CSRF = '{{ csrf_token }}';
+
+  function _urlB64ToUint8(s) {
+    var pad = '='.repeat((4 - s.length % 4) % 4);
+    var b64 = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
+    var raw = window.atob(b64);
+    var arr = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  function _updateBtn(subscribed) {
+    var lbl = document.getElementById('push-btn-label');
+    if (lbl) lbl.textContent = subscribed ? 'Desactivar alertas push' : 'Activar alertas push';
+  }
+
+  navigator.serviceWorker.register('/sw.js').then(function(reg) {
+    reg.pushManager.getSubscription().then(function(sub) { _updateBtn(!!sub); });
+  }).catch(function(e) { console.warn('SW error:', e); });
+
+  window.togglePushNotifications = function() {
+    navigator.serviceWorker.ready.then(function(reg) {
+      reg.pushManager.getSubscription().then(function(sub) {
+        if (sub) {
+          sub.unsubscribe().then(function() {
+            fetch('/push/unsubscribe', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({endpoint: sub.endpoint, csrf_token: CSRF})
+            });
+            _updateBtn(false);
+          });
+        } else {
+          Notification.requestPermission().then(function(perm) {
+            if (perm !== 'granted') return;
+            fetch('/push/vapid-public-key').then(function(r) { return r.json(); }).then(function(data) {
+              reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: _urlB64ToUint8(data.publicKey)
+              }).then(function(sub) {
+                var k = sub.getKey('p256dh');
+                var a = sub.getKey('auth');
+                function _toB64url(buf) {
+                  return btoa(String.fromCharCode.apply(null, new Uint8Array(buf)))
+                    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+                }
+                var form = new FormData();
+                form.append('endpoint',   sub.endpoint);
+                form.append('p256dh',     _toB64url(k));
+                form.append('auth',       _toB64url(a));
+                form.append('csrf_token', CSRF);
+                fetch('/push/subscribe', {method: 'POST', body: form});
+                _updateBtn(true);
+              }).catch(function(e) { console.warn('Push subscribe error:', e); });
+            });
+          });
+        }
+      });
+    });
+  };
+})();
 </script>
 </body>
 </html>

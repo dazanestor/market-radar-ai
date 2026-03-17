@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block page_title %}Consenso de analistas{% endblock %}
+
+{% block content %}
+<p style="font-size:12px;color:#8b949e;margin:0 0 18px">
+  Recomendaciones y precios objetivo de analistas (vía yfinance). Solo tickers con cobertura de analistas.
+  Escala: 1 = Strong Buy · 2 = Buy · 3 = Hold · 4 = Sell · 5 = Strong Sell.
+</p>
+
+{% if not rows %}
+<div class="empty-state">
+  <svg width="36" height="36" fill="none" stroke="#484f58" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+  <div style="margin-top:8px">No se encontró cobertura de analistas para los tickers actuales.</div>
+</div>
+{% else %}
+
+<!-- Stat cards -->
+{% set buy_count  = rows | selectattr('rec_key', 'in', ['buy','strong_buy','strongBuy']) | list | length %}
+{% set hold_count = rows | selectattr('rec_key', 'equalto', 'hold') | list | length %}
+{% set sell_count = rows | selectattr('rec_key', 'in', ['sell','strong_sell','strongSell','underperform','underweight']) | list | length %}
+{% set upside_rows = rows | selectattr('upside', 'ne', none) | list %}
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:20px">
+  <div class="stat-card"><div class="stat-label">Activos analizados</div><div class="stat-value">{{ rows | length }}</div></div>
+  <div class="stat-card" style="border-color:rgba(63,185,80,0.3)"><div class="stat-label">Buy / Strong Buy</div><div class="stat-value" style="color:#3fb950">{{ buy_count }}</div></div>
+  <div class="stat-card"><div class="stat-label">Hold</div><div class="stat-value" style="color:#d29922">{{ hold_count }}</div></div>
+  <div class="stat-card" style="border-color:rgba(248,81,73,0.3)"><div class="stat-label">Sell</div><div class="stat-value" style="color:#f85149">{{ sell_count }}</div></div>
+  {% if upside_rows %}
+  <div class="stat-card" style="border-color:rgba(88,166,255,0.3)">
+    <div class="stat-label">Upside promedio</div>
+    <div class="stat-value" style="color:#58a6ff">
+      {{ "%.1f"|format(upside_rows | map(attribute='upside') | list | sum / upside_rows | length) }}%
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Activo</th>
+          <th>Recomendación</th>
+          <th>Analistas</th>
+          <th>Precio actual</th>
+          <th>P.O. medio</th>
+          <th class="hide-mobile">P.O. bajo</th>
+          <th class="hide-mobile">P.O. alto</th>
+          <th>Upside</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>
+            <a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a>
+            <div style="font-size:11px;color:#8b949e;margin-top:1px">{{ r.name }}</div>
+          </td>
+          <td>
+            {% set rk = r.rec_key | lower %}
+            {% if 'strong_buy' in rk or 'strongbuy' in rk %}
+              <span class="badge badge-green">⬆⬆ Strong Buy</span>
+            {% elif rk == 'buy' or rk == 'outperform' or rk == 'overweight' %}
+              <span class="badge badge-green">↑ Buy</span>
+            {% elif rk == 'hold' or rk == 'neutral' %}
+              <span class="badge badge-yellow">→ Hold</span>
+            {% elif 'sell' in rk or 'underperform' in rk or 'underweight' in rk %}
+              <span class="badge badge-red">↓ Sell</span>
+            {% else %}
+              <span class="badge badge-gray">{{ r.rec_key or '—' }}</span>
+            {% endif %}
+            {% if r.rec_mean %}
+              <span style="font-size:10px;color:#8b949e;margin-left:4px">{{ r.rec_mean }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ r.n if r.n else '—' }}</td>
+          <td>{{ r.current | eur if r.current else '—' }}</td>
+          <td style="font-weight:600">{{ r.tgt_mean | eur if r.tgt_mean else '—' }}</td>
+          <td class="hide-mobile text-muted">{{ r.tgt_low | eur if r.tgt_low else '—' }}</td>
+          <td class="hide-mobile text-muted">{{ r.tgt_high | eur if r.tgt_high else '—' }}</td>
+          <td>
+            {% if r.upside is not none %}
+              <span class="{{ 'text-positive' if r.upside > 0 else 'text-negative' }}" style="font-weight:600">
+                {{ "%+.1f"|format(r.upside) }}%
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

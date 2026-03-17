@@ -40,6 +40,8 @@
                 <span class="badge badge-red">Drawdown</span>
               {% elif ctype == 'score' %}
                 <span class="badge badge-blue">Score</span>
+              {% elif ctype == 'stoploss_pct' %}
+                <span class="badge badge-red">🛑 Stop-loss</span>
               {% else %}
                 <span class="badge badge-gray">Precio</span>
               {% endif %}
@@ -49,6 +51,8 @@
                 Drawdown &lt; {{ target | num }}%
               {% elif ctype == 'score' %}
                 Score &gt; {{ target | num }}
+              {% elif ctype == 'stoploss_pct' %}
+                <span class="text-negative">Pérdida vs coste &gt; {{ target | num }}%</span>
               {% elif direction == 'below' %}
                 <span class="text-negative">↓ baja a {{ target | eur }}</span>
               {% else %}
@@ -103,14 +107,16 @@
           <label class="form-label">Tipo de alerta</label>
           <select name="condition_type" class="form-input" x-model="ctype">
             <option value="price">Precio (€)</option>
+            <option value="stoploss_pct">Stop-loss dinámico (%)</option>
             <option value="drawdown">Drawdown (%)</option>
             <option value="score">Score</option>
           </select>
         </div>
         <div>
-          <label class="form-label" x-text="ctype === 'price' ? 'Precio objetivo (€)' : ctype === 'drawdown' ? 'Drawdown máximo (%)' : 'Score mínimo'">Valor *</label>
+          <label class="form-label"
+            x-text="ctype === 'price' ? 'Precio objetivo (€)' : ctype === 'stoploss_pct' ? 'Pérdida máx. desde coste (%)' : ctype === 'drawdown' ? 'Drawdown máximo (%)' : 'Score mínimo'">Valor *</label>
           <input type="number" name="target_price" class="form-input"
-                 :placeholder="ctype === 'price' ? '150.00' : ctype === 'drawdown' ? '-20' : '15'"
+                 :placeholder="ctype === 'price' ? '150.00' : ctype === 'stoploss_pct' ? '15' : ctype === 'drawdown' ? '-20' : '15'"
                  step="any" required>
         </div>
         <div style="display:flex;align-items:flex-end">
@@ -118,9 +124,10 @@
         </div>
       </div>
       <p style="font-size:11px;color:#8b949e;margin-top:8px">
-        Precio: avisa cuando el precio cruza el umbral.
-        Drawdown: avisa cuando la caída desde máximos supera el % indicado.
-        Score: avisa cuando el score supera el valor indicado.
+        <strong style="color:#c9d1d9">Precio:</strong> avisa cuando el precio cruza el umbral. ·
+        <strong style="color:#c9d1d9">Stop-loss:</strong> avisa cuando la pérdida vs precio de compra supera el % indicado. ·
+        <strong style="color:#c9d1d9">Drawdown:</strong> avisa cuando la caída desde máximo anual supera el %. ·
+        <strong style="color:#c9d1d9">Score:</strong> avisa cuando el score supera el umbral.
       </p>
     </form>
   </div>

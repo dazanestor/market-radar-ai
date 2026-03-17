@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block page_title %}Correlación entre activos{% endblock %}
+
+{% block content %}
+<p style="font-size:12px;color:#8b949e;margin:0 0 18px">
+  Correlación de retornos diarios entre los activos de cartera (último año).
+  Verde = correlación positiva, rojo = negativa. Activos con correlación >0.8 se mueven casi igual (riesgo de concentración oculto).
+</p>
+
+{% if n < 2 %}
+<div class="empty-state">
+  Se necesitan al menos 2 posiciones registradas para calcular correlaciones.
+  <a href="/posiciones" class="text-accent" style="margin-left:6px">Añadir posiciones →</a>
+</div>
+{% else %}
+
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:20px">
+  <div class="stat-card"><div class="stat-label">Activos analizados</div><div class="stat-value">{{ n }}</div></div>
+  <div class="stat-card"><div class="stat-label">Período</div><div class="stat-value" style="font-size:16px">1 año</div></div>
+</div>
+
+<div class="card" style="padding:16px">
+  <div class="card-header" style="padding:0 0 12px">
+    <span class="card-title">Matriz de correlación (retornos diarios)</span>
+    <span style="font-size:11px;color:#8b949e">Actualización: 5 min</span>
+  </div>
+  <div class="chart-loading" id="shimmer-corr" style="min-height:320px;background:linear-gradient(90deg,#21262d 25%,#2d333b 50%,#21262d 75%);background-size:200% 100%;animation:chart-shimmer 1.4s infinite;border-radius:6px"></div>
+  <img src="/chart/correlacion" id="img-corr" style="display:none;max-width:100%;border-radius:6px"
+       onload="this.style.display='block';document.getElementById('shimmer-corr').style.display='none'"
+       onerror="document.getElementById('shimmer-corr').style.display='none';document.getElementById('err-corr').style.display='block'">
+  <div id="err-corr" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">
+    No hay suficientes datos de precio para calcular correlaciones.
+  </div>
+</div>
+
+<div style="margin-top:14px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
+  <p style="font-size:12px;color:#8b949e;margin:0">
+    ℹ️ Una cartera bien diversificada tiene correlaciones bajas entre activos (idealmente &lt;0.5).
+    Correlaciones altas entre activos del mismo sector son normales; entre sectores distintos es una señal de falta de diversificación.
+  </p>
+</div>
+{% endif %}
+
+{% block extra_head %}
+<style>
+  @keyframes chart-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+</style>
+{% endblock %}
+{% endblock %}

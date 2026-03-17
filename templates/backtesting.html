@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block page_title %}Backtesting del score{% endblock %}
+
+{% block content %}
+<p style="font-size:12px;color:#8b949e;margin:0 0 18px">
+  Valida el algoritmo de puntuación comparando scores históricos con el retorno real 30 días después.
+  Usa el historial guardado en la base de datos. Resultados más fiables con más datos (ejecuta reportes diarios).
+</p>
+
+{% if not summary %}
+<div class="empty-state">
+  <svg width="36" height="36" fill="none" stroke="#484f58" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+  <div style="margin-top:8px">No hay suficientes datos históricos de scores.</div>
+  <div style="font-size:11px;margin-top:4px">Ejecuta reportes diarios durante varias semanas para acumular datos.</div>
+</div>
+{% else %}
+
+<!-- Stat cards -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:20px">
+  {% for row in summary %}
+  <div class="stat-card {{ 'border-color:rgba(63,185,80,0.3)' if row.bucket == 'ALTA' else ('border-color:rgba(210,153,34,0.3)' if row.bucket == 'MEDIA' else '') }}" style="{{ 'border-color:rgba(63,185,80,0.3)' if row.bucket == 'ALTA' else ('border-color:rgba(210,153,34,0.3)' if row.bucket == 'MEDIA' else 'border-color:rgba(248,81,73,0.3)') }}">
+    <div class="stat-label">Score {{ row.bucket }} ({{ row.n }} obs.)</div>
+    <div class="stat-value {{ 'text-positive' if row.avg_ret > 0 else 'text-negative' }}" style="font-size:20px">
+      {{ "%+.2f"|format(row.avg_ret) }}%
+    </div>
+    <div class="stat-sub">retorno medio 30d</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Resultados detallados por bucket de score</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Score</th>
+          <th>Observaciones</th>
+          <th>Retorno medio 30d<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Retorno promedio del precio 30 días naturales después de registrar ese score.')">ⓘ</button></th>
+          <th>Mediana</th>
+          <th>% positivos<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Porcentaje de veces que el precio subió en los 30 días siguientes.')">ⓘ</button></th>
+          <th class="hide-mobile">Mejor</th>
+          <th class="hide-mobile">Peor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in summary %}
+        <tr>
+          <td>
+            {% if row.bucket == 'ALTA' %}<span class="badge badge-green">ALTA (&gt;15)</span>
+            {% elif row.bucket == 'MEDIA' %}<span class="badge badge-yellow">MEDIA (8–15)</span>
+            {% else %}<span class="badge badge-red">BAJA (&lt;8)</span>{% endif %}
+          </td>
+          <td class="text-muted">{{ row.n }}</td>
+          <td style="font-weight:600" class="{{ 'text-positive' if row.avg_ret > 0 else 'text-negative' }}">
+            {{ "%+.2f"|format(row.avg_ret) }}%
+          </td>
+          <td class="{{ 'text-positive' if row.med_ret > 0 else 'text-negative' }}">
+            {{ "%+.2f"|format(row.med_ret) }}%
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;max-width:60px;height:5px;background:#21262d;border-radius:3px">
+                <div style="height:100%;background:#3fb950;border-radius:3px;width:{{ row.pct_pos }}%"></div>
+              </div>
+              <span>{{ row.pct_pos }}%</span>
+            </div>
+          </td>
+          <td class="hide-mobile text-positive">{{ "%+.2f"|format(row.best) }}%</td>
+          <td class="hide-mobile text-negative">{{ "%+.2f"|format(row.worst) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div style="margin-top:12px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
+  <p style="font-size:12px;color:#8b949e;margin:0">
+    ⚠️ El backtesting muestra correlaciones históricas, no garantías de rendimiento futuro.
+    Un score ALTA con retornos promedio positivos y &gt;50% de acierto indica que el algoritmo identifica bien las oportunidades.
+    Sesgo de supervivencia: solo se analizan tickers que siguen cotizando.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

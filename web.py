@@ -26,6 +26,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import numpy as np
 import pandas as pd
 import yaml
 import yfinance as yf
@@ -2253,7 +2254,15 @@ async def alertas_add(
     _require_csrf(request, csrf_token)
     t = ticker.strip().upper()
 
-    if condition_type == "drawdown":
+    if condition_type == "stoploss_pct":
+        # Stop-loss dinámico: % de pérdida desde precio de compra
+        pct = abs(target_price)
+        if not (0 < pct <= 100):
+            return RedirectResponse("/alertas?error=rango", status_code=303)
+        add_price_alert(t, pct, "below", condition_type="stoploss_pct",
+                        condition_value=pct)
+        return RedirectResponse("/alertas", status_code=303)
+    elif condition_type == "drawdown":
         # Los drawdowns son porcentajes negativos (-100 a 0)
         # Normalizar: si el usuario introduce positivo, convertir a negativo
         target_price = -abs(target_price)
@@ -2715,6 +2724,610 @@ async def dividendos_page(request: Request, session: Optional[str] = Cookie(defa
         "rows":    rows,
         "totals":  totals,
         "year":    datetime.date.today().year,
+    })
+
+
+# ── Consenso de analistas ─────────────────────────────────────────────────────
+
+@app.get("/analistas", response_class=HTMLResponse)
+async def analistas_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    tickers_data = _load_tickers()
+    all_tickers: list[tuple[str, str, str]] = []
+    for cat in ("portfolio", "watchlist"):
+        for t, meta in (tickers_data.get(cat) or {}).items():
+            name = meta.get("name", t) if isinstance(meta, dict) else t
+            all_tickers.append((t, name, cat))
+
+    def _fetch_one(t_name_cat):
+        t, name, cat = t_name_cat
+        try:
+            info = yf.Ticker(t).info or {}
+        except Exception:
+            info = {}
+        rec_mean  = info.get("recommendationMean")
+        rec_key   = info.get("recommendationKey", "")
+        n_analysts= info.get("numberOfAnalystOpinions") or 0
+        tgt_mean  = info.get("targetMeanPrice")
+        tgt_high  = info.get("targetHighPrice")
+        tgt_low   = info.get("targetLowPrice")
+        current   = info.get("currentPrice") or info.get("regularMarketPrice")
+        currency  = info.get("currency", "USD")
+        # Convert targets to EUR
+        if tgt_mean and currency != "EUR":
+            tgt_mean = to_eur(tgt_mean, currency)
+        if tgt_high and currency != "EUR":
+            tgt_high = to_eur(tgt_high, currency)
+        if tgt_low and currency != "EUR":
+            tgt_low  = to_eur(tgt_low, currency)
+        if current and currency != "EUR":
+            current  = to_eur(current, currency)
+        upside = None
+        if tgt_mean and current and current > 0:
+            upside = (tgt_mean - current) / current * 100
+        return {
+            "ticker":    t, "name": name, "cat": cat,
+            "rec_mean":  round(rec_mean, 1) if rec_mean else None,
+            "rec_key":   rec_key,
+            "n":         int(n_analysts),
+            "tgt_mean":  round(tgt_mean, 2) if tgt_mean else None,
+            "tgt_high":  round(tgt_high, 2) if tgt_high else None,
+            "tgt_low":   round(tgt_low, 2) if tgt_low else None,
+            "current":   round(current, 2) if current else None,
+            "upside":    round(upside, 1) if upside else None,
+        }
+
+    loop = asyncio.get_running_loop()
+    from concurrent.futures import as_completed, ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {pool.submit(_fetch_one, item): item for item in all_tickers}
+        rows = []
+        for fut in as_completed(futs, timeout=90):
+            try:
+                r = fut.result()
+                if r["n"] > 0 or r["rec_key"]:
+                    rows.append(r)
+            except Exception:
+                pass
+    rows.sort(key=lambda x: (-(x["upside"] or -999)))
+
+    return templates.TemplateResponse("analistas.html", {
+        "request": request, "rows": rows,
+    })
+
+
+# ── Earnings próximos ─────────────────────────────────────────────────────────
+
+@app.get("/earnings", response_class=HTMLResponse)
+async def earnings_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    tickers_data = _load_tickers()
+    all_tickers = []
+    for cat in ("portfolio", "watchlist"):
+        for t, meta in (tickers_data.get(cat) or {}).items():
+            name = meta.get("name", t) if isinstance(meta, dict) else t
+            all_tickers.append((t, name, cat))
+
+    def _fetch_one(t_name_cat):
+        t, name, cat = t_name_cat
+        try:
+            stock = yf.Ticker(t)
+            info  = stock.info or {}
+            cal   = {}
+            try:
+                cal_df = stock.calendar
+                if isinstance(cal_df, dict):
+                    cal = cal_df
+            except Exception:
+                pass
+            earnings_date = None
+            if cal.get("Earnings Date"):
+                ed = cal["Earnings Date"]
+                earnings_date = ed[0] if isinstance(ed, list) else ed
+            elif info.get("earningsDate"):
+                ts = info["earningsDate"]
+                import datetime as _dt
+                if isinstance(ts, (int, float)):
+                    earnings_date = _dt.date.fromtimestamp(ts)
+            eps_est   = cal.get("EPS Estimate")
+            rev_est   = cal.get("Revenue Estimate") or cal.get("Revenue Average")
+            eps_avg   = float(eps_est) if eps_est is not None else None
+            rev_avg   = float(rev_est) / 1e9 if rev_est is not None else None
+            days_until = None
+            if earnings_date:
+                import datetime as _dt2
+                today = _dt2.date.today()
+                if hasattr(earnings_date, "date"):
+                    earnings_date = earnings_date.date()
+                days_until = (earnings_date - today).days
+            return {
+                "ticker": t, "name": name, "cat": cat,
+                "earnings_date": str(earnings_date) if earnings_date else None,
+                "days_until": days_until,
+                "eps_est":  round(eps_avg, 2) if eps_avg else None,
+                "rev_est_b": round(rev_avg, 2) if rev_avg else None,
+            }
+        except Exception:
+            return {"ticker": t, "name": name, "cat": cat,
+                    "earnings_date": None, "days_until": None,
+                    "eps_est": None, "rev_est_b": None}
+
+    from concurrent.futures import as_completed, ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {pool.submit(_fetch_one, item): item for item in all_tickers}
+        rows = []
+        for fut in as_completed(futs, timeout=90):
+            try:
+                r = fut.result()
+                if r["earnings_date"]:
+                    rows.append(r)
+            except Exception:
+                pass
+
+    upcoming = sorted([r for r in rows if r["days_until"] is not None and r["days_until"] >= 0],
+                      key=lambda x: x["days_until"])
+    past     = sorted([r for r in rows if r["days_until"] is not None and r["days_until"] < 0],
+                      key=lambda x: -x["days_until"])
+
+    return templates.TemplateResponse("earnings.html", {
+        "request": request, "upcoming": upcoming, "past": past,
+    })
+
+
+# ── Correlación entre activos ──────────────────────────────────────────────────
+
+@app.get("/correlacion", response_class=HTMLResponse)
+async def correlacion_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    positions = get_all_positions()
+    tickers   = [r[0] for r in positions]
+    return templates.TemplateResponse("correlacion.html", {
+        "request": request, "tickers": tickers, "n": len(tickers),
+    })
+
+
+@app.get("/chart/correlacion")
+async def chart_correlacion(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        raise HTTPException(status_code=401)
+
+    positions = get_all_positions()
+    tickers   = [r[0] for r in positions]
+    if len(tickers) < 2:
+        raise HTTPException(status_code=400, detail="Se necesitan al menos 2 posiciones")
+
+    def _compute():
+        frames = {}
+        for t in tickers:
+            try:
+                hist = yf.Ticker(t).history(period="1y")["Close"]
+                if not hist.empty:
+                    frames[t] = hist
+            except Exception:
+                pass
+        if len(frames) < 2:
+            return None
+        df     = pd.DataFrame(frames).dropna(how="all")
+        rets   = df.pct_change().dropna()
+        return rets.corr()
+
+    corr = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
+    if corr is None:
+        raise HTTPException(status_code=500, detail="No hay datos suficientes")
+
+    with _chart_lock:
+        n   = len(corr)
+        fig, ax = plt.subplots(figsize=(max(5, n * 0.7 + 1), max(4, n * 0.7)))
+        fig.patch.set_facecolor("#161b22")
+        ax.set_facecolor("#161b22")
+
+        data = corr.values
+        im   = ax.imshow(data, cmap="RdYlGn", vmin=-1, vmax=1, aspect="auto")
+
+        tls = list(corr.columns)
+        ax.set_xticks(range(n)); ax.set_yticks(range(n))
+        ax.set_xticklabels(tls, rotation=45, ha="right", fontsize=8, color="#c9d1d9")
+        ax.set_yticklabels(tls, fontsize=8, color="#c9d1d9")
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#30363d")
+
+        for i in range(n):
+            for j in range(n):
+                val = data[i, j]
+                ax.text(j, i, f"{val:.2f}", ha="center", va="center",
+                        fontsize=7, color="white" if abs(val) > 0.5 else "#c9d1d9")
+
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.ax.tick_params(colors="#8b949e", labelsize=7)
+        ax.set_title("Correlación de retornos (1 año)", color="#e6edf3", fontsize=11, pad=10)
+        fig.tight_layout(pad=1.5)
+        return _fig_to_response(fig)
+
+
+# ── Riesgo: VaR + Monte Carlo + correlación macro ─────────────────────────────
+
+@app.get("/riesgo", response_class=HTMLResponse)
+async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    df        = _read_csv()
+    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    if not positions or df is None:
+        return templates.TemplateResponse("riesgo.html", {
+            "request": request, "has_data": False,
+            "var_data": None, "macro_corr": None, "total": 0,
+        })
+
+    def _compute():
+        import warnings
+        warnings.filterwarnings("ignore")
+        tickers  = list(positions.keys())
+        values   = {}
+        for t in tickers:
+            row = df[df["ticker"] == t]
+            if row.empty:
+                continue
+            p = row.iloc[0].get("price")
+            if p and not _is_nan(p):
+                values[t] = positions[t][0] * float(p)
+
+        if not values:
+            return None
+
+        total = sum(values.values())
+        weights = {t: v / total for t, v in values.items()}
+
+        # Fetch 1y daily prices
+        price_data = {}
+        for t in values:
+            try:
+                hist = yf.Ticker(t).history(period="1y")["Close"]
+                if len(hist) > 30:
+                    price_data[t] = hist
+            except Exception:
+                pass
+
+        macro_tickers = {"SPY": "S&P 500", "^VIX": "VIX", "^TNX": "Bono 10Y EE.UU."}
+        for mt in macro_tickers:
+            try:
+                hist = yf.Ticker(mt).history(period="1y")["Close"]
+                if not hist.empty:
+                    price_data[mt] = hist
+            except Exception:
+                pass
+
+        if len(price_data) < 2:
+            return None
+
+        df_prices  = pd.DataFrame(price_data).dropna(how="all")
+        df_returns = df_prices.pct_change().dropna()
+
+        # Portfolio daily returns (weighted)
+        port_rets = pd.Series(0.0, index=df_returns.index)
+        for t, w in weights.items():
+            if t in df_returns.columns:
+                port_rets += df_returns[t] * w
+
+        if len(port_rets) < 20:
+            return None
+
+        # VaR (95%)
+        var_95  = float(np.percentile(port_rets.dropna(), 5))
+        var_99  = float(np.percentile(port_rets.dropna(), 1))
+        var_eur_95 = abs(var_95) * total
+        var_eur_99 = abs(var_99) * total
+        vol_daily  = float(port_rets.std())
+        vol_annual = vol_daily * np.sqrt(252) * 100
+        mean_daily = float(port_rets.mean())
+
+        # Correlación con macro
+        macro_corr = {}
+        for mt, label in macro_tickers.items():
+            if mt in df_returns.columns:
+                try:
+                    c = float(port_rets.corr(df_returns[mt]))
+                    if not np.isnan(c):
+                        macro_corr[label] = round(c, 3)
+                except Exception:
+                    pass
+
+        return {
+            "total":       round(total, 2),
+            "var_95_pct":  round(abs(var_95) * 100, 2),
+            "var_99_pct":  round(abs(var_99) * 100, 2),
+            "var_95_eur":  round(var_eur_95, 2),
+            "var_99_eur":  round(var_eur_99, 2),
+            "vol_annual":  round(vol_annual, 2),
+            "mean_daily":  round(mean_daily * 100, 4),
+            "macro_corr":  macro_corr,
+            "port_rets":   list(port_rets.dropna().values[-252:]),
+        }
+
+    var_data = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
+
+    return templates.TemplateResponse("riesgo.html", {
+        "request":  request,
+        "has_data": var_data is not None,
+        "var_data": var_data,
+        "total":    var_data["total"] if var_data else 0,
+    })
+
+
+@app.get("/chart/riesgo/returns")
+async def chart_riesgo_returns(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        raise HTTPException(status_code=401)
+
+    df        = _read_csv()
+    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    if not positions or df is None:
+        raise HTTPException(status_code=400)
+
+    def _fetch():
+        values = {}
+        for t in positions:
+            row = df[df["ticker"] == t]
+            if row.empty: continue
+            p = row.iloc[0].get("price")
+            if p and not _is_nan(p):
+                values[t] = positions[t][0] * float(p)
+        total = sum(values.values()) or 1
+        weights = {t: v / total for t, v in values.items()}
+        frames = {}
+        for t in values:
+            try:
+                h = yf.Ticker(t).history(period="1y")["Close"]
+                if len(h) > 30: frames[t] = h
+            except Exception:
+                pass
+        if not frames:
+            return None
+        df_r = pd.DataFrame(frames).pct_change().dropna()
+        port = pd.Series(0.0, index=df_r.index)
+        for t, w in weights.items():
+            if t in df_r.columns:
+                port += df_r[t] * w
+        return port.dropna()
+
+    port_rets = await asyncio.get_running_loop().run_in_executor(_executor, _fetch)
+    if port_rets is None:
+        raise HTTPException(status_code=500)
+
+    with _chart_lock:
+        fig, ax = plt.subplots(figsize=(7, 3))
+        fig.patch.set_facecolor("#161b22")
+        ax.set_facecolor("#21262d")
+        vals = port_rets.values * 100
+        var95 = float(np.percentile(vals, 5))
+        ax.hist(vals, bins=50, color="#1f6feb", alpha=0.7, edgecolor="none")
+        ax.axvline(var95, color="#f85149", linewidth=1.5, linestyle="--",
+                   label=f"VaR 95%: {var95:.2f}%")
+        ax.legend(fontsize=8, labelcolor="#e6edf3", facecolor="#21262d", edgecolor="#30363d")
+        ax.tick_params(colors="#8b949e", labelsize=8)
+        ax.set_xlabel("Retorno diario (%)", color="#8b949e", fontsize=9)
+        ax.set_ylabel("Frecuencia", color="#8b949e", fontsize=9)
+        ax.set_title("Distribución de retornos diarios", color="#e6edf3", fontsize=10)
+        for spine in ax.spines.values(): spine.set_edgecolor("#30363d")
+        fig.tight_layout(pad=1.0)
+        resp = _fig_to_response(fig)
+    resp.headers["Cache-Control"] = "public, max-age=300"
+    return resp
+
+
+@app.get("/chart/montecarlo")
+async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        raise HTTPException(status_code=401)
+
+    df        = _read_csv()
+    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    if not positions or df is None:
+        raise HTTPException(status_code=400)
+
+    def _simulate():
+        values = {}
+        for t in positions:
+            row = df[df["ticker"] == t]
+            if row.empty: continue
+            p = row.iloc[0].get("price")
+            if p and not _is_nan(p):
+                values[t] = positions[t][0] * float(p)
+        total = sum(values.values()) or 1
+        weights = {t: v / total for t, v in values.items()}
+        frames = {}
+        for t in values:
+            try:
+                h = yf.Ticker(t).history(period="1y")["Close"]
+                if len(h) > 30: frames[t] = h
+            except Exception:
+                pass
+        if not frames:
+            return None, total
+        df_r = pd.DataFrame(frames).pct_change().dropna()
+        port = pd.Series(0.0, index=df_r.index)
+        for t, w in weights.items():
+            if t in df_r.columns:
+                port += df_r[t] * w
+        mu  = port.mean()
+        sig = port.std()
+        n_paths, n_days = 1000, 252
+        rng  = np.random.default_rng(42)
+        sims = rng.normal(mu, sig, (n_paths, n_days))
+        paths = total * np.cumprod(1 + sims, axis=1)
+        return paths, total
+
+    paths, initial = await asyncio.get_running_loop().run_in_executor(_executor, _simulate)
+    if paths is None:
+        raise HTTPException(status_code=500)
+
+    with _chart_lock:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        fig.patch.set_facecolor("#161b22")
+        ax.set_facecolor("#21262d")
+        for p in paths[:200]:
+            ax.plot(p, color="#1f6feb", alpha=0.02, linewidth=0.5)
+        pct5  = np.percentile(paths, 5,  axis=0)
+        pct50 = np.percentile(paths, 50, axis=0)
+        pct95 = np.percentile(paths, 95, axis=0)
+        x = np.arange(n_days if (n_days := paths.shape[1]) else 252)
+        ax.fill_between(x, pct5, pct95, alpha=0.15, color="#58a6ff")
+        ax.plot(x, pct50, color="#3fb950", linewidth=1.5, label="Mediana")
+        ax.plot(x, pct5,  color="#f85149", linewidth=1.0, linestyle="--", label="Percentil 5%")
+        ax.plot(x, pct95, color="#58a6ff", linewidth=1.0, linestyle="--", label="Percentil 95%")
+        ax.axhline(initial, color="#8b949e", linewidth=0.8, linestyle=":", label="Valor actual")
+        ax.legend(fontsize=8, labelcolor="#e6edf3", facecolor="#21262d", edgecolor="#30363d")
+        ax.tick_params(colors="#8b949e", labelsize=8)
+        ax.set_xlabel("Días de trading", color="#8b949e", fontsize=9)
+        ax.set_ylabel("Valor cartera (€)", color="#8b949e", fontsize=9)
+        ax.set_title("Simulación Monte Carlo — 1 año (1000 escenarios)", color="#e6edf3", fontsize=10)
+        for spine in ax.spines.values(): spine.set_edgecolor("#30363d")
+        fig.tight_layout(pad=1.0)
+        resp = _fig_to_response(fig)
+    resp.headers["Cache-Control"] = "public, max-age=300"
+    return resp
+
+
+# ── Backtesting del score ──────────────────────────────────────────────────────
+
+@app.get("/backtesting", response_class=HTMLResponse)
+async def backtesting_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    def _compute():
+        import warnings
+        warnings.filterwarnings("ignore")
+        # Leer historial de scores de la BD
+        from database import _db
+        with _db() as conn:
+            rows = conn.execute("""
+                SELECT ticker, date, score FROM price_history
+                WHERE score IS NOT NULL AND score > 0
+                ORDER BY date ASC
+            """).fetchall()
+        if not rows:
+            return []
+
+        # Agrupar por bucket
+        results_raw = []
+        price_cache = {}
+        for ticker, date_str, score in rows:
+            if score is None:
+                continue
+            if score >= 15:
+                bucket = "ALTA"
+            elif score >= 8:
+                bucket = "MEDIA"
+            else:
+                bucket = "BAJA"
+            if ticker not in price_cache:
+                try:
+                    hist = yf.Ticker(ticker).history(period="2y")["Close"]
+                    price_cache[ticker] = hist
+                except Exception:
+                    price_cache[ticker] = None
+            hist = price_cache.get(ticker)
+            if hist is None or hist.empty:
+                continue
+            try:
+                idx = pd.Timestamp(date_str).tz_localize("UTC")
+                if idx not in hist.index:
+                    # Find nearest
+                    diffs = abs(hist.index - idx)
+                    nearest = hist.index[diffs.argmin()]
+                    if abs((nearest - idx).days) > 5:
+                        continue
+                    idx = nearest
+                future_idx = idx + pd.Timedelta(days=30)
+                diffs2 = abs(hist.index - future_idx)
+                f_idx  = hist.index[diffs2.argmin()]
+                if abs((f_idx - future_idx).days) > 10:
+                    continue
+                p0 = float(hist.loc[idx])
+                p1 = float(hist.loc[f_idx])
+                ret = (p1 - p0) / p0 * 100
+                results_raw.append({"bucket": bucket, "score": score, "ret_30d": ret})
+            except Exception:
+                continue
+
+        if not results_raw:
+            return []
+
+        df_bt = pd.DataFrame(results_raw)
+        summary = []
+        for b in ["ALTA", "MEDIA", "BAJA"]:
+            sub = df_bt[df_bt["bucket"] == b]["ret_30d"]
+            if len(sub) > 0:
+                summary.append({
+                    "bucket":   b,
+                    "n":        len(sub),
+                    "avg_ret":  round(float(sub.mean()), 2),
+                    "med_ret":  round(float(sub.median()), 2),
+                    "pct_pos":  round(float((sub > 0).mean() * 100), 1),
+                    "best":     round(float(sub.max()), 2),
+                    "worst":    round(float(sub.min()), 2),
+                })
+        return summary
+
+    summary = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
+    return templates.TemplateResponse("backtesting.html", {
+        "request": request, "summary": summary,
+    })
+
+
+# ── Exportación PDF (HTML optimizado para impresión) ──────────────────────────
+
+@app.get("/export/pdf", response_class=HTMLResponse)
+async def export_pdf(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    df        = _read_csv()
+    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    rows_data = []
+    total_value = 0.0
+    total_cost  = 0.0
+
+    if df is not None:
+        for _, row in df[df["category"] == "portfolio"].iterrows():
+            t = row["ticker"]
+            if t not in positions:
+                continue
+            shares, avg = positions[t]
+            price = row.get("price")
+            if not price or _is_nan(price):
+                continue
+            value   = shares * float(price)
+            cost    = shares * float(avg)
+            pnl_pct = (float(price) - float(avg)) / float(avg) * 100 if avg else 0
+            total_value += value
+            total_cost  += cost
+            rows_data.append({
+                "ticker": t, "name": row["name"],
+                "shares": shares, "price": float(price), "avg": float(avg),
+                "value": value, "pnl_pct": pnl_pct,
+                "drawdown": row.get("drawdown_52w"),
+                "score": row.get("score"),
+            })
+    rows_data.sort(key=lambda x: -x["value"])
+    total_pnl = (total_value - total_cost) / total_cost * 100 if total_cost > 0 else 0
+
+    reports = get_recent_reports(n=1)
+    last_report = reports[0][2] if reports else ""
+
+    return templates.TemplateResponse("export_pdf.html", {
+        "request":     request,
+        "rows":        rows_data,
+        "total_value": total_value,
+        "total_pnl":   total_pnl,
+        "last_report": last_report,
+        "generated":   datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
     })
 
 

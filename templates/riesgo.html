@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+{% block page_title %}Análisis de riesgo{% endblock %}
+
+{% block content %}
+
+{% if not has_data %}
+<div class="card">
+  <div class="empty-state">
+    Sin datos de precios o posiciones. Genera un reporte primero.
+  </div>
+</div>
+{% else %}
+
+{% set vd = var_data %}
+
+<!-- Stat cards -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(155px,1fr));margin-bottom:20px">
+  <div class="stat-card">
+    <div class="stat-label">Valor total cartera</div>
+    <div class="stat-value">{{ vd.total | eur }}</div>
+  </div>
+  <div class="stat-card" style="border-color:rgba(248,81,73,0.3)">
+    <div class="stat-label">VaR diario (95%)<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Pérdida máxima esperada en un día con 95% de confianza, basada en el histórico de retornos del último año.')">ⓘ</button></div>
+    <div class="stat-value" style="color:#f85149">-{{ vd.var_95_pct | num }}%</div>
+    <div class="stat-sub">≈ {{ vd.var_95_eur | eur }}</div>
+  </div>
+  <div class="stat-card" style="border-color:rgba(248,81,73,0.2)">
+    <div class="stat-label">VaR diario (99%)<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Pérdida máxima esperada en un día con 99% de confianza (escenario de cola extrema).')">ⓘ</button></div>
+    <div class="stat-value" style="color:#f85149;font-size:20px">-{{ vd.var_99_pct | num }}%</div>
+    <div class="stat-sub">≈ {{ vd.var_99_eur | eur }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Volatilidad anual<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Desviación estándar de retornos diarios anualizada (×√252). Mide la dispersión de los retornos.')">ⓘ</button></div>
+    <div class="stat-value {{ 'text-negative' if vd.vol_annual > 25 else ('text-warning' if vd.vol_annual > 15 else 'text-muted') }}">{{ vd.vol_annual | num }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Retorno diario medio</div>
+    <div class="stat-value {{ 'text-positive' if vd.mean_daily > 0 else 'text-negative' }}">{{ "%+.4f"|format(vd.mean_daily) }}%</div>
+  </div>
+</div>
+
+<!-- Distribución de retornos -->
+<div class="section">
+  <div class="section-header"><h2 class="section-title">📊 Distribución de retornos diarios</h2></div>
+  <div class="card" style="padding:16px">
+    <div class="chart-loading" id="shimmer-ret"></div>
+    <img src="/chart/riesgo/returns" id="img-ret" style="display:none;max-width:100%;border-radius:4px"
+         onload="this.style.display='block';document.getElementById('shimmer-ret').style.display='none'"
+         onerror="document.getElementById('shimmer-ret').style.display='none'">
+  </div>
+</div>
+
+<!-- Monte Carlo -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">🎲 Simulación Monte Carlo</h2>
+    <span style="font-size:11px;color:#8b949e">1000 escenarios · 1 año</span>
+  </div>
+  <div class="card" style="padding:16px">
+    <div class="chart-loading" id="shimmer-mc"></div>
+    <img src="/chart/montecarlo" id="img-mc" style="display:none;max-width:100%;border-radius:4px"
+         onload="this.style.display='block';document.getElementById('shimmer-mc').style.display='none'"
+         onerror="document.getElementById('shimmer-mc').style.display='none'">
+  </div>
+  <div style="margin-top:10px;padding:10px 14px;background:#161b22;border:1px solid #30363d;border-radius:6px;font-size:12px;color:#8b949e">
+    La zona azul muestra el rango entre percentil 5% y 95% de los 1000 escenarios simulados.
+    La línea verde es la mediana. Se asume que los retornos futuros siguen la distribución del último año.
+  </div>
+</div>
+
+<!-- Correlación con macro -->
+{% if vd.macro_corr %}
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">🌍 Correlación con indicadores macro</h2>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Indicador</th>
+            <th>Correlación</th>
+            <th>Interpretación</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for label, corr in vd.macro_corr.items() %}
+          <tr>
+            <td style="font-weight:600;color:#e6edf3">{{ label }}</td>
+            <td>
+              <span class="{{ 'text-positive' if corr > 0.3 else ('text-negative' if corr < -0.3 else 'text-muted') }}"
+                    style="font-weight:600;font-size:14px">{{ "%+.3f"|format(corr) }}</span>
+            </td>
+            <td class="text-muted" style="font-size:12px">
+              {% if label == 'S&P 500' %}
+                {% if corr > 0.7 %}Cartera muy correlacionada con el mercado americano
+                {% elif corr > 0.4 %}Correlación moderada con S&P 500
+                {% else %}Baja exposición al mercado americano{% endif %}
+              {% elif label == 'VIX' %}
+                {% if corr < -0.3 %}Cartera tiende a caer cuando sube el miedo (normal)
+                {% elif corr > 0.2 %}Inusual: cartera sube con el miedo (posible cobertura)
+                {% else %}Escasa relación con la volatilidad implícita{% endif %}
+              {% elif label == 'Bono 10Y EE.UU.' %}
+                {% if corr < -0.3 %}Sensible a subidas de tipos (risk-off)
+                {% elif corr > 0.3 %}Positivamente correlacionada con tipos (financieras/cíclicas)
+                {% else %}Poca sensibilidad a los tipos de interés{% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% block extra_head %}
+<style>
+  .chart-loading {
+    min-height:220px;
+    background:linear-gradient(90deg,#21262d 25%,#2d333b 50%,#21262d 75%);
+    background-size:200% 100%;
+    animation:chart-shimmer 1.4s infinite;
+    border-radius:6px;
+  }
+  @keyframes chart-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+</style>
+{% endblock %}
+{% endblock %}

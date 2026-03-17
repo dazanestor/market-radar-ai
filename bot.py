@@ -22,6 +22,7 @@ from database import (
     get_active_alerts, deactivate_alert, log_alert_triggered,
     get_unnotified_alerts, mark_alert_notified, vacuum_db,
     purge_old_price_history, purge_old_news_cache, effective,
+    get_all_positions,
 )
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
@@ -193,10 +194,11 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
     if not alerts:
         return
 
-    tickers_needed   = list({a[1] for a in alerts})
-    prices           = {}
-    triggered_msgs   = []
-    triggered_history = []
+    tickers_needed     = list({a[1] for a in alerts})
+    prices             = {}
+    triggered_msgs     = []
+    triggered_history  = []
+    portfolio_positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
     clear_fx_cache()
 
     csv_data = {}
@@ -237,7 +239,17 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
         icon = "🔔"
         msg_detail = ""
 
-        if condition_type == "drawdown":
+        if condition_type == "stoploss_pct":
+            pos = portfolio_positions.get(ticker)
+            if pos:
+                _, avg_cost = pos
+                if avg_cost and not (isinstance(avg_cost, float) and math.isnan(avg_cost)) and avg_cost > 0:
+                    loss_pct = (current - float(avg_cost)) / float(avg_cost) * 100
+                    triggered = loss_pct < -abs(float(target))
+                    if triggered:
+                        icon = "🛑"
+                        msg_detail = f"Stop-loss: pérdida {loss_pct:.1f}% vs coste (umbral: -{target:.1f}%)"
+        elif condition_type == "drawdown":
             dd = csv_data.get(ticker, {}).get("drawdown_52w")
             if dd is not None and not (isinstance(dd, float) and math.isnan(dd)):
                 triggered = float(dd) < float(target)
@@ -402,6 +414,121 @@ async def job_check_exdividend(context: ContextTypes.DEFAULT_TYPE):
             logging.exception("Error enviando alerta ex-dividend")
 
 
+async def job_check_earnings(context: ContextTypes.DEFAULT_TYPE):
+    """Avisa si algún ticker tiene earnings en los próximos 7 días."""
+    tickers = _load_tickers()
+    all_tickers = []
+    for cat in ("portfolio", "watchlist"):
+        for ticker, meta in (tickers.get(cat) or {}).items():
+            name = meta.get("name", ticker) if isinstance(meta, dict) else ticker
+            all_tickers.append((ticker, name))
+
+    if not all_tickers:
+        return
+
+    today  = datetime.date.today()
+    alerts = []
+
+    for ticker, name in all_tickers:
+        try:
+            stock = yf.Ticker(ticker)
+            cal   = {}
+            try:
+                cal_df = stock.calendar
+                if isinstance(cal_df, dict):
+                    cal = cal_df
+            except Exception:
+                pass
+            earnings_date = None
+            if cal.get("Earnings Date"):
+                ed = cal["Earnings Date"]
+                earnings_date = ed[0] if isinstance(ed, list) else ed
+            elif (stock.info or {}).get("earningsDate"):
+                ts = stock.info["earningsDate"]
+                if isinstance(ts, (int, float)):
+                    earnings_date = datetime.date.fromtimestamp(ts)
+            if not earnings_date:
+                continue
+            if hasattr(earnings_date, "date"):
+                earnings_date = earnings_date.date()
+            days_until = (earnings_date - today).days
+            if 0 <= days_until <= 7:
+                eps_str = ""
+                eps = cal.get("EPS Estimate")
+                if eps is not None:
+                    try:
+                        eps_str = f" (EPS est: ${float(eps):.2f})"
+                    except Exception:
+                        pass
+                alerts.append(
+                    f"📊 *{_md_escape(ticker)}* — {_md_escape(name)}\n"
+                    f"  Earnings el {earnings_date.strftime('%d/%m/%Y')} "
+                    f"(en {days_until} día{'s' if days_until != 1 else ''}){_md_escape(eps_str)}"
+                )
+        except Exception:
+            logging.debug("Error obteniendo earnings date de %s", ticker)
+
+    if alerts:
+        msg = "📈 *Próximos earnings*\n\n" + "\n\n".join(alerts)
+        try:
+            await context.bot.send_message(
+                chat_id=_chat_id(), text=msg, parse_mode="Markdown"
+            )
+        except Exception:
+            logging.exception("Error enviando alerta earnings")
+
+
+async def job_check_sector_concentration(context: ContextTypes.DEFAULT_TYPE):
+    """Alerta si algún sector supera el 40% de la cartera."""
+    try:
+        from config import OUTPUT_DIR
+        import os
+        csv_path = f"{OUTPUT_DIR}/precios_global.csv"
+        if not os.path.exists(csv_path):
+            return
+        df = pd.read_csv(csv_path)
+        portfolio = df[df["category"] == "portfolio"].copy()
+        if portfolio.empty:
+            return
+        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        portfolio["value"] = portfolio.apply(
+            lambda r: positions.get(r["ticker"], (0, 0))[0] * r.get("price", 0)
+            if r.get("price") and not (isinstance(r.get("price"), float) and math.isnan(r.get("price")))
+            else 0.0, axis=1
+        )
+        total = portfolio["value"].sum()
+        if total <= 0:
+            return
+        threshold = 40.0
+        try:
+            from database import get_setting
+            t_raw = get_setting("SECTOR_ALERT_THRESHOLD")
+            if t_raw:
+                threshold = float(t_raw)
+        except Exception:
+            pass
+        by_sector = portfolio.groupby("block")["value"].sum()
+        alerts = []
+        for sector, val in by_sector.items():
+            if sector and str(sector) != "nan":
+                pct = val / total * 100
+                if pct > threshold:
+                    alerts.append(
+                        f"🏭 *Concentración sectorial*: {_md_escape(str(sector))} "
+                        f"= {pct:.1f}% (umbral: {threshold:.0f}%)"
+                    )
+        if alerts:
+            for msg in alerts:
+                try:
+                    await context.bot.send_message(
+                        chat_id=_chat_id(), text=msg, parse_mode="Markdown"
+                    )
+                except Exception:
+                    logging.exception("Error enviando alerta de concentración sectorial")
+    except Exception:
+        logging.exception("Error en job_check_sector_concentration")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -434,14 +561,16 @@ def main():
 
     app = ApplicationBuilder().token(token).build()
 
-    report_time = datetime.time(hour=_rh, minute=0, tzinfo=tz)
-    app.job_queue.run_daily(job_daily_report, time=report_time)
-    exdiv_time = datetime.time(hour=7, minute=0, tzinfo=tz)
-    app.job_queue.run_daily(job_check_exdividend, time=exdiv_time)
-    app.job_queue.run_repeating(job_check_price_alerts, interval=3600, first=60)
+    report_time  = datetime.time(hour=_rh, minute=0, tzinfo=tz)
+    morning_time = datetime.time(hour=7, minute=0, tzinfo=tz)
+    app.job_queue.run_daily(job_daily_report,            time=report_time)
+    app.job_queue.run_daily(job_check_exdividend,        time=morning_time)
+    app.job_queue.run_daily(job_check_earnings,          time=morning_time)
+    app.job_queue.run_repeating(job_check_price_alerts,         interval=3600,       first=60)
+    app.job_queue.run_repeating(job_check_sector_concentration, interval=86400,      first=120)
     app.job_queue.run_once(job_replay_unnotified_alerts, when=30)
-    app.job_queue.run_repeating(job_vacuum_db, interval=7 * 86400, first=300)
-    app.job_queue.run_repeating(job_check_claude_health, interval=7 * 86400, first=120)
+    app.job_queue.run_repeating(job_vacuum_db,           interval=7 * 86400, first=300)
+    app.job_queue.run_repeating(job_check_claude_health, interval=7 * 86400, first=180)
 
     logging.info(f"Bot iniciado (modo pasivo). Reporte diario a las {_rh}:00 {_tz_name}.")
     app.run_polling()

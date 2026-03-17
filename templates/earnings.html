@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block page_title %}Earnings próximos{% endblock %}
+
+{% block content %}
+<p style="font-size:12px;color:#8b949e;margin:0 0 18px">
+  Fechas de presentación de resultados obtenidas de yfinance. El bot avisa automáticamente si hay earnings en los próximos 7 días.
+</p>
+
+{% if not upcoming and not past %}
+<div class="empty-state">
+  <svg width="36" height="36" fill="none" stroke="#484f58" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+  <div style="margin-top:8px">No se encontraron fechas de earnings para los tickers actuales.</div>
+</div>
+{% endif %}
+
+{% if upcoming %}
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">📅 Próximos earnings</h2>
+    <span class="badge badge-blue">{{ upcoming | length }}</span>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Activo</th>
+            <th>Fecha</th>
+            <th>Días</th>
+            <th class="hide-mobile">EPS estimado</th>
+            <th class="hide-mobile">Revenue estimado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in upcoming %}
+          <tr>
+            <td>
+              <a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a>
+              <div style="font-size:11px;color:#8b949e;margin-top:1px">{{ r.name }}</div>
+            </td>
+            <td style="font-weight:600;color:#e6edf3">{{ r.earnings_date }}</td>
+            <td>
+              {% if r.days_until == 0 %}
+                <span class="badge badge-red">Hoy</span>
+              {% elif r.days_until <= 3 %}
+                <span class="badge badge-yellow">{{ r.days_until }}d</span>
+              {% else %}
+                <span class="badge badge-gray">{{ r.days_until }}d</span>
+              {% endif %}
+            </td>
+            <td class="hide-mobile text-muted">{{ "$%.2f"|format(r.eps_est) if r.eps_est is not none else '—' }}</td>
+            <td class="hide-mobile text-muted">{{ "$%.2fB"|format(r.rev_est_b) if r.rev_est_b is not none else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if past %}
+<div class="section" style="margin-top:24px">
+  <div class="section-header">
+    <h2 class="section-title">🗓️ Earnings recientes</h2>
+    <span class="badge badge-gray">{{ past | length }}</span>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Activo</th>
+            <th>Fecha</th>
+            <th>Hace</th>
+            <th class="hide-mobile">EPS estimado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in past %}
+          <tr>
+            <td>
+              <a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a>
+              <div style="font-size:11px;color:#8b949e;margin-top:1px">{{ r.name }}</div>
+            </td>
+            <td class="text-muted">{{ r.earnings_date }}</td>
+            <td class="text-muted">{{ (-r.days_until) }}d</td>
+            <td class="hide-mobile text-muted">{{ "$%.2f"|format(r.eps_est) if r.eps_est is not none else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

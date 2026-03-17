@@ -2736,65 +2736,66 @@ async def analistas_page(request: Request, session: Optional[str] = Cookie(defau
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
 
-    tickers_data = _load_tickers()
-    all_tickers: list[tuple[str, str, str]] = []
-    for cat in ("portfolio", "watchlist"):
-        for t, meta in (tickers_data.get(cat) or {}).items():
-            name = meta.get("name", t) if isinstance(meta, dict) else t
-            all_tickers.append((t, name, cat))
+    def _fetch_all():
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        tickers_data = _load_tickers()
+        all_tickers = []
+        for cat in ("portfolio", "watchlist"):
+            for t, meta in (tickers_data.get(cat) or {}).items():
+                name = meta.get("name", t) if isinstance(meta, dict) else t
+                all_tickers.append((t, name, cat))
 
-    def _fetch_one(t_name_cat):
-        t, name, cat = t_name_cat
-        try:
-            info = yf.Ticker(t).info or {}
-        except Exception:
-            info = {}
-        rec_mean  = info.get("recommendationMean")
-        rec_key   = info.get("recommendationKey", "")
-        n_analysts= info.get("numberOfAnalystOpinions") or 0
-        tgt_mean  = info.get("targetMeanPrice")
-        tgt_high  = info.get("targetHighPrice")
-        tgt_low   = info.get("targetLowPrice")
-        current   = info.get("currentPrice") or info.get("regularMarketPrice")
-        currency  = info.get("currency", "USD")
-        # Convert targets to EUR
-        if tgt_mean and currency != "EUR":
-            tgt_mean = to_eur(tgt_mean, currency)
-        if tgt_high and currency != "EUR":
-            tgt_high = to_eur(tgt_high, currency)
-        if tgt_low and currency != "EUR":
-            tgt_low  = to_eur(tgt_low, currency)
-        if current and currency != "EUR":
-            current  = to_eur(current, currency)
-        upside = None
-        if tgt_mean and current and current > 0:
-            upside = (tgt_mean - current) / current * 100
-        return {
-            "ticker":    t, "name": name, "cat": cat,
-            "rec_mean":  round(rec_mean, 1) if rec_mean else None,
-            "rec_key":   rec_key,
-            "n":         int(n_analysts),
-            "tgt_mean":  round(tgt_mean, 2) if tgt_mean else None,
-            "tgt_high":  round(tgt_high, 2) if tgt_high else None,
-            "tgt_low":   round(tgt_low, 2) if tgt_low else None,
-            "current":   round(current, 2) if current else None,
-            "upside":    round(upside, 1) if upside else None,
-        }
-
-    loop = asyncio.get_running_loop()
-    from concurrent.futures import as_completed, ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futs = {pool.submit(_fetch_one, item): item for item in all_tickers}
-        rows = []
-        for fut in as_completed(futs, timeout=90):
+        def _fetch_one(t_name_cat):
+            t, name, cat = t_name_cat
             try:
-                r = fut.result()
-                if r["n"] > 0 or r["rec_key"]:
-                    rows.append(r)
+                info = yf.Ticker(t).info or {}
             except Exception:
-                pass
-    rows.sort(key=lambda x: (-(x["upside"] or -999)))
+                info = {}
+            rec_mean   = info.get("recommendationMean")
+            rec_key    = info.get("recommendationKey", "")
+            n_analysts = info.get("numberOfAnalystOpinions") or 0
+            tgt_mean   = info.get("targetMeanPrice")
+            tgt_high   = info.get("targetHighPrice")
+            tgt_low    = info.get("targetLowPrice")
+            current    = info.get("currentPrice") or info.get("regularMarketPrice")
+            currency   = info.get("currency", "USD")
+            if tgt_mean and currency != "EUR":
+                tgt_mean = to_eur(tgt_mean, currency)
+            if tgt_high and currency != "EUR":
+                tgt_high = to_eur(tgt_high, currency)
+            if tgt_low and currency != "EUR":
+                tgt_low  = to_eur(tgt_low, currency)
+            if current and currency != "EUR":
+                current  = to_eur(current, currency)
+            upside = None
+            if tgt_mean and current and current > 0:
+                upside = (tgt_mean - current) / current * 100
+            return {
+                "ticker":   t, "name": name, "cat": cat,
+                "rec_mean": round(rec_mean, 1) if rec_mean else None,
+                "rec_key":  rec_key,
+                "n":        int(n_analysts),
+                "tgt_mean": round(tgt_mean, 2) if tgt_mean else None,
+                "tgt_high": round(tgt_high, 2) if tgt_high else None,
+                "tgt_low":  round(tgt_low, 2) if tgt_low else None,
+                "current":  round(current, 2) if current else None,
+                "upside":   round(upside, 1) if upside else None,
+            }
 
+        rows = []
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futs = {pool.submit(_fetch_one, item): item for item in all_tickers}
+            for fut in as_completed(futs, timeout=90):
+                try:
+                    r = fut.result()
+                    if r["n"] > 0 or r["rec_key"]:
+                        rows.append(r)
+                except Exception:
+                    pass
+        rows.sort(key=lambda x: -(x["upside"] or -999))
+        return rows
+
+    rows = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_all)
     return templates.TemplateResponse("analistas.html", {
         "request": request, "rows": rows,
     })
@@ -2807,74 +2808,77 @@ async def earnings_page(request: Request, session: Optional[str] = Cookie(defaul
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
 
-    tickers_data = _load_tickers()
-    all_tickers = []
-    for cat in ("portfolio", "watchlist"):
-        for t, meta in (tickers_data.get(cat) or {}).items():
-            name = meta.get("name", t) if isinstance(meta, dict) else t
-            all_tickers.append((t, name, cat))
+    def _fetch_all():
+        import datetime as _dt
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        tickers_data = _load_tickers()
+        all_tickers = []
+        for cat in ("portfolio", "watchlist"):
+            for t, meta in (tickers_data.get(cat) or {}).items():
+                name = meta.get("name", t) if isinstance(meta, dict) else t
+                all_tickers.append((t, name, cat))
 
-    def _fetch_one(t_name_cat):
-        t, name, cat = t_name_cat
-        try:
-            stock = yf.Ticker(t)
-            info  = stock.info or {}
-            cal   = {}
+        def _fetch_one(t_name_cat):
+            t, name, cat = t_name_cat
             try:
-                cal_df = stock.calendar
-                if isinstance(cal_df, dict):
-                    cal = cal_df
+                stock = yf.Ticker(t)
+                info  = stock.info or {}
+                cal   = {}
+                try:
+                    cal_df = stock.calendar
+                    if isinstance(cal_df, dict):
+                        cal = cal_df
+                except Exception:
+                    pass
+                earnings_date = None
+                if cal.get("Earnings Date"):
+                    ed = cal["Earnings Date"]
+                    earnings_date = ed[0] if isinstance(ed, list) else ed
+                elif info.get("earningsDate"):
+                    ts = info["earningsDate"]
+                    if isinstance(ts, (int, float)):
+                        earnings_date = _dt.date.fromtimestamp(ts)
+                eps_est  = cal.get("EPS Estimate")
+                rev_est  = cal.get("Revenue Estimate") or cal.get("Revenue Average")
+                eps_avg  = float(eps_est) if eps_est is not None else None
+                rev_avg  = float(rev_est) / 1e9 if rev_est is not None else None
+                days_until = None
+                if earnings_date:
+                    today = _dt.date.today()
+                    if hasattr(earnings_date, "date"):
+                        earnings_date = earnings_date.date()
+                    days_until = (earnings_date - today).days
+                return {
+                    "ticker": t, "name": name, "cat": cat,
+                    "earnings_date": str(earnings_date) if earnings_date else None,
+                    "days_until": days_until,
+                    "eps_est":   round(eps_avg, 2) if eps_avg else None,
+                    "rev_est_b": round(rev_avg, 2) if rev_avg else None,
+                }
             except Exception:
-                pass
-            earnings_date = None
-            if cal.get("Earnings Date"):
-                ed = cal["Earnings Date"]
-                earnings_date = ed[0] if isinstance(ed, list) else ed
-            elif info.get("earningsDate"):
-                ts = info["earningsDate"]
-                import datetime as _dt
-                if isinstance(ts, (int, float)):
-                    earnings_date = _dt.date.fromtimestamp(ts)
-            eps_est   = cal.get("EPS Estimate")
-            rev_est   = cal.get("Revenue Estimate") or cal.get("Revenue Average")
-            eps_avg   = float(eps_est) if eps_est is not None else None
-            rev_avg   = float(rev_est) / 1e9 if rev_est is not None else None
-            days_until = None
-            if earnings_date:
-                import datetime as _dt2
-                today = _dt2.date.today()
-                if hasattr(earnings_date, "date"):
-                    earnings_date = earnings_date.date()
-                days_until = (earnings_date - today).days
-            return {
-                "ticker": t, "name": name, "cat": cat,
-                "earnings_date": str(earnings_date) if earnings_date else None,
-                "days_until": days_until,
-                "eps_est":  round(eps_avg, 2) if eps_avg else None,
-                "rev_est_b": round(rev_avg, 2) if rev_avg else None,
-            }
-        except Exception:
-            return {"ticker": t, "name": name, "cat": cat,
-                    "earnings_date": None, "days_until": None,
-                    "eps_est": None, "rev_est_b": None}
+                return {"ticker": t, "name": name, "cat": cat,
+                        "earnings_date": None, "days_until": None,
+                        "eps_est": None, "rev_est_b": None}
 
-    from concurrent.futures import as_completed, ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futs = {pool.submit(_fetch_one, item): item for item in all_tickers}
         rows = []
-        for fut in as_completed(futs, timeout=90):
-            try:
-                r = fut.result()
-                if r["earnings_date"]:
-                    rows.append(r)
-            except Exception:
-                pass
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futs = {pool.submit(_fetch_one, item): item for item in all_tickers}
+            for fut in as_completed(futs, timeout=90):
+                try:
+                    r = fut.result()
+                    if r["earnings_date"]:
+                        rows.append(r)
+                except Exception:
+                    pass
 
-    upcoming = sorted([r for r in rows if r["days_until"] is not None and r["days_until"] >= 0],
-                      key=lambda x: x["days_until"])
-    past     = sorted([r for r in rows if r["days_until"] is not None and r["days_until"] < 0],
-                      key=lambda x: -x["days_until"])
+        today = _dt.date.today()
+        upcoming = sorted([r for r in rows if r["days_until"] is not None and r["days_until"] >= 0],
+                          key=lambda x: x["days_until"])
+        past     = sorted([r for r in rows if r["days_until"] is not None and r["days_until"] < 0],
+                          key=lambda x: -x["days_until"])
+        return upcoming, past
 
+    upcoming, past = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_all)
     return templates.TemplateResponse("earnings.html", {
         "request": request, "upcoming": upcoming, "past": past,
     })
@@ -2959,15 +2963,11 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
 
-    df        = _read_csv()
-    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
-    if not positions or df is None:
-        return templates.TemplateResponse("riesgo.html", {
-            "request": request, "has_data": False,
-            "var_data": None, "macro_corr": None, "total": 0,
-        })
-
     def _compute():
+        df        = _read_csv()
+        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        if not positions or df is None:
+            return None
         import warnings
         warnings.filterwarnings("ignore")
         tickers  = list(positions.keys())
@@ -3067,12 +3067,11 @@ async def chart_riesgo_returns(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
 
-    df        = _read_csv()
-    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
-    if not positions or df is None:
-        raise HTTPException(status_code=400)
-
     def _fetch():
+        df        = _read_csv()
+        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        if not positions or df is None:
+            return None
         values = {}
         for t in positions:
             row = df[df["ticker"] == t]
@@ -3132,12 +3131,11 @@ async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
 
-    df        = _read_csv()
-    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
-    if not positions or df is None:
-        raise HTTPException(status_code=400)
-
     def _simulate():
+        df        = _read_csv()
+        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        if not positions or df is None:
+            return None, 0
         values = {}
         for t in positions:
             row = df[df["ticker"] == t]

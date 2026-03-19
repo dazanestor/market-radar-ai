@@ -200,6 +200,27 @@
       </form>
     </div>
 
+    <!-- Generar reporte -->
+    <div style="padding:8px 8px 0">
+      <form method="post" action="/generar-reporte" x-data="{ loading: false }" @submit="loading = true">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-primary btn-full btn-sm" :disabled="loading">
+          <template x-if="!loading">
+            <span style="display:flex;align-items:center;gap:5px">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              Generar reporte
+            </span>
+          </template>
+          <template x-if="loading">
+            <span x-cloak style="display:flex;align-items:center;gap:5px">
+              <svg class="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              Generando…
+            </span>
+          </template>
+        </button>
+      </form>
+    </div>
+
     <nav class="sidebar-nav" onclick="closeSidebar()">
       {% set path = request.url.path %}
       <div class="sidebar-section">Análisis</div>
@@ -292,23 +313,6 @@
     </nav>
 
     <div class="sidebar-footer">
-      <form method="post" action="/generar-reporte" x-data="{ loading: false }" @submit="loading = true">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn btn-primary btn-full btn-sm" :disabled="loading" style="margin-bottom:8px">
-          <template x-if="!loading">
-            <span style="display:flex;align-items:center;gap:5px">
-              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-              Generar reporte
-            </span>
-          </template>
-          <template x-if="loading">
-            <span x-cloak style="display:flex;align-items:center;gap:5px">
-              <svg class="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-              Generando…
-            </span>
-          </template>
-        </button>
-      </form>
       <a href="/settings/credentials" class="nav-link {% if path == '/settings/credentials' %}active{% endif %}" style="font-size:12px">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         Cuenta

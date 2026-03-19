@@ -28,10 +28,24 @@ def _extract_fundamentals(info):
     def val(v, decimals=2):
         return round(v, decimals) if v is not None and not math.isnan(v) else None
 
-    market_cap = info.get("marketCap")
     currency = info.get("currency", "USD")
+
+    market_cap = info.get("marketCap")
     _cap_eur = to_eur(market_cap, currency) if market_cap else None
     market_cap_eur = round(_cap_eur / 1e9, 1) if _cap_eur is not None and not math.isnan(_cap_eur) else None
+
+    # Consenso de analistas
+    target_raw = info.get("targetMeanPrice")
+    analyst_target_eur = None
+    if target_raw is not None:
+        try:
+            if not math.isnan(float(target_raw)):
+                converted = to_eur(float(target_raw), currency)
+                if converted and not math.isnan(converted):
+                    analyst_target_eur = round(converted, 2)
+        except (TypeError, ValueError):
+            pass
+
     return {
         "pe_ratio":       val(info.get("trailingPE")),
         "pb_ratio":       val(info.get("priceToBook")),
@@ -40,6 +54,9 @@ def _extract_fundamentals(info):
         "debt_equity":    val(info.get("debtToEquity")),
         "revenue_growth": pct(info.get("revenueGrowth")),
         "market_cap_b":   market_cap_eur,
+        "analyst_rec":    val(info.get("recommendationMean")),  # 1=Strong Buy … 5=Strong Sell
+        "analyst_target": analyst_target_eur,                   # precio objetivo medio (EUR)
+        "analyst_n":      info.get("numberOfAnalystOpinions"),  # nº de analistas
     }
 
 def _rsi(close, period=14):

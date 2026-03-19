@@ -106,16 +106,30 @@ trend (mejorando/empeorando), pnl (% vs precio compra en EUR).
 Columnas fundamentales: pe_ratio (PER), pb_ratio (P/B), profit_margin (%), roe (%), \
 debt_equity (D/E), revenue_growth (% YoY), market_cap_b (capitalización en miles de millones).
 
+Columna horizonte (horizon): plazo de inversión esperado para cada activo.
+- *corto* (días – 3 meses): prioriza señales técnicas (RSI, momentum, rebotes). No exijas fundamentales sólidos.
+- *medio* (3 – 18 meses): equilibra fundamentales y momentum. Considera catalizadores próximos.
+- *largo* (>18 meses): prioriza calidad del negocio, dividendo y ventaja competitiva. Ignora ruido de corto plazo.
+Adapta siempre la recomendación al horizonte del activo.
+
+Columnas de consenso de analistas (pueden estar vacías si yfinance no dispone de datos):
+- analyst_rec: recomendación media (1=Compra fuerte, 2=Compra, 3=Neutral, 4=Venta, 5=Venta fuerte)
+- analyst_target: precio objetivo medio de los analistas en EUR
+- analyst_n: número de analistas que cubren el valor
+Cuando estén disponibles, compara el precio actual con analyst_target para estimar el potencial y menciona si el consenso respalda o contradice tu análisis.
+
 Responde en este formato exacto:
 
 *CARTERA*
-Para cada posición: acción recomendada (mantener/recortar X%/añadir X%), motivo basado en fundamentales + técnico. Si recomiendas recortar o añadir, especifica el porcentaje aproximado de la posición actual.
+Para cada posición: acción recomendada (mantener/recortar X%/añadir X%), motivo adaptado al horizonte del activo. \
+Si hay precio objetivo de analistas, indica el potencial implícito. \
+Si recomiendas recortar o añadir, especifica el porcentaje aproximado de la posición actual.
 
 *WATCHLIST — TOP OPORTUNIDADES*
-Los 3 activos con mejor relación calidad/precio ahora y por qué.
+Los 3 activos con mejor relación calidad/precio ahora, teniendo en cuenta su horizonte y el consenso de analistas cuando esté disponible.
 
 *ALERTAS*
-Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, drawdown acelerado) o "Sin alertas." si no hay.
+Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, drawdown acelerado, consenso muy negativo) o "Sin alertas." si no hay.
 """
 
     response = _call_claude(prompt)

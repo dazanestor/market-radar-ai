@@ -22,7 +22,7 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 ```
 bot.py              # Bot Telegram principal: comandos, jobs APScheduler, gráficos
 scheduler.py        # Ejecución standalone (sin bot, útil con cron externo)
-generate_csv.py     # Pipeline de datos: descarga, cálculo de métricas, CSV
+generate_csv.py     # Pipeline de datos: descarga, cálculo de métricas, CSV (incluye analyst_rec/target/n de yfinance)
 fetch_data.py       # Wrappers yfinance: precios, dividendos, fundamentales, FX, noticias
 scoring.py          # Algoritmo de puntuación multi-factor (6 factores → score)
 ai_analysis.py      # Integración Claude: genera el análisis diario
@@ -115,7 +115,7 @@ Clasificación: `ALTA` (>15), `MEDIA` (>8), `BAJA` (≤8), `—` (sin datos)
 ## Flujo del informe diario (08:00 por defecto)
 
 1. `fetch_data.get_macro_context()` → S&P500, VIX, bono 10Y
-2. `generate_csv.generate()` → descarga 5 años de histórico, convierte a EUR
+2. `generate_csv.generate()` → descarga 5 años de histórico, convierte a EUR; incluye consenso de analistas (`analyst_rec`, `analyst_target`, `analyst_n`) y horizonte por ticker (`horizon`) en el CSV
 3. `scoring.score_watchlist()` → calcula score para cartera y watchlist
 4. `database.save_snapshot()` → guarda métricas diarias en SQLite
 5. `database.save_portfolio_value()` → guarda valor total de cartera para gráfico de evolución

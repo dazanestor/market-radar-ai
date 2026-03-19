@@ -2828,6 +2828,8 @@ async def earnings_page(request: Request, session: Optional[str] = Cookie(defaul
                     cal_df = stock.calendar
                     if isinstance(cal_df, dict):
                         cal = cal_df
+                    elif cal_df is not None:
+                        logger.debug("calendar unexpected type for %s: %s keys=%s", t, type(cal_df).__name__, list(cal_df.keys()) if hasattr(cal_df, "keys") else "n/a")
                 except Exception:
                     pass
                 earnings_date = None
@@ -2838,8 +2840,8 @@ async def earnings_page(request: Request, session: Optional[str] = Cookie(defaul
                     ts = info["earningsDate"]
                     if isinstance(ts, (int, float)):
                         earnings_date = _dt.date.fromtimestamp(ts)
-                eps_est  = cal.get("EPS Estimate")
-                rev_est  = cal.get("Revenue Estimate") or cal.get("Revenue Average")
+                eps_est  = cal.get("Earnings Average") or cal.get("EPS Estimate") or cal.get("epsAverage")
+                rev_est  = cal.get("Revenue Average") or cal.get("Revenue Estimate") or cal.get("revenueAverage")
                 eps_avg  = float(eps_est) if eps_est is not None else None
                 rev_avg  = float(rev_est) / 1e9 if rev_est is not None else None
                 days_until = None

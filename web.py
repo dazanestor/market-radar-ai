@@ -2967,23 +2967,28 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
         return RedirectResponse("/login", status_code=302)
 
     def _compute():
-        df        = _read_csv()
-        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
-        if not positions or df is None:
-            return None
         import warnings
         warnings.filterwarnings("ignore")
+        df        = _read_csv()
+        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        logger.info("riesgo._compute: df=%s positions=%d", "ok" if df is not None else "None", len(positions))
+        if not positions or df is None:
+            logger.warning("riesgo: sin posiciones o sin CSV")
+            return None
         tickers  = list(positions.keys())
         values   = {}
         for t in tickers:
             row = df[df["ticker"] == t]
             if row.empty:
+                logger.debug("riesgo: ticker %s no en CSV", t)
                 continue
             p = row.iloc[0].get("price")
             if p and not _is_nan(p):
                 values[t] = positions[t][0] * float(p)
 
+        logger.info("riesgo: tickers con valor=%d", len(values))
         if not values:
+            logger.warning("riesgo: ningún ticker con precio válido. tickers=%s", tickers)
             return None
 
         total = sum(values.values())
@@ -2997,8 +3002,8 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
                 if len(hist) > 30:
                     hist.index = pd.to_datetime(hist.index.date)
                     price_data[t] = hist
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("riesgo: error history %s: %s", t, e)
 
         macro_tickers = {"SPY": "S&P 500", "^VIX": "VIX", "^TNX": "Bono 10Y EE.UU."}
         for mt in macro_tickers:
@@ -3010,7 +3015,9 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
             except Exception:
                 pass
 
+        logger.info("riesgo: price_data tickers=%d", len(price_data))
         if len(price_data) < 2:
+            logger.warning("riesgo: insuficientes series de precio (%d)", len(price_data))
             return None
 
         df_prices  = pd.DataFrame(price_data).dropna(how="all")

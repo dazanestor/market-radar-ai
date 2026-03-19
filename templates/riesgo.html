@@ -69,6 +69,50 @@
   </div>
 </div>
 
+<!-- Contribución a la volatilidad por posición -->
+{% if vd.vol_contrib %}
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">⚖️ Contribución a la volatilidad por posición</h2>
+    <span style="font-size:11px;color:#8b949e">% de varianza total de cartera</span>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Peso en cartera<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Porcentaje del valor total de cartera que representa esta posición.')">ⓘ</button></th>
+            <th>Volatilidad anual<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Volatilidad anualizada del activo (desviación estándar de retornos diarios × √252).')">ⓘ</button></th>
+            <th>Contribución al riesgo<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Porcentaje de la varianza total de la cartera que aporta esta posición. Tiene en cuenta el peso, la volatilidad propia y su correlación con el resto de la cartera. La suma de todas las posiciones es 100%.')">ⓘ</button></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in vd.vol_contrib %}
+          {% set bar_color = '#f85149' if item.contrib_pct > 30 else ('#d29922' if item.contrib_pct > 15 else '#3fb950') %}
+          <tr>
+            <td style="font-weight:600;color:#e6edf3">{{ item.ticker }}</td>
+            <td class="text-muted">{{ item.weight_pct | num }}%</td>
+            <td class="{{ 'text-negative' if item.vol_annual > 30 else ('text-warning' if item.vol_annual > 20 else 'text-muted') }}">{{ item.vol_annual | num }}%</td>
+            <td style="font-weight:600;color:{{ bar_color }}">{{ item.contrib_pct | num }}%</td>
+            <td style="width:120px;padding-right:12px">
+              <div style="background:#21262d;border-radius:3px;height:6px;overflow:hidden">
+                <div style="height:6px;border-radius:3px;background:{{ bar_color }};width:{{ [item.contrib_pct, 100] | min }}%"></div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div style="margin-top:8px;padding:10px 14px;background:#161b22;border:1px solid #30363d;border-radius:6px;font-size:12px;color:#8b949e">
+    Una posición puede tener alta volatilidad propia pero baja contribución si está poco correlacionada con el resto de la cartera (efecto diversificador). Una contribución alta significa que esa posición es la principal fuente de riesgo del simulador Monte Carlo.
+  </div>
+</div>
+{% endif %}
+
 <!-- Correlación con macro -->
 {% if vd.macro_corr %}
 <div class="section">

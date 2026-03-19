@@ -3047,6 +3047,27 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
                 except Exception:
                     pass
 
+        # Contribución a la volatilidad de cartera por ticker (MCTR)
+        # contrib_i = w_i × cov(r_i, r_p) / var_p  → suma = 100%
+        port_var = vol_daily ** 2
+        vol_contrib = []
+        for t, w in weights.items():
+            if t not in df_returns.columns:
+                continue
+            try:
+                cov_ip = float(df_returns[t].cov(port_rets))
+                contrib_pct = (w * cov_ip / port_var * 100) if port_var > 0 else 0
+                vol_i = float(df_returns[t].std()) * np.sqrt(252) * 100
+                vol_contrib.append({
+                    "ticker":      t,
+                    "weight_pct":  round(w * 100, 1),
+                    "vol_annual":  round(vol_i, 1),
+                    "contrib_pct": round(contrib_pct, 1),
+                })
+            except Exception:
+                pass
+        vol_contrib.sort(key=lambda x: x["contrib_pct"], reverse=True)
+
         return {
             "total":       round(total, 2),
             "var_95_pct":  round(abs(var_95) * 100, 2),
@@ -3057,6 +3078,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
             "mean_daily":  round(mean_daily * 100, 4),
             "macro_corr":  macro_corr,
             "port_rets":   list(port_rets.dropna().values[-252:]),
+            "vol_contrib": vol_contrib,
         }
 
     var_data = await asyncio.get_running_loop().run_in_executor(_executor, _compute)

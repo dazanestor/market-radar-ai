@@ -2971,25 +2971,22 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
         warnings.filterwarnings("ignore")
         df        = _read_csv()
         positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
-        logger.info("riesgo._compute: df=%s positions=%d", "ok" if df is not None else "None", len(positions))
-        if not positions or df is None:
-            logger.warning("riesgo: sin posiciones o sin CSV")
-            return None
+        if df is None:
+            return {"_error": "csv"}
+        if not positions:
+            return {"_error": "positions"}
         tickers  = list(positions.keys())
         values   = {}
         for t in tickers:
             row = df[df["ticker"] == t]
             if row.empty:
-                logger.debug("riesgo: ticker %s no en CSV", t)
                 continue
             p = row.iloc[0].get("price")
             if p and not _is_nan(p):
                 values[t] = positions[t][0] * float(p)
 
-        logger.info("riesgo: tickers con valor=%d", len(values))
         if not values:
-            logger.warning("riesgo: ningún ticker con precio válido. tickers=%s", tickers)
-            return None
+            return {"_error": f"no_prices:tickers={tickers[:5]}"}
 
         total = sum(values.values())
         weights = {t: v / total for t, v in values.items()}
@@ -3003,7 +3000,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
                     hist.index = pd.to_datetime(hist.index.date)
                     price_data[t] = hist
             except Exception as e:
-                logger.warning("riesgo: error history %s: %s", t, e)
+                logger.warning("riesgo history %s: %s", t, e)
 
         macro_tickers = {"SPY": "S&P 500", "^VIX": "VIX", "^TNX": "Bono 10Y EE.UU."}
         for mt in macro_tickers:
@@ -3015,10 +3012,8 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
             except Exception:
                 pass
 
-        logger.info("riesgo: price_data tickers=%d", len(price_data))
         if len(price_data) < 2:
-            logger.warning("riesgo: insuficientes series de precio (%d)", len(price_data))
-            return None
+            return {"_error": f"yfinance:ok={list(price_data.keys())}"}
 
         df_prices  = pd.DataFrame(price_data).dropna(how="all")
         df_returns = df_prices.pct_change().dropna()
@@ -3066,11 +3061,19 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
 
     var_data = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
 
+    # Si _compute devolvió un dict de error diagnóstico, loguearlo y tratarlo como sin datos
+    error_msg = None
+    if isinstance(var_data, dict) and "_error" in var_data:
+        error_msg = var_data["_error"]
+        logger.warning("riesgo sin datos: %s", error_msg)
+        var_data = None
+
     return templates.TemplateResponse("riesgo.html", {
-        "request":  request,
-        "has_data": var_data is not None,
-        "var_data": var_data,
-        "total":    var_data["total"] if var_data else 0,
+        "request":   request,
+        "has_data":  var_data is not None,
+        "var_data":  var_data,
+        "total":     var_data["total"] if var_data else 0,
+        "error_msg": error_msg,
     })
 
 

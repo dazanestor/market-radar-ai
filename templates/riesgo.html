@@ -7,6 +7,7 @@
 <div class="card">
   <div class="empty-state">
     Sin datos de precios o posiciones. Genera un reporte primero.
+    {% if error_msg %}<br><span style="font-size:11px;color:#f85149;margin-top:6px;display:block">Diagnóstico: {{ error_msg }}</span>{% endif %}
   </div>
 </div>
 {% else %}

@@ -2913,6 +2913,8 @@ async def chart_correlacion(session: Optional[str] = Cookie(default=None)):
             try:
                 hist = yf.Ticker(t).history(period="1y")["Close"]
                 if not hist.empty:
+                    # Normalize to plain date so all tickers align regardless of exchange timezone
+                    hist.index = pd.to_datetime(hist.index.date)
                     frames[t] = hist
             except Exception:
                 pass
@@ -2991,6 +2993,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
             try:
                 hist = yf.Ticker(t).history(period="1y")["Close"]
                 if len(hist) > 30:
+                    hist.index = pd.to_datetime(hist.index.date)
                     price_data[t] = hist
             except Exception:
                 pass
@@ -3000,6 +3003,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
             try:
                 hist = yf.Ticker(mt).history(period="1y")["Close"]
                 if not hist.empty:
+                    hist.index = pd.to_datetime(hist.index.date)
                     price_data[mt] = hist
             except Exception:
                 pass
@@ -3084,12 +3088,14 @@ async def chart_riesgo_returns(session: Optional[str] = Cookie(default=None)):
         for t in values:
             try:
                 h = yf.Ticker(t).history(period="1y")["Close"]
-                if len(h) > 30: frames[t] = h
+                if len(h) > 30:
+                    h.index = pd.to_datetime(h.index.date)
+                    frames[t] = h
             except Exception:
                 pass
         if not frames:
             return None
-        df_r = pd.DataFrame(frames).pct_change().dropna()
+        df_r = pd.DataFrame(frames).dropna(how="all").pct_change().dropna()
         port = pd.Series(0.0, index=df_r.index)
         for t, w in weights.items():
             if t in df_r.columns:
@@ -3147,12 +3153,14 @@ async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
         for t in values:
             try:
                 h = yf.Ticker(t).history(period="1y")["Close"]
-                if len(h) > 30: frames[t] = h
+                if len(h) > 30:
+                    h.index = pd.to_datetime(h.index.date)
+                    frames[t] = h
             except Exception:
                 pass
         if not frames:
             return None, total
-        df_r = pd.DataFrame(frames).pct_change().dropna()
+        df_r = pd.DataFrame(frames).dropna(how="all").pct_change().dropna()
         port = pd.Series(0.0, index=df_r.index)
         for t, w in weights.items():
             if t in df_r.columns:

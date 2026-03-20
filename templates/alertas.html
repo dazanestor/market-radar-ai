@@ -165,11 +165,13 @@
             <td>
               {% if h_ctype == 'drawdown' %}<span class="badge badge-red">Drawdown</span>
               {% elif h_ctype == 'score' %}<span class="badge badge-blue">Score</span>
+              {% elif h_ctype == 'stoploss_pct' %}<span class="badge badge-red">🛑 Stop-loss</span>
               {% else %}<span class="badge badge-gray">Precio</span>{% endif %}
             </td>
             <td>
               {% if h_ctype == 'drawdown' %}Drawdown &lt; {{ h_target | num }}%
               {% elif h_ctype == 'score' %}Score &gt; {{ h_target | num }}
+              {% elif h_ctype == 'stoploss_pct' %}<span class="text-negative">Pérdida vs coste &gt; {{ h_target | num }}%</span>
               {% elif h_dir == 'below' %}<span class="text-negative">↓ {{ h_target | eur }}</span>
               {% else %}<span class="text-positive">↑ {{ h_target | eur }}</span>{% endif %}
             </td>

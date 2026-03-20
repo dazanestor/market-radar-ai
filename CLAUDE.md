@@ -73,13 +73,15 @@ uvicorn web:app --host 0.0.0.0 --port 8589  # Solo dashboard web
 
 Tablas en `data/radar.db`:
 - **`portfolio`** — `ticker PK`, `shares`, `avg_price` (en EUR)
-- **`price_history`** — snapshots diarios con métricas: `price`, `drawdown_52w`, `momentum_3m/6m`, `volatility`, `dividend_yield`, `score`, `opportunity`; constraint UNIQUE en `(ticker, date)`
+- **`price_history`** — snapshots diarios con métricas: `price`, `drawdown_52w`, `momentum_3m/6m`, `volatility`, `dividend_yield`, `rsi`, `score`, `opportunity`; constraint UNIQUE en `(ticker, date)`
 - **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `condition_type` (price/drawdown/score/stoploss_pct), `condition_value`, `active`
-- **`alert_history`** — historial de alertas disparadas: `ticker`, `target_price`, `direction`, `condition_type`, `condition_value`, `triggered_at`, `price_at_trigger`
+- **`alert_history`** — historial de alertas disparadas: `ticker`, `target_price`, `direction`, `condition_type`, `condition_value`, `triggered_at`, `price_at_trigger`; campo `notified` para reenvío tras caída del bot
 - **`reports`** — informes guardados: `date`, `content`
 - **`news_cache`** — caché de traducciones de titulares: `headline_hash PK`, `translation`, `fetched_at` (TTL 24h)
-- **`tr_cache`** — caché de Trade Republic: `key PK`, `value`, `updated`
+- **`tr_cache`** — caché clave-valor para datos Trade Republic (cash_eur, transacciones, posiciones no mapeadas): `key PK`, `value`, `updated`
 - **`push_subscriptions`** — suscripciones Web Push: `endpoint UNIQUE`, `p256dh`, `auth`, `user_agent`, `created`
+- **`operations`** — historial de operaciones: `ticker`, `date`, `type` (buy/sell), `shares`, `price_eur`, `notes`
+- **`portfolio_value`** — valor total diario de la cartera: `date UNIQUE`, `total_eur`, `positions_count`
 - **Backups automáticos**: el servicio `backup` en docker-compose copia `radar.db` a `data/backups/radar_YYYYMMDD.db` cada 24h, conservando los últimos 7 snapshots.
 
 ## Algoritmo de scoring (scoring.py)
@@ -176,18 +178,7 @@ El bot no acepta comandos. Actúa únicamente como canal de salida (notificacion
 
 Toda la gestión (tickers, posiciones, alertas, Trade Republic) se realiza desde el dashboard web.
 
-## Base de datos SQLite
-
-Tablas en `data/radar.db`:
-- **`portfolio`** — `ticker PK`, `shares`, `avg_price` (en EUR)
-- **`price_history`** — snapshots diarios con métricas: `price`, `drawdown_52w`, `momentum_3m/6m`, `volatility`, `dividend_yield`, `rsi`, `score`, `opportunity`; constraint UNIQUE en `(ticker, date)`
-- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `condition_type` (price/drawdown/score/stoploss_pct), `active`
-- **`alert_history`** — historial de alertas disparadas con `notified` flag
-- **`reports`** — informes guardados: `date`, `content`
-- **`tr_cache`** — caché clave-valor para datos Trade Republic (cash_eur, transacciones)
-- **`news_cache`** — traducciones de titulares (TTL 24h)
-- **`operations`** — historial de operaciones: `ticker`, `date`, `type` (buy/sell), `shares`, `price_eur`, `notes`
-- **`portfolio_value`** — valor total diario de la cartera: `date UNIQUE`, `total_eur`, `positions_count`
+---
 
 ## Dashboard web (web.py)
 

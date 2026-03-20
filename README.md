@@ -378,16 +378,37 @@ Alertas activas o disparadas. Soporta cuatro tipos de condición:
 - **stoploss_pct** — pérdida vs precio de compra supera el % indicado
 
 ### `alert_history`
-Historial de alertas disparadas: ticker, tipo, valor objetivo, precio en el momento del disparo y timestamp.
+Historial de alertas disparadas: ticker, tipo, valor objetivo, precio en el momento del disparo y timestamp. Campo `notified` para reenviar alertas perdidas durante caídas del bot.
 
 ### `reports`
 Historial de análisis generados por Claude.
+
+### `operations`
+Historial de operaciones buy/sell.
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `ticker` | TEXT | Símbolo del activo |
+| `date` | TEXT | Fecha de la operación |
+| `type` | TEXT | `buy` o `sell` |
+| `shares` | REAL | Número de acciones |
+| `price_eur` | REAL | Precio de ejecución en EUR |
+| `notes` | TEXT | Notas opcionales |
+
+### `portfolio_value`
+Valor total de cartera por día (actualizado en cada reporte diario).
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `date` | TEXT UNIQUE | Fecha del snapshot |
+| `total_eur` | REAL | Valor total en EUR |
+| `positions_count` | INTEGER | Número de posiciones |
 
 ### `news_cache`
 Caché de traducciones de titulares (SHA-256 del titular como clave, TTL 24h). Reduce llamadas a la API de Claude.
 
 ### `tr_cache`
-Caché de datos de Trade Republic (posiciones y saldo).
+Caché clave-valor para datos de Trade Republic (`cash_eur`, `tr_transactions`, `tr_unmatched`).
 
 ---
 
@@ -466,6 +487,23 @@ Accede desde el navegador a `http://<IP-servidor>:8589`.
 - **Generar reporte** — lanza el pipeline completo desde el navegador (máx. 2 por minuto); muestra error si el pipeline falla
 - **`/health`** — endpoint JSON con estado de la base de datos, existencia del CSV y timestamp UTC; útil para healthchecks externos
 
+### Web Push y PWA
+
+El dashboard es una Progressive Web App (PWA) instalable. Soporta notificaciones push nativas en el navegador sin necesidad de tener la pestaña abierta.
+
+**Funcionamiento:**
+1. Al visitar el dashboard, el navegador registra el Service Worker (`/sw.js`)
+2. El usuario suscribe su navegador a las notificaciones push desde Ajustes
+3. Las alertas de precio/drawdown/score/stop-loss se envían como push al navegador además de por Telegram
+4. Compatible con Chrome, Firefox, Edge, Safari 16.4+ y como PWA instalada en Android/iOS
+
+**Implementación sin dependencias externas:**
+- Claves VAPID generadas con `cryptography` (`data/vapid_private.pem` + `data/vapid_public.pem`)
+- Cifrado RFC 8291 (AES-128-GCM + ECDH efímero) implementado en `push_utils.py`
+- Suscripciones persistidas en la tabla `push_subscriptions` de SQLite
+
+> **Nota:** Los Service Workers solo funcionan en orígenes seguros (HTTPS). En `localhost` funciona sin TLS. En producción se necesita un reverse proxy con TLS (Cloudflare Tunnel, Caddy, nginx).
+
 ### Autenticación
 
 El dashboard usa autenticación segura basada en credenciales almacenadas en `data/credentials.json` (bcrypt):
@@ -475,6 +513,35 @@ El dashboard usa autenticación segura basada en credenciales almacenadas en `da
 - **Bloqueo por IP**: tras 5 intentos fallidos, la IP queda bloqueada 15 minutos
 - **CSRF**: token global en todos los formularios POST
 - **Sesiones**: UUID por sesión, expiran en 30 días; se invalidan al hacer logout
+
+---
+
+## Integración Trade Republic
+
+El sistema puede sincronizar posiciones y saldo de efectivo desde Trade Republic de forma opcional.
+
+### Configuración
+
+1. Añade tus credenciales al `.env`:
+   ```env
+   TR_PHONE=+34600000000
+   TR_PIN=1234
+   ```
+2. En el dashboard, ve a **Tickers → Trade Republic** y pulsa **Conectar dispositivo**
+3. Introduce el código SMS que recibirás en tu móvil para completar la vinculación
+
+### Qué sincroniza
+
+- **Saldo en efectivo** — se suma al valor total de la cartera en el dashboard
+- **Posiciones** — intenta mapear los ISINs de Trade Republic a tickers de yfinance usando OpenFIGI; las posiciones no mapeadas se muestran en el dashboard con su nombre e ISIN
+- **Historial de transacciones** — buy/sell/dividendos para el historial de operaciones
+
+### Notas
+
+- La integración usa el módulo `trade_republic` (instalación opcional). Si no está instalado, la funcionalidad queda desactivada silenciosamente
+- Los datos se cachean en `tr_cache` (SQLite) para no repetir llamadas innecesarias
+- La sincronización se hace bajo demanda desde el dashboard (botón **Sincronizar**)
+- La sesión de Trade Republic se persiste en `data/tr_cookies.txt`
 
 ---
 

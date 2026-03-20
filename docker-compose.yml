@@ -23,8 +23,6 @@ services:
 
     environment:
       ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID:   ${TELEGRAM_CHAT_ID:-}
       MODEL:              ${MODEL:-claude-haiku-4-5-20251001}
       REPORT_HOUR:        ${REPORT_HOUR:-8}
       TIMEZONE:           ${TIMEZONE:-Europe/Madrid}
@@ -56,8 +54,6 @@ services:
 
     environment:
       ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID:   ${TELEGRAM_CHAT_ID:-}
       MODEL:              ${MODEL:-claude-haiku-4-5-20251001}
       REPORT_HOUR:        ${REPORT_HOUR:-8}
       TIMEZONE:           ${TIMEZONE:-Europe/Madrid}

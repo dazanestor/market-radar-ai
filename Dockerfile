@@ -12,4 +12,4 @@ COPY . .
 RUN useradd -m appuser && chown -R appuser /app
 USER appuser
 
-CMD ["python", "bot.py"]
+CMD ["python", "scheduler.py"]

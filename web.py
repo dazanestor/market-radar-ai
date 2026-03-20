@@ -1184,22 +1184,6 @@ _APP_SETTINGS = [
         "section": "Claude AI",
     },
     {
-        "key": "TELEGRAM_BOT_TOKEN",
-        "label": "Telegram Bot Token",
-        "hint": "Token del bot obtenido de @BotFather.",
-        "type": "password",
-        "restart": True,
-        "section": "Telegram",
-    },
-    {
-        "key": "TELEGRAM_CHAT_ID",
-        "label": "Telegram Chat ID",
-        "hint": "Tu ID de Telegram (destinatario de alertas y reportes).",
-        "type": "text",
-        "restart": False,
-        "section": "Telegram",
-    },
-    {
         "key": "REPORT_HOUR",
         "label": "Hora del informe diario (0–23)",
         "hint": "Hora local (según TIMEZONE) en que se envía el reporte diario.",
@@ -1269,13 +1253,11 @@ _APP_SETTINGS = [
 
 def _missing_required_settings() -> list[str]:
     """Devuelve lista de claves requeridas que no están configuradas (ni en BD ni en env)."""
-    from config import ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    from config import ANTHROPIC_API_KEY
     db = get_all_settings()
     missing = []
     for key, env_val in [
-        ("ANTHROPIC_API_KEY",  ANTHROPIC_API_KEY),
-        ("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
-        ("TELEGRAM_CHAT_ID",   TELEGRAM_CHAT_ID),
+        ("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY),
     ]:
         if not db.get(key) and not env_val:
             missing.append(key)

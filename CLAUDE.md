@@ -2,12 +2,12 @@
 
 ## Descripción general
 
-Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de mercado via yfinance, calcula métricas técnicas y fundamentales, puntúa oportunidades de inversión y genera análisis diarios con Claude (Anthropic). Incluye dashboard web opcional con FastAPI.
+Herramienta de monitoreo de cartera e inversiones. Descarga datos de mercado via yfinance, calcula métricas técnicas y fundamentales, puntúa oportunidades de inversión y genera análisis diarios con Claude (Anthropic). Dashboard web con FastAPI + notificaciones via Web Push (PWA).
 
 ## Stack tecnológico
 
 - **Python 3.12**
-- **Telegram**: `python-telegram-bot[job-queue]` 20.7 con APScheduler para jobs periódicos
+- **Scheduler**: `APScheduler` 3.10 — `BlockingScheduler` con `CronTrigger` e `IntervalTrigger` para jobs periódicos en `scheduler.py`
 - **Datos financieros**: `yfinance` — precios históricos, fundamentales, dividendos, noticias
 - **IA**: `anthropic` SDK — Claude para análisis de informes y traducción de titulares
 - **Web**: `FastAPI` + `uvicorn` + `Jinja2` — dashboard web opcional en puerto 8589
@@ -21,8 +21,7 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 ## Estructura del proyecto
 
 ```
-bot.py              # Bot Telegram principal: comandos, jobs APScheduler, gráficos
-scheduler.py        # Ejecución standalone (sin bot, útil con cron externo)
+scheduler.py        # Servicio de jobs periódicos: reporte diario, alertas, ex-div, earnings, vacuum
 generate_csv.py     # Pipeline de datos: descarga, cálculo de métricas, guarda snapshots en BD (no escribe CSV)
 fetch_data.py       # Wrappers yfinance: precios, dividendos, fundamentales, FX, noticias
 scoring.py          # Algoritmo de puntuación multi-factor (7 factores → score, pesos por horizonte)
@@ -34,7 +33,7 @@ config.py           # Parsing y validación de variables de entorno
 tickers.yaml        # Solo para migración inicial; se puede eliminar una vez arrancado por primera vez
 requirements.txt    # Dependencias Python
 Dockerfile          # python:3.12-slim, usuario no-root appuser
-docker-compose.yml  # Servicios: init, market-radar (bot), market-radar-web
+docker-compose.yml  # Servicios: init, market-radar (scheduler), market-radar-web
 .env.example        # Plantilla de variables de entorno requeridas
 templates/          # Plantillas Jinja2 HTML para el dashboard web
 ```
@@ -43,8 +42,6 @@ templates/          # Plantillas Jinja2 HTML para el dashboard web
 
 **Requeridas:**
 - `ANTHROPIC_API_KEY` — clave Claude (formato `sk-ant-...`)
-- `TELEGRAM_BOT_TOKEN` — token del bot (@BotFather)
-- `TELEGRAM_CHAT_ID` — tu ID de Telegram (único usuario autorizado)
 
 **Opcionales:**
 - `MODEL` — modelo Claude a usar (default: `claude-haiku-4-5-20251001`)
@@ -64,9 +61,8 @@ docker compose up -d
 
 # Sin Docker (desarrollo)
 pip install -r requirements.txt
-python bot.py           # Bot completo con Telegram
-python scheduler.py     # Solo pipeline de análisis (standalone)
-uvicorn web:app --host 0.0.0.0 --port 8589  # Solo dashboard web
+python scheduler.py     # Servicio de jobs periódicos (reporte, alertas, etc.)
+uvicorn web:app --host 0.0.0.0 --port 8589  # Dashboard web
 ```
 
 ## Base de datos SQLite
@@ -161,20 +157,22 @@ Restricción de concentración: peso máximo = `min(40%, max(3/n, 10%))` donde `
 6. `fetch_data.get_news()` → titulares recientes traducidos con Claude
 7. `ai_analysis.analyze()` → análisis completo con Claude
 8. `database.save_report()` → guarda informe en SQLite
-9. Bot envía el informe al Telegram configurado
+9. Web Push al navegador via `push_utils.send_push_to_all()`
 
-## Bot Telegram — modo pasivo
+## Scheduler (scheduler.py)
 
-El bot no acepta comandos. Actúa únicamente como canal de salida (notificaciones push):
+Servicio de larga ejecución con APScheduler `BlockingScheduler`. Todas las notificaciones van via Web Push al navegador (sin Telegram).
 
-| Job | Cuándo | Qué envía |
-|-----|--------|-----------|
-| `job_daily_report` | `REPORT_HOUR`:00 diario | Informe completo + alertas de drawdown |
-| `job_check_exdividend` | 07:00 diario | Aviso si algún ticker tiene ex-dividend en ≤3 días |
-| `job_check_price_alerts` | Cada hora | Dispara alertas de precio/drawdown/score configuradas en el web |
-| `job_replay_unnotified_alerts` | Al arrancar (30s) | Reenvía alertas perdidas mientras el bot estaba caído |
-| `job_vacuum_db` | Semanal | Purga snapshots >1 año y traducciones >30 días; VACUUM SQLite |
-| `job_check_claude_health` | Semanal | Alerta si la API de Claude no responde |
+| Job | Cuándo | Qué hace |
+|-----|--------|----------|
+| `job_daily_report` | `REPORT_HOUR`:00 diario | Pipeline completo + Web Push con resumen |
+| `job_check_exdividend` | 07:00 diario | Web Push si algún ticker tiene ex-dividend en ≤3 días |
+| `job_check_earnings` | 07:00 diario | Web Push si algún ticker tiene earnings en ≤7 días |
+| `job_check_price_alerts` | Cada hora | Dispara alertas precio/drawdown/score/stoploss; Web Push |
+| `job_check_sector_concentration` | Cada 24h | Web Push si algún sector supera el umbral (default 40%) |
+| `job_replay_unnotified_alerts` | Al arrancar (+30s) | Web Push de alertas perdidas mientras el servicio estaba caído |
+| `job_vacuum_db` | Domingos 02:00 | Purga snapshots >1 año y traducciones >30 días; VACUUM SQLite |
+| `job_check_claude_health` | Lunes 09:00 | Web Push si la API de Claude no responde |
 
 Toda la gestión (tickers, posiciones, alertas, Trade Republic) se realiza desde el dashboard web.
 
@@ -313,16 +311,18 @@ docker exec market-radar-ai python3 -c "import sqlite3; conn = sqlite3.connect('
 
 Nota: el contenedor `market-radar-ai` se llama así en docker-compose. El contenedor web es `market-radar-web`.
 
-## Jobs periódicos (bot.py)
+## Jobs periódicos (scheduler.py)
 
 | Job | Cuándo | Descripción |
 |-----|--------|-------------|
-| `job_daily_report` | Diario a `REPORT_HOUR:00` | Reporte completo con IA |
-| `job_check_exdividend` | Diario a 07:00 | Alerta si algún ticker tiene ex-dividend en ≤3 días |
-| `job_check_price_alerts` | Cada hora | Comprueba alertas de precio/drawdown/score |
-| `job_replay_unnotified_alerts` | Al arrancar (+30s) | Reenvía alertas perdidas mientras el bot estaba caído |
-| `job_vacuum_db` | Semanal (+5min) | Purga datos >1 año y VACUUM SQLite |
-| `job_check_claude_health` | Semanal (+2min) | Verifica que la API de Claude responde |
+| `job_daily_report` | Diario a `REPORT_HOUR:00` | Reporte completo con IA + Web Push |
+| `job_check_exdividend` | Diario a 07:00 | Web Push si ex-dividend en ≤3 días |
+| `job_check_earnings` | Diario a 07:00 | Web Push si earnings en ≤7 días |
+| `job_check_price_alerts` | Cada hora | Comprueba alertas precio/drawdown/score/stoploss + Web Push |
+| `job_check_sector_concentration` | Cada 24h | Web Push si sector supera umbral |
+| `job_replay_unnotified_alerts` | Al arrancar (+30s) | Web Push de alertas perdidas |
+| `job_vacuum_db` | Domingos 02:00 | Purga datos >1 año y VACUUM SQLite |
+| `job_check_claude_health` | Lunes 09:00 | Web Push si Claude API no responde |
 
 ## Campos extendidos en tickers.yaml
 

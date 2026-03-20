@@ -6,10 +6,8 @@ services:
       - sh
       - -c
       - |
-        [ -f /workspace/tickers.yaml ] || printf 'portfolio: {}\nwatchlist: {}\n' > /workspace/tickers.yaml
         mkdir -p /workspace/data /workspace/output /workspace/data/backups
         chmod -R 777 /workspace/data /workspace/output
-        chmod 666 /workspace/tickers.yaml
     volumes:
       - .:/workspace
 
@@ -41,7 +39,6 @@ services:
     volumes:
       - ./output:/app/output
       - ./data:/app/data
-      - ./tickers.yaml:/app/tickers.yaml
 
   market-radar-web:
     image: ghcr.io/dazanestor/market-radar-ai:latest
@@ -76,7 +73,6 @@ services:
     volumes:
       - ./output:/app/output
       - ./data:/app/data
-      - ./tickers.yaml:/app/tickers.yaml
 
   backup:
     image: alpine:3.21

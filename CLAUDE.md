@@ -358,13 +358,17 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Config sin sys.exit**: `config.py` no hace `sys.exit()` al arrancar; todas las vars son opcionales con defaults vacíos.
 - **Bot wait loop**: `bot.py main()` espera en bucle hasta que `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` estén disponibles (BD o env) antes de arrancar.
 - **`ai_analysis.py` y `fetch_data.py` leen config de BD**: `_get_client()` y `_effective_model()` leen `ANTHROPIC_API_KEY` y `MODEL` desde BD en cada invocación.
+- **`iterrows()` eliminado de web.py y scheduler.py**: todos los bucles sobre DataFrames usan `.to_dict("records")` para evitar la sobrecarga de crear una `pd.Series` por fila.
+- **Caché TTL de traducciones**: `_translate_cache` en `fetch_data.py` usa helpers `_translate_cache_get/set` con TTL de 24h para evitar memory leak en sesiones largas.
+- **Push paralelo**: `send_push_to_all()` en `push_utils.py` usa `ThreadPoolExecutor` (máx. 8 workers) para enviar notificaciones en paralelo.
+- **`_currency_cache` en scheduler.py**: `fast_info.get("currency")` se cachea por ticker para evitar llamadas extra a yfinance en el job de alertas.
+- **Rate limit en `/tickers/search`**: `@limiter.limit("10/minute")` añadido para prevenir abuso del endpoint de búsqueda.
 
 ## Trabajo pendiente / próximas funcionalidades
 
-- **Tests automatizados**: no hay suite de tests. Validación manual via Telegram/scheduler.
+- **Tests automatizados**: no hay suite de tests. Validación manual via scheduler/web.
 - **CSRF no en formularios de login/setup**: los endpoints de login no necesitan CSRF (no requieren sesión previa); el CSRF token global cubre todos los formularios de usuario autenticado.
 - **Web Push require HTTPS en producción**: los Service Workers solo se registran en orígenes seguros. En `localhost` funciona sin TLS. En producción se necesita reverse proxy con TLS (Cloudflare Tunnel, Caddy, nginx).
-- **Alertas por drawdown/score en Telegram bot**: el comando `/alerta` solo crea alertas de precio. Las alertas por drawdown/score solo se crean desde el dashboard web.
 
 ## CI/CD
 

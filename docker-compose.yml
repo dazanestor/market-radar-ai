@@ -1,23 +1,8 @@
 services:
-  init:
-    image: alpine:3.21
-    restart: "no"
-    command:
-      - sh
-      - -c
-      - |
-        mkdir -p /workspace/data /workspace/output /workspace/data/backups
-        chmod -R 777 /workspace/data /workspace/output
-    volumes:
-      - .:/workspace
-
   market-radar:
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-ai
     restart: unless-stopped
-    depends_on:
-      init:
-        condition: service_completed_successfully
 
     environment:
       ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}
@@ -44,10 +29,7 @@ services:
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-web
     restart: unless-stopped
-    command: ["uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8589"]
-    depends_on:
-      init:
-        condition: service_completed_successfully
+    command: ["python", "-m", "uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8589"]
 
     environment:
       ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}

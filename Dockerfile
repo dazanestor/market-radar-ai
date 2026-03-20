@@ -11,6 +11,11 @@ RUN pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
 COPY . .
 
 RUN useradd -m appuser && chown -R appuser /app
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 USER appuser
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python", "scheduler.py"]

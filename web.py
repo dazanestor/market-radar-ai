@@ -122,6 +122,11 @@ _csv_cache: dict = {"df": None, "ts": 0.0}
 _CSV_CACHE_TTL   = 300.0  # 5 minutos
 _csv_cache_lock  = threading.RLock()
 
+# Caché de optimización de cartera (coste alto: yfinance + scipy)
+_opt_cache: dict = {"data": None, "ts": 0.0}
+_OPT_CACHE_TTL  = 300.0   # 5 minutos
+_opt_cache_lock = threading.RLock()
+
 
 # ── Credential helpers ────────────────────────────────────────────────────────
 
@@ -595,6 +600,9 @@ def _invalidate_csv_cache() -> None:
     with _csv_cache_lock:
         _csv_cache["df"] = None
         _csv_cache["ts"] = 0.0
+    with _opt_cache_lock:
+        _opt_cache["data"] = None
+        _opt_cache["ts"]   = 0.0
 
 
 def _safe_pct(v) -> Optional[float]:
@@ -3242,6 +3250,364 @@ async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
         raise HTTPException(status_code=500)
     resp.headers["Cache-Control"] = "public, max-age=300"
     return resp
+
+
+# ── Optimización de cartera (Markowitz + paridad de riesgo) ───────────────────
+
+def _compute_optimization(df_portfolio, positions_map: dict) -> Optional[dict]:
+    """
+    Calcula tres carteras óptimas usando scipy + datos del reporte:
+
+    Retornos esperados (multi-factor):
+      40% retorno histórico 1 año (yfinance)
+      20% score del radar (datos reporte)
+      15% upside precio objetivo analistas (datos reporte)
+      15% momentum 3m/6m (datos reporte)
+      10% calidad fundamental: ROE, PER (datos reporte)
+
+    Carteras calculadas:
+      - Mínima varianza
+      - Máximo Sharpe (score-aware)
+      - Paridad de riesgo
+
+    Devuelve dict con pesos, métricas y puntos de frontera eficiente.
+    """
+    import warnings
+    warnings.filterwarnings("ignore")
+    try:
+        from scipy.optimize import minimize
+    except ImportError:
+        logger.error("scipy no está instalado. Instala con: pip install scipy")
+        return None
+
+    # ─── 1. Tickers con precio en el reporte ──────────────────────────────────
+    valid = []
+    for t in positions_map:
+        row = df_portfolio[df_portfolio["ticker"] == t]
+        if row.empty:
+            continue
+        price = _safe_float(row.iloc[0].get("price"))
+        if price and price > 0:
+            valid.append(t)
+
+    if len(valid) < 2:
+        return None
+
+    # ─── 2. Histórico de precios 1 año ────────────────────────────────────────
+    price_data = {}
+    for t in valid:
+        try:
+            hist = yf.Ticker(t).history(period="1y")["Close"]
+            if len(hist) > 30:
+                hist.index = pd.to_datetime(hist.index.date)
+                price_data[t] = hist
+        except Exception:
+            pass
+
+    valid = [t for t in valid if t in price_data]
+    if len(valid) < 2:
+        return None
+
+    df_prices = pd.DataFrame({t: price_data[t] for t in valid}).dropna()
+    if len(df_prices) < 30:
+        return None
+
+    rets = df_prices.pct_change().dropna()
+    cov_annual = rets.cov().values * 252   # matriz de covarianzas anualizada
+    n = len(valid)
+
+    # ─── 3. Retornos esperados multi-factor ───────────────────────────────────
+    mu = np.zeros(n)
+    mu_components = []   # para mostrar en UI
+
+    for i, t in enumerate(valid):
+        row = df_portfolio[df_portfolio["ticker"] == t].iloc[0]
+
+        # Componente 1: retorno histórico anualizado (40%)
+        hist_ret = float(rets[t].mean()) * 252
+
+        # Componente 2: score del radar → ±8% (20%)
+        score = _safe_float(row.get("score"))
+        score_adj = ((score - 12) / 20) * 0.08 if score is not None else 0.0
+
+        # Componente 3: upside precio objetivo analistas (15%)
+        analyst_target = _safe_float(row.get("analyst_target"))
+        current_price  = _safe_float(row.get("price"))
+        analyst_n      = _safe_float(row.get("analyst_n"), 0)
+        if analyst_target and current_price and current_price > 0:
+            raw_upside = analyst_target / current_price - 1
+            # ponderar por número de analistas (más analistas = más confianza)
+            confidence = min(1.0, (analyst_n or 1) / 15.0)
+            analyst_mu = raw_upside * confidence
+        else:
+            analyst_mu = 0.0
+
+        # Componente 4: momentum 3m / 6m (15%)
+        mom3 = _safe_float(row.get("momentum_3m"), 0.0) or 0.0
+        mom6 = _safe_float(row.get("momentum_6m"), 0.0) or 0.0
+        momentum_adj = (mom3 * 0.6 + mom6 * 0.4) / 100.0   # % → fracción
+
+        # Componente 5: calidad fundamental — ROE y PER (10%)
+        roe = _safe_float(row.get("roe"))        # viene en % (ej: 18.5)
+        per = _safe_float(row.get("pe_ratio"))   # ratio (ej: 15.3)
+        fund_adj = 0.0
+        if roe is not None and roe > 0:
+            fund_adj += min(0.04, (roe - 10) / 100)   # ROE>10% → hasta +4%
+        if per is not None and 0 < per < 40:
+            fund_adj -= (per - 15) / 500               # PER alto → penalización
+
+        # Blend ponderado (suma de pesos = 1.0)
+        horizon = str(row.get("horizon") or "medio")
+        if horizon == "corto":
+            w = (0.35, 0.20, 0.10, 0.25, 0.10)
+        elif horizon == "largo":
+            w = (0.40, 0.20, 0.20, 0.05, 0.15)
+        else:   # medio (default)
+            w = (0.40, 0.20, 0.15, 0.15, 0.10)
+
+        mu[i] = (w[0]*hist_ret + w[1]*score_adj + w[2]*analyst_mu
+                 + w[3]*momentum_adj + w[4]*fund_adj)
+
+        mu_components.append({
+            "ticker":    t,
+            "mu_pct":    round(mu[i] * 100, 2),
+            "hist_ret":  round(hist_ret * 100, 2),
+            "score_adj": round(score_adj * 100, 2),
+            "analyst":   round(analyst_mu * 100, 2),
+            "momentum":  round(momentum_adj * 100, 2),
+            "fund_adj":  round(fund_adj * 100, 2),
+        })
+
+    # ─── 4. Pesos actuales ────────────────────────────────────────────────────
+    values = {}
+    for t in valid:
+        shares, _ = positions_map[t]
+        price = float(df_portfolio[df_portfolio["ticker"] == t].iloc[0]["price"])
+        values[t] = shares * price
+    total_val = sum(values.values())
+    current_w = np.array([values[t] / total_val for t in valid])
+
+    # ─── 5. Helpers de métricas ───────────────────────────────────────────────
+    RISK_FREE = 0.03  # 3% tasa libre de riesgo (ref. Bund 10Y aprox)
+
+    def portfolio_stats(w):
+        w = np.clip(w, 0, 1)
+        w = w / w.sum()
+        port_ret = float(w @ mu)
+        port_vol = float(np.sqrt(max(w @ cov_annual @ w, 0)))
+        sharpe   = (port_ret - RISK_FREE) / port_vol if port_vol > 1e-8 else 0.0
+        return port_ret, port_vol, sharpe
+
+    def _stats_dict(w, name=""):
+        w = np.clip(w, 0, 1)
+        w = w / w.sum()
+        r, v, s = portfolio_stats(w)
+        return {
+            "name":    name,
+            "ret_pct": round(r * 100, 2),
+            "vol_pct": round(v * 100, 2),
+            "sharpe":  round(s, 3),
+            "weights": {t: round(float(wi) * 100, 1) for t, wi in zip(valid, w)},
+        }
+
+    # ─── 6. Constraints y bounds comunes ─────────────────────────────────────
+    w0 = np.ones(n) / n
+    # Max 40% por posición o 3× equal-weight lo que sea menor
+    max_w = min(0.40, max(3.0 / n, 0.10))
+    bounds = [(0.01, max_w)] * n
+    cons_sum = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+
+    # ─── 7. Mínima varianza ───────────────────────────────────────────────────
+    res_mv = minimize(
+        lambda w: float(w @ cov_annual @ w),
+        w0, method="SLSQP", bounds=bounds, constraints=cons_sum,
+        options={"ftol": 1e-10, "maxiter": 1000},
+    )
+    mv_w = res_mv.x if res_mv.success else w0.copy()
+
+    # ─── 8. Máximo Sharpe ────────────────────────────────────────────────────
+    def neg_sharpe(w):
+        r = float(w @ mu)
+        v = float(np.sqrt(max(w @ cov_annual @ w, 1e-16)))
+        return -(r - RISK_FREE) / v
+
+    res_ms = minimize(
+        neg_sharpe, w0, method="SLSQP", bounds=bounds, constraints=cons_sum,
+        options={"ftol": 1e-10, "maxiter": 1000},
+    )
+    ms_w = res_ms.x if res_ms.success else w0.copy()
+
+    # ─── 9. Paridad de riesgo ─────────────────────────────────────────────────
+    def risk_parity_obj(w):
+        pv = float(w @ cov_annual @ w)
+        if pv <= 0:
+            return 1e10
+        rc = w * (cov_annual @ w) / pv   # contribuciones de riesgo (suma=1)
+        target = np.ones(n) / n
+        return float(np.sum((rc - target) ** 2))
+
+    res_rp = minimize(
+        risk_parity_obj, w0, method="SLSQP", bounds=bounds, constraints=cons_sum,
+        options={"ftol": 1e-12, "maxiter": 2000},
+    )
+    rp_w = res_rp.x if res_rp.success else w0.copy()
+
+    # ─── 10. Frontera eficiente (40 puntos) ──────────────────────────────────
+    ret_min = float(mu.min())
+    ret_max = float(mu.max())
+    frontier = []
+    for target in np.linspace(ret_min, ret_max, 40):
+        cons_ef = cons_sum + [{"type": "eq", "fun": lambda w, t=target: float(w @ mu) - t}]
+        res_ef = minimize(
+            lambda w: float(w @ cov_annual @ w),
+            w0, method="SLSQP", bounds=bounds, constraints=cons_ef,
+            options={"ftol": 1e-9, "maxiter": 500},
+        )
+        if res_ef.success:
+            vol_f = float(np.sqrt(max(res_ef.fun, 0)))
+            frontier.append({"ret": round(target * 100, 2), "vol": round(vol_f * 100, 2)})
+
+    # ─── 11. Nombres de tickers ───────────────────────────────────────────────
+    names = {}
+    for t in valid:
+        row = df_portfolio[df_portfolio["ticker"] == t].iloc[0]
+        names[t] = str(row.get("name", t))
+
+    return {
+        "tickers":      valid,
+        "names":        names,
+        "total":        round(total_val, 2),
+        "current":      _stats_dict(current_w, "Actual"),
+        "min_var":      _stats_dict(mv_w,      "Mínima varianza"),
+        "max_sharpe":   _stats_dict(ms_w,      "Máximo Sharpe"),
+        "risk_parity":  _stats_dict(rp_w,      "Paridad de riesgo"),
+        "mu_components": mu_components,
+        "frontier":     frontier,
+        "risk_free_pct": RISK_FREE * 100,
+        "conv": {
+            "min_var":     res_mv.success,
+            "max_sharpe":  res_ms.success,
+            "risk_parity": res_rp.success,
+        },
+    }
+
+
+def _get_opt_cached(df_portfolio, positions_map: dict) -> Optional[dict]:
+    """Devuelve la optimización cacheada (TTL 5 min) o la recalcula."""
+    with _opt_cache_lock:
+        if _opt_cache["data"] is not None and _time.monotonic() - _opt_cache["ts"] < _OPT_CACHE_TTL:
+            return _opt_cache["data"]
+        result = _compute_optimization(df_portfolio, positions_map)
+        _opt_cache["data"] = result
+        _opt_cache["ts"]   = _time.monotonic()
+        return result
+
+
+@app.get("/optimizacion", response_class=HTMLResponse)
+async def optimizacion_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    df = _read_csv()
+    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+
+    if df is None or not positions:
+        return templates.TemplateResponse("optimizacion.html", {
+            "request": request, "has_data": False, "opt": None,
+        })
+
+    df_port = df[df["category"] == "portfolio"]
+
+    opt = await asyncio.get_running_loop().run_in_executor(
+        _executor, _get_opt_cached, df_port, positions,
+    )
+    return templates.TemplateResponse("optimizacion.html", {
+        "request":    request,
+        "has_data":   opt is not None,
+        "opt":        opt,
+        "csrf_token": CSRF_TOKEN,
+    })
+
+
+@app.get("/chart/frontera-eficiente")
+async def chart_frontera_eficiente(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        raise HTTPException(status_code=401)
+
+    df = _read_csv()
+    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    if df is None or not positions:
+        raise HTTPException(status_code=400, detail="Sin datos")
+
+    df_port = df[df["category"] == "portfolio"]
+
+    def _make():
+        opt = _get_opt_cached(df_port, positions)
+        if not opt:
+            return None
+
+        with _chart_lock:
+            fig, ax = plt.subplots(figsize=(9, 5.5))
+            fig.patch.set_facecolor(_C_BG)
+            ax.set_facecolor(_C_BG)
+
+            # Frontera eficiente
+            if opt["frontier"]:
+                fvols = [p["vol"] for p in opt["frontier"]]
+                frets = [p["ret"] for p in opt["frontier"]]
+                ax.plot(fvols, frets, color=_C_BLUE, linewidth=2.5,
+                        label="Frontera eficiente", zorder=2, alpha=0.9)
+
+            # Capital Market Line desde tasa libre de riesgo al punto Máx. Sharpe
+            ms = opt["max_sharpe"]
+            rf = opt["risk_free_pct"]
+            if ms["vol_pct"] > 0:
+                slope  = (ms["ret_pct"] - rf) / ms["vol_pct"]
+                cml_x  = [0, ms["vol_pct"] * 1.6]
+                cml_y  = [rf, rf + slope * ms["vol_pct"] * 1.6]
+                ax.plot(cml_x, cml_y, color="#6e7681", linewidth=1,
+                        linestyle="--", label="Capital Market Line", zorder=1)
+
+            # Las 4 carteras
+            _portf_spec = [
+                ("Actual",           opt["current"],     "#8b949e",  "o",  90),
+                ("Mín. varianza",    opt["min_var"],     _C_GREEN,   "D", 110),
+                ("Máx. Sharpe",      opt["max_sharpe"],  "#f0883e",  "*", 190),
+                ("Paridad de riesgo",opt["risk_parity"], "#d29922",  "s", 100),
+            ]
+            for label, stats, color, marker, sz in _portf_spec:
+                ax.scatter(
+                    stats["vol_pct"], stats["ret_pct"],
+                    color=color, marker=marker, s=sz, zorder=5,
+                    edgecolors="white", linewidths=0.6,
+                    label=f"{label}  (Vol {stats['vol_pct']:.1f}%  Ret {stats['ret_pct']:.1f}%  SR {stats['sharpe']:.2f})",
+                )
+                ax.annotate(label, (stats["vol_pct"], stats["ret_pct"]),
+                            textcoords="offset points", xytext=(7, 4),
+                            fontsize=8, color=color)
+
+            ax.axhline(rf, color="#6e7681", linewidth=0.8,
+                       linestyle=":", alpha=0.6, label=f"Rf = {rf:.1f}%")
+
+            ax.set_xlabel("Volatilidad anual (%)", color="#8b949e", fontsize=10)
+            ax.set_ylabel("Retorno esperado (%)",  color="#8b949e", fontsize=10)
+            ax.set_title("Frontera eficiente — Cartera optimizada",
+                         color="#e6edf3", fontsize=12, pad=12)
+            ax.tick_params(colors="#8b949e")
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#30363d")
+            ax.grid(True, color="#21262d", linewidth=0.5, alpha=0.8)
+            legend = ax.legend(fontsize=7.5, framealpha=0.2, facecolor="#21262d",
+                               edgecolor="#30363d", labelcolor="#c9d1d9",
+                               loc="lower right")
+            fig.tight_layout(pad=1.5)
+            return _fig_to_response(fig)
+
+    result = await asyncio.get_running_loop().run_in_executor(_executor, _make)
+    if result is None:
+        raise HTTPException(status_code=500)
+    result.headers["Cache-Control"] = "public, max-age=300"
+    return result
 
 
 # ── Backtesting del score ──────────────────────────────────────────────────────

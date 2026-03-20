@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+{% block page_title %}Optimización de cartera{% endblock %}
+
+{% block extra_head %}
+<style>
+  .opt-card {
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 16px;
+    background: #0d1117;
+    flex: 1;
+    min-width: 160px;
+  }
+  .opt-card.highlight { border-color: #f0883e; }
+  .chart-loading {
+    min-height: 300px;
+    background: linear-gradient(90deg,#21262d 25%,#2d333b 50%,#21262d 75%);
+    background-size: 200% 100%;
+    animation: chart-shimmer 1.4s infinite;
+    border-radius: 6px;
+  }
+  @keyframes chart-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if not has_data %}
+<div class="card">
+  <div class="empty-state">
+    <svg width="32" height="32" fill="none" stroke="#8b949e" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+    Necesitas al menos 2 posiciones en cartera con datos de precio disponibles.<br>
+    <span style="font-size:12px;color:#8b949e;margin-top:6px;display:block">
+      Ve a <a href="/posiciones" class="text-accent">Posiciones</a> y genera un <strong>reporte</strong> primero.
+    </span>
+  </div>
+</div>
+{% else %}
+
+{% set port_labels = [
+  ('current',      'Cartera actual',       '#8b949e', false),
+  ('min_var',      'Mínima varianza',      '#3fb950', false),
+  ('max_sharpe',   'Máximo Sharpe',        '#f0883e', true),
+  ('risk_parity',  'Paridad de riesgo',    '#d29922', false),
+] %}
+
+<!-- ── Nota metodología ───────────────────────────────────────────────────── -->
+<div style="padding:10px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px;margin-bottom:20px;font-size:12px;color:#8b949e">
+  ℹ️ Los retornos esperados combinan datos del último reporte:
+  <strong style="color:#e6edf3">40%</strong> retorno histórico 1 año ·
+  <strong style="color:#e6edf3">20%</strong> score del radar ·
+  <strong style="color:#e6edf3">15%</strong> precio objetivo analistas ·
+  <strong style="color:#e6edf3">15%</strong> momentum 3m/6m ·
+  <strong style="color:#e6edf3">10%</strong> calidad fundamental (ROE, PER).
+  Tasa libre de riesgo: <strong style="color:#e6edf3">{{ opt.risk_free_pct }}%</strong>.
+  Restricciones: peso mín. 1%, máx. 40% por posición. Sin posiciones cortas.
+</div>
+
+<!-- ── Stat cards comparativa ────────────────────────────────────────────── -->
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+  {% for key, label, color, hl in port_labels %}
+  {% set stats = opt[key] %}
+  <div class="opt-card{% if hl %} highlight{% endif %}">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:{{ color }};margin-bottom:10px">
+      {{ label }}{% if hl %} ⭐{% endif %}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div>
+        <div style="font-size:10px;color:#8b949e">Retorno esperado</div>
+        <div style="font-size:18px;font-weight:700;color:{{ 'text-positive' if stats.ret_pct > 0 else 'text-negative' }};color:{% if stats.ret_pct > 0 %}#3fb950{% else %}#f85149{% endif %}">
+          {{ "%+.1f"|format(stats.ret_pct) }}%
+        </div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:#8b949e">Volatilidad anual</div>
+        <div style="font-size:18px;font-weight:700;color:#e6edf3">{{ "%.1f"|format(stats.vol_pct) }}%</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:#8b949e">Ratio de Sharpe</div>
+        <div style="font-size:18px;font-weight:700;color:#58a6ff">{{ "%.2f"|format(stats.sharpe) }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── Frontera eficiente ─────────────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">📈 Frontera eficiente</h2>
+    <span style="font-size:11px;color:#8b949e">Retorno estimado vs. volatilidad</span>
+  </div>
+  <div class="card" style="padding:16px">
+    <div class="chart-loading" id="shimmer-ef"></div>
+    <img src="/chart/frontera-eficiente" style="display:none;max-width:100%;border-radius:4px"
+         onload="this.style.display='block';document.getElementById('shimmer-ef').style.display='none'"
+         onerror="document.getElementById('shimmer-ef').style.display='none';document.getElementById('err-ef').style.display='block'">
+    <div id="err-ef" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">
+      No se pudo generar el gráfico de frontera eficiente.
+    </div>
+  </div>
+</div>
+
+<!-- ── Tabla de pesos por cartera ─────────────────────────────────────────── -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">⚖️ Pesos óptimos por cartera</h2>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Activo</th>
+            <th style="color:#8b949e">Actual</th>
+            <th style="color:#3fb950">Mín. varianza</th>
+            <th style="color:#f0883e">Máx. Sharpe ⭐</th>
+            <th style="color:#d29922">Paridad riesgo</th>
+            <th class="hide-mobile">Ret. esperado<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Retorno esperado anual estimado para este activo a partir de la combinación de datos del reporte: histórico, score, analistas, momentum y fundamentales.')">ⓘ</button></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in opt.mu_components %}
+          {% set t = item.ticker %}
+          <tr>
+            <td>
+              <a href="/ticker/{{ t }}" class="ticker-cell">{{ t }}</a>
+              <div style="font-size:11px;color:#8b949e;margin-top:1px">{{ opt.names[t] }}</div>
+            </td>
+            <!-- Actual -->
+            <td>
+              {% set cw = opt.current.weights[t] %}
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="width:40px;height:5px;background:#21262d;border-radius:3px;overflow:hidden">
+                  <div style="height:100%;background:#8b949e;width:{{ [cw, 100]|min }}%"></div>
+                </div>
+                <span style="font-size:12px;color:#8b949e">{{ "%.1f"|format(cw) }}%</span>
+              </div>
+            </td>
+            <!-- Mínima varianza -->
+            <td>
+              {% set mvw = opt.min_var.weights[t] %}
+              {% set diff_mv = mvw - cw %}
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="width:40px;height:5px;background:#21262d;border-radius:3px;overflow:hidden">
+                  <div style="height:100%;background:#3fb950;width:{{ [mvw, 100]|min }}%"></div>
+                </div>
+                <span style="font-size:12px;color:#3fb950">{{ "%.1f"|format(mvw) }}%</span>
+                <span style="font-size:10px;color:{% if diff_mv > 1 %}#3fb950{% elif diff_mv < -1 %}#f85149{% else %}#484f58{% endif %}">
+                  {{ "%+.1f"|format(diff_mv) }}
+                </span>
+              </div>
+            </td>
+            <!-- Máximo Sharpe -->
+            <td>
+              {% set msw = opt.max_sharpe.weights[t] %}
+              {% set diff_ms = msw - cw %}
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="width:40px;height:5px;background:#21262d;border-radius:3px;overflow:hidden">
+                  <div style="height:100%;background:#f0883e;width:{{ [msw, 100]|min }}%"></div>
+                </div>
+                <span style="font-size:12px;color:#f0883e">{{ "%.1f"|format(msw) }}%</span>
+                <span style="font-size:10px;color:{% if diff_ms > 1 %}#3fb950{% elif diff_ms < -1 %}#f85149{% else %}#484f58{% endif %}">
+                  {{ "%+.1f"|format(diff_ms) }}
+                </span>
+              </div>
+            </td>
+            <!-- Paridad de riesgo -->
+            <td>
+              {% set rpw = opt.risk_parity.weights[t] %}
+              {% set diff_rp = rpw - cw %}
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="width:40px;height:5px;background:#21262d;border-radius:3px;overflow:hidden">
+                  <div style="height:100%;background:#d29922;width:{{ [rpw, 100]|min }}%"></div>
+                </div>
+                <span style="font-size:12px;color:#d29922">{{ "%.1f"|format(rpw) }}%</span>
+                <span style="font-size:10px;color:{% if diff_rp > 1 %}#3fb950{% elif diff_rp < -1 %}#f85149{% else %}#484f58{% endif %}">
+                  {{ "%+.1f"|format(diff_rp) }}
+                </span>
+              </div>
+            </td>
+            <!-- Retorno esperado -->
+            <td class="hide-mobile">
+              <span class="{% if item.mu_pct > 0 %}text-positive{% elif item.mu_pct < 0 %}text-negative{% else %}text-muted{% endif %}" style="font-weight:600">
+                {{ "%+.1f"|format(item.mu_pct) }}%
+              </span>
+              <div style="font-size:10px;color:#484f58;margin-top:2px">
+                hist {{ "%+.1f"|format(item.hist_ret) }}% ·
+                score {{ "%+.1f"|format(item.score_adj) }}%
+                {% if item.analyst != 0 %} · analist {{ "%+.1f"|format(item.analyst) }}%{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Aviso de convergencia ─────────────────────────────────────────────────── -->
+{% set conv = opt.conv %}
+{% if not conv.min_var or not conv.max_sharpe or not conv.risk_parity %}
+<div style="margin-top:10px;padding:10px 16px;background:#3d2a00;border:1px solid #7a5500;border-radius:6px;font-size:12px;color:#d29922">
+  ⚠️ Algunas optimizaciones no convergieron completamente
+  (min_var={{ conv.min_var }}, max_sharpe={{ conv.max_sharpe }}, risk_parity={{ conv.risk_parity }}).
+  Los resultados son aproximados. Prueba con más posiciones o genera un reporte actualizado.
+</div>
+{% endif %}
+
+<!-- ── Nota interpretación ───────────────────────────────────────────────────── -->
+<div style="margin-top:14px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
+  <p style="font-size:12px;color:#8b949e;margin:0">
+    ⚠️ <strong style="color:#c9d1d9">Esto no es asesoramiento financiero.</strong>
+    Los retornos esperados son estimaciones basadas en datos históricos y métricas del reporte; no garantizan rendimiento futuro.
+    La <strong style="color:#c9d1d9">Mínima varianza</strong> minimiza el riesgo independientemente del retorno.
+    El <strong style="color:#f0883e">Máximo Sharpe</strong> busca el mejor ratio rentabilidad/riesgo teniendo en cuenta el score del radar y los precios objetivo de los analistas.
+    La <strong style="color:#d29922">Paridad de riesgo</strong> iguala la contribución de cada activo al riesgo total.
+    Las diferencias respecto a los pesos actuales (en verde/rojo) indican el ajuste sugerido.
+  </p>
+</div>
+
+{% endif %}
+{% endblock %}

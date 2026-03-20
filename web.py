@@ -793,24 +793,24 @@ async def chart_valor_cartera(session: Optional[str] = Cookie(default=None)):
         raise HTTPException(404, "Sin historial suficiente")
 
     def _make():
-        dates = pd.to_datetime([r[0] for r in rows])
-        values = [r[1] for r in rows]
-        fig, ax = plt.subplots(figsize=(9, 3.5))
-        _style_ax(ax, fig)
-        ax.fill_between(dates, values, alpha=0.15, color=_C_BLUE)
-        ax.plot(dates, values, color=_C_BLUE, linewidth=1.8)
-        ax.scatter([dates[-1]], [values[-1]], color=_C_GREEN, zorder=5, s=50)
-        ax.set_title("Evolución del valor de la cartera", fontsize=12, pad=8)
-        ax.set_ylabel("Valor (€)", fontsize=9)
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"€{v:,.0f}"))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-        fig.autofmt_xdate(rotation=30)
-        fig.tight_layout()
-        return fig
+        with _chart_lock:
+            dates = pd.to_datetime([r[0] for r in rows])
+            values = [r[1] for r in rows]
+            fig, ax = plt.subplots(figsize=(9, 3.5))
+            _style_ax(ax, fig)
+            ax.fill_between(dates, values, alpha=0.15, color=_C_BLUE)
+            ax.plot(dates, values, color=_C_BLUE, linewidth=1.8)
+            ax.scatter([dates[-1]], [values[-1]], color=_C_GREEN, zorder=5, s=50)
+            ax.set_title("Evolución del valor de la cartera", fontsize=12, pad=8)
+            ax.set_ylabel("Valor (€)", fontsize=9)
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"€{v:,.0f}"))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            fig.autofmt_xdate(rotation=30)
+            fig.tight_layout()
+            return fig
 
-    with _chart_lock:
-        fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)
+    fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)
     return _fig_to_response(fig)
 
 
@@ -848,31 +848,31 @@ async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
         base_pf = values_pf[0]
         norm_pf = [v / base_pf * 100 for v in values_pf]
 
-        fig, ax = plt.subplots(figsize=(9, 4))
-        _style_ax(ax, fig)
+        with _chart_lock:
+            fig, ax = plt.subplots(figsize=(9, 4))
+            _style_ax(ax, fig)
 
-        ax.plot(dates_pf, norm_pf, color=_C_BLUE, linewidth=2, label="Mi cartera", zorder=3)
+            ax.plot(dates_pf, norm_pf, color=_C_BLUE, linewidth=2, label="Mi cartera", zorder=3)
 
-        if not spy.empty:
-            spy_norm = spy / spy.iloc[0] * 100
-            ax.plot(spy.index, spy_norm.values, color=_C_GREEN, linewidth=1.2, linestyle="--", label="SPY (S&P500)", alpha=0.8)
+            if not spy.empty:
+                spy_norm = spy / spy.iloc[0] * 100
+                ax.plot(spy.index, spy_norm.values, color=_C_GREEN, linewidth=1.2, linestyle="--", label="SPY (S&P500)", alpha=0.8)
 
-        if not ewq.empty:
-            ewq_norm = ewq / ewq.iloc[0] * 100
-            ax.plot(ewq.index, ewq_norm.values, color="#d29922", linewidth=1.2, linestyle="--", label="EWQ (Euro Stoxx)", alpha=0.8)
+            if not ewq.empty:
+                ewq_norm = ewq / ewq.iloc[0] * 100
+                ax.plot(ewq.index, ewq_norm.values, color="#d29922", linewidth=1.2, linestyle="--", label="EWQ (Euro Stoxx)", alpha=0.8)
 
-        ax.axhline(100, color=_C_TEXT, linewidth=0.6, linestyle=":")
-        ax.set_title(f"Comparativa vs benchmark (base 100 desde {start_date})", fontsize=11, pad=8)
-        ax.set_ylabel("Rendimiento (base 100)", fontsize=9)
-        ax.legend(fontsize=8, facecolor=_C_CARD, edgecolor=_C_GRID, labelcolor=_C_FG)
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-        fig.autofmt_xdate(rotation=30)
-        fig.tight_layout()
-        return fig
+            ax.axhline(100, color=_C_TEXT, linewidth=0.6, linestyle=":")
+            ax.set_title(f"Comparativa vs benchmark (base 100 desde {start_date})", fontsize=11, pad=8)
+            ax.set_ylabel("Rendimiento (base 100)", fontsize=9)
+            ax.legend(fontsize=8, facecolor=_C_CARD, edgecolor=_C_GRID, labelcolor=_C_FG)
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            fig.autofmt_xdate(rotation=30)
+            fig.tight_layout()
+            return fig
 
-    with _chart_lock:
-        fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)
+    fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)
     return _fig_to_response(fig)
 
 
@@ -1984,7 +1984,6 @@ async def operaciones_page(
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    df = _read_csv()
     ticker_filter = ticker.upper() if ticker else None
     ops = get_operations(ticker=ticker_filter, limit=200)
     tickers_yaml = _load_tickers()
@@ -1994,12 +1993,6 @@ async def operaciones_page(
             name = meta.get("name", t) if isinstance(meta, dict) else t
             all_tickers.append({"ticker": t, "name": name})
     all_tickers.sort(key=lambda x: x["ticker"])
-
-    # Compute current prices for P&L calculation
-    prices = {}
-    if df is not None:
-        for _, row in df.iterrows():
-            prices[row["ticker"]] = row.get("price")
 
     return templates.TemplateResponse("operaciones.html", {
         "request": request,
@@ -2801,7 +2794,7 @@ async def analistas_page(request: Request, session: Optional[str] = Cookie(defau
                         rows.append(r)
                 except Exception:
                     pass
-        rows.sort(key=lambda x: -(x["upside"] or -999))
+        rows.sort(key=lambda x: -(x["upside"] if x["upside"] is not None else -999))
         return rows
 
     rows = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_all)

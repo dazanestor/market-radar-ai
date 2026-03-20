@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% block page_title %}Monte Carlo{% endblock %}
+
+{% block content %}
+<p style="font-size:12px;color:#8b949e;margin:0 0 16px">
+  Simulación de 500 trayectorias del valor total de la cartera usando distribución log-normal con
+  volatilidades y retornos históricos por activo. Los resultados son orientativos, no predictivos.
+</p>
+
+{% if not has_data %}
+<div class="empty-state">
+  <svg width="36" height="36" fill="none" stroke="#484f58" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+  <div style="margin-top:8px">No hay posiciones o datos de mercado disponibles.</div>
+  <div style="font-size:11px;margin-top:4px">Genera un reporte para obtener datos actualizados y registra posiciones en tu cartera.</div>
+</div>
+{% else %}
+
+<!-- ── Stat cards ── -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(145px,1fr));margin-bottom:20px">
+  <div class="stat-card">
+    <div class="stat-label">Valor actual</div>
+    <div class="stat-value" style="font-size:18px">{{ stats.total | eur }}</div>
+  </div>
+  <div class="stat-card" style="border-color:rgba(88,166,255,0.3)">
+    <div class="stat-label">Mediana 1 año</div>
+    <div class="stat-value" style="font-size:18px;color:#58a6ff">{{ stats.p50_1y | eur }}</div>
+    <div class="stat-sub">{{ ((stats.p50_1y - stats.total) / stats.total * 100) | round(1) }}% esperado</div>
+  </div>
+  <div class="stat-card" style="border-color:rgba(88,166,255,0.2)">
+    <div class="stat-label">Mediana 3 años</div>
+    <div class="stat-value" style="font-size:18px;color:#58a6ff">{{ stats.p50_3y | eur }}</div>
+    <div class="stat-sub">{{ ((stats.p50_3y - stats.total) / stats.total * 100) | round(1) }}% esperado</div>
+  </div>
+  <div class="stat-card" style="border-color:rgba(248,81,73,0.3)">
+    <div class="stat-label">Peor caso 1 año (P10)</div>
+    <div class="stat-value" style="font-size:18px;color:#f85149">{{ stats.p10_1y | eur }}</div>
+    <div class="stat-sub">{{ ((stats.p10_1y - stats.total) / stats.total * 100) | round(1) }}%</div>
+  </div>
+  <div class="stat-card" style="border-color:rgba(63,185,80,0.3)">
+    <div class="stat-label">Mejor caso 1 año (P90)</div>
+    <div class="stat-value" style="font-size:18px;color:#3fb950">{{ stats.p90_1y | eur }}</div>
+    <div class="stat-sub">{{ ((stats.p90_1y - stats.total) / stats.total * 100) | round(1) }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Retorno anual estimado</div>
+    <div class="stat-value" style="font-size:18px">{{ stats.port_mu }}%</div>
+    <div class="stat-sub">Volatilidad: {{ stats.port_sig }}%</div>
+  </div>
+</div>
+
+<!-- ── Gráfico ── -->
+<div class="card" style="margin-bottom:20px">
+  <div class="card-header">
+    <span class="card-title">Simulación 500 paths — 3 años vista</span>
+  </div>
+  <div class="card-body" style="padding:16px">
+    <img src="/chart/montecarlo" class="chart-img"
+         style="min-height:220px"
+         loading="lazy"
+         onerror="this.style.display='none'">
+  </div>
+</div>
+
+<!-- ── Percentiles detallados ── -->
+<div class="card">
+  <div class="card-header"><span class="card-title">Percentiles por horizonte</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Percentil</th>
+          <th>1 año</th>
+          <th>3 años</th>
+          <th>Variación 1a</th>
+          <th>Variación 3a</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set rows_p = [
+          ('P10 (peor 10%)', stats.p10_1y, stats.p10_3y),
+          ('P25',            stats.p25_1y, none),
+          ('P50 (mediana)',  stats.p50_1y, stats.p50_3y),
+          ('P75',            stats.p75_1y, none),
+          ('P90 (mejor 10%)',stats.p90_1y, stats.p90_3y),
+        ] %}
+        {% for label, v1, v3 in rows_p %}
+        {% set pct1 = ((v1 - stats.total) / stats.total * 100) | round(1) if v1 else none %}
+        {% set pct3 = ((v3 - stats.total) / stats.total * 100) | round(1) if v3 else none %}
+        <tr>
+          <td style="color:#8b949e;font-size:12px">{{ label }}</td>
+          <td style="font-weight:600">{{ v1 | eur if v1 else '—' }}</td>
+          <td style="font-weight:600">{{ v3 | eur if v3 else '—' }}</td>
+          <td class="{{ 'text-positive' if pct1 and pct1 >= 0 else 'text-negative' }}">
+            {% if pct1 is not none %}{{ "%+.1f"|format(pct1) }}%{% else %}—{% endif %}
+          </td>
+          <td class="{{ 'text-positive' if pct3 and pct3 >= 0 else 'text-negative' }}">
+            {% if pct3 is not none %}{{ "%+.1f"|format(pct3) }}%{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
+
+<div style="margin-top:16px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
+  <p style="font-size:12px;color:#8b949e;margin:0">
+    ⚠️ <strong style="color:#c9d1d9">Nota metodológica:</strong>
+    La simulación usa distribución log-normal con retorno diario μ = retorno_anual/252 y σ = volatilidad/√252.
+    Las volatilidades y retornos provienen del CSV más reciente. No se modelan correlaciones entre activos.
+    Los resultados pasados no garantizan rendimientos futuros.
+  </p>
+</div>
+
+{% endblock %}

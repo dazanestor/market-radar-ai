@@ -59,7 +59,12 @@
 <div class="section" style="margin-top:24px">
   <div class="section-header">
     <h2 class="section-title">Historial <span style="color:#8b949e;font-size:13px;font-weight:400">({{ count }} operaciones)</span></h2>
+    <a href="/fiscalidad" class="btn btn-ghost btn-sm">Ver fiscalidad FIFO</a>
   </div>
+  <p style="font-size:12px;color:#8b949e;margin:0 0 12px">
+    Comisión aplicada por operación: <strong style="color:#e6edf3">{{ commission_eur | eur }}</strong>
+    — <a href="/settings/app" style="color:#58a6ff;text-decoration:none">Configurar</a>
+  </p>
   {% if count > 0 %}
   <div style="margin-bottom:16px" x-data="{ loading: false, result: '', err: '' }">
     <div class="card">
@@ -97,13 +102,14 @@
             <th>Acciones</th>
             <th>Precio/acc</th>
             <th>Total</th>
+            <th class="hide-mobile">Comisión</th>
             <th class="hide-mobile">Notas</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {% for op in ops %}
-          {% set op_id, op_ticker, op_date, op_type, op_shares, op_price, op_notes = op %}
+          {% set op_id, op_ticker, op_date, op_type, op_shares, op_price, op_notes, op_commission = op %}
           <tr>
             <td style="color:#8b949e;font-size:12px">{{ op_date }}</td>
             <td><a href="/ticker/{{ op_ticker }}" class="ticker-cell">{{ op_ticker }}</a></td>
@@ -117,6 +123,7 @@
             <td>{{ "%.4g" % op_shares }}</td>
             <td>{{ op_price | eur }}</td>
             <td style="font-weight:600">{{ (op_shares * op_price) | eur }}</td>
+            <td class="hide-mobile" style="font-size:12px;color:#8b949e">{{ op_commission | eur }}</td>
             <td class="hide-mobile" style="font-size:12px;color:#8b949e;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ op_notes }}">{{ op_notes or '—' }}</td>
             <td>
               <form method="post" action="/operaciones/delete" style="display:inline" onsubmit="return confirm('¿Eliminar operación?')">

@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% block page_title %}Fiscalidad FIFO{% endblock %}
+
+{% block content %}
+<p style="font-size:12px;color:#8b949e;margin:0 0 16px">
+  Cálculo de plusvalías realizadas y latentes usando el método FIFO (primera compra = primera venta).
+  Comisión por operación aplicada: <strong style="color:#e6edf3">{{ commission_eur | eur }}</strong>.
+</p>
+
+{% if not fifo_ops and not unrealized %}
+<div class="empty-state">
+  <svg width="36" height="36" fill="none" stroke="#484f58" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
+  <div style="margin-top:8px">No hay operaciones registradas para calcular fiscalidad.</div>
+  <div style="font-size:11px;margin-top:4px">Registra compras y ventas en la sección Operaciones.</div>
+</div>
+{% else %}
+
+<!-- ── Resumen anual ── -->
+{% if annual_summary %}
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">Resumen anual</h2>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Año</th>
+            <th>Ganancias brutas<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Suma de todas las plusvalías brutas (antes de comisiones) del año.')">ⓘ</button></th>
+            <th>Pérdidas<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Suma de todas las minusvalías del año.')">ⓘ</button></th>
+            <th>Resultado neto<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ganancias + pérdidas (incluyendo comisiones asignadas).')">ⓘ</button></th>
+            <th class="hide-mobile">Comisiones pagadas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for year, data in annual_summary | dictsort(reverse=true) %}
+          <tr>
+            <td style="font-weight:600;color:#e6edf3">{{ year }}</td>
+            <td class="text-positive">{{ data.gains | eur }}</td>
+            <td class="text-negative">{{ data.losses | eur }}</td>
+            <td style="font-weight:600" class="{{ 'text-positive' if data.net >= 0 else 'text-negative' }}">
+              {{ data.net | eur }}
+            </td>
+            <td class="hide-mobile text-muted">{{ data.commissions | eur }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Operaciones realizadas (FIFO) ── -->
+{% if fifo_ops %}
+<div class="section" style="margin-top:20px">
+  <div class="section-header">
+    <h2 class="section-title">Operaciones de venta realizadas</h2>
+    <span class="badge badge-gray">{{ fifo_ops | length }}</span>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Ticker</th>
+            <th>Acciones</th>
+            <th>Precio venta</th>
+            <th>Coste FIFO<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Coste total basado en FIFO: precio de las compras más antiguas + comisiones de compra proporcionales.')">ⓘ</button></th>
+            <th class="hide-mobile">Comisión total</th>
+            <th>Ganancia/Pérdida</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for op in fifo_ops | sort(attribute='date', reverse=true) %}
+          <tr>
+            <td style="color:#8b949e;font-size:12px">{{ op.date }}</td>
+            <td><a href="/ticker/{{ op.ticker }}" class="ticker-cell">{{ op.ticker }}</a></td>
+            <td>{{ "%.4g" % op.shares }}</td>
+            <td>{{ op.sell_price | eur }}</td>
+            <td>{{ op.cost_basis | eur }}</td>
+            <td class="hide-mobile text-muted">{{ op.commission | eur }}</td>
+            <td style="font-weight:600" class="{{ 'text-positive' if op.gain_loss >= 0 else 'text-negative' }}">
+              {{ op.gain_loss | eur }}
+              <span style="font-size:11px;color:#8b949e">
+                ({{ "%+.1f"|format(op.gain_loss / op.cost_basis * 100) if op.cost_basis else '—' }}%)
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Plusvalías latentes ── -->
+{% if unrealized %}
+<div class="section" style="margin-top:20px">
+  <div class="section-header">
+    <h2 class="section-title">Plusvalías latentes (posiciones abiertas)</h2>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Acciones</th>
+            <th>Coste medio FIFO<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Precio medio de compra ponderado por FIFO de las acciones que aún no se han vendido.')">ⓘ</button></th>
+            <th>Precio actual</th>
+            <th>G/P latente</th>
+            <th class="hide-mobile">G/P %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pos in unrealized | sort(attribute='ticker') %}
+          <tr>
+            <td><a href="/ticker/{{ pos.ticker }}" class="ticker-cell">{{ pos.ticker }}</a></td>
+            <td>{{ "%.4g" % pos.shares }}</td>
+            <td>{{ pos.avg_cost | eur }}</td>
+            <td>{% if pos.current_price %}{{ pos.current_price | eur }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td style="font-weight:600" class="{{ 'text-positive' if pos.gain_latent and pos.gain_latent >= 0 else ('text-negative' if pos.gain_latent is not none else 'text-muted') }}">
+              {% if pos.gain_latent is not none %}{{ pos.gain_latent | eur }}{% else %}—{% endif %}
+            </td>
+            <td class="hide-mobile {{ 'text-positive' if pos.gain_pct and pos.gain_pct >= 0 else 'text-negative' }}">
+              {% if pos.gain_pct is not none %}{{ pos.gain_pct | pct }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+
+<div style="margin-top:20px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
+  <p style="font-size:12px;color:#8b949e;margin:0">
+    ⚠️ <strong style="color:#c9d1d9">Solo con fines informativos.</strong>
+    Este cálculo usa el método FIFO con las operaciones registradas en el sistema.
+    Consulta a un asesor fiscal para tu declaración de la renta. No se incluyen retenciones en origen ni ajustes por operaciones corporativas (splits, dividendos en acciones, etc.).
+  </p>
+</div>
+
+{% endblock %}

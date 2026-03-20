@@ -126,8 +126,10 @@ def init_db():
         # Migrations: add new columns before creating indexes that depend on them
         _add_column_if_missing(conn, "price_alerts",  "condition_type",  "TEXT DEFAULT 'price'")
         _add_column_if_missing(conn, "price_alerts",  "condition_value", "REAL")
+        _add_column_if_missing(conn, "price_alerts",  "condition_value2", "REAL")
         _add_column_if_missing(conn, "alert_history", "notified",        "INTEGER DEFAULT 0")
         _add_column_if_missing(conn, "price_history", "rsi",             "REAL")
+        _add_column_if_missing(conn, "operations",    "commission_eur",  "REAL DEFAULT 1.0")
 
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
         # Composite index for get_ticker_history queries (ticker + date DESC)
@@ -410,14 +412,14 @@ def vacuum_db() -> None:
 
 # ── operations (historial de operaciones) ──────────────────────────────────────
 
-def add_operation(ticker: str, date: str, op_type: str, shares: float, price_eur: float, notes: str = "") -> int:
+def add_operation(ticker: str, date: str, op_type: str, shares: float, price_eur: float, notes: str = "", commission_eur: float = 1.0) -> int:
     """Registra una operación de compra/venta. Devuelve el ID insertado."""
     with _db() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO operations (ticker, date, type, shares, price_eur, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (ticker, date, op_type, shares, price_eur, notes or ""))
+            INSERT INTO operations (ticker, date, type, shares, price_eur, notes, commission_eur)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (ticker, date, op_type, shares, price_eur, notes or "", commission_eur))
         return cur.lastrowid
 
 
@@ -426,20 +428,21 @@ def delete_operation(op_id: int) -> None:
         conn.cursor().execute("DELETE FROM operations WHERE id = ?", (op_id,))
 
 
-def get_operations(ticker: str = None, limit: int = 200) -> list:
-    """Devuelve operaciones ordenadas por fecha DESC. Filtra por ticker si se especifica."""
+def get_operations(ticker: str = None, limit: int = 200, order_asc: bool = False) -> list:
+    """Devuelve operaciones ordenadas por fecha. Filtra por ticker si se especifica."""
+    order = "ASC" if order_asc else "DESC"
     with _db() as conn:
         c = conn.cursor()
         if ticker:
-            c.execute("""
-                SELECT id, ticker, date, type, shares, price_eur, notes
+            c.execute(f"""
+                SELECT id, ticker, date, type, shares, price_eur, notes, COALESCE(commission_eur, 1.0)
                 FROM operations WHERE ticker = ?
-                ORDER BY date DESC, id DESC LIMIT ?
+                ORDER BY date {order}, id {order} LIMIT ?
             """, (ticker, limit))
         else:
-            c.execute("""
-                SELECT id, ticker, date, type, shares, price_eur, notes
-                FROM operations ORDER BY date DESC, id DESC LIMIT ?
+            c.execute(f"""
+                SELECT id, ticker, date, type, shares, price_eur, notes, COALESCE(commission_eur, 1.0)
+                FROM operations ORDER BY date {order}, id {order} LIMIT ?
             """, (limit,))
         return c.fetchall()
 

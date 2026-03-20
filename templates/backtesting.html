@@ -36,11 +36,14 @@
         <tr>
           <th>Score</th>
           <th>Observaciones</th>
-          <th>Retorno medio 30d<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Retorno promedio del precio 30 días naturales después de registrar ese score.')">ⓘ</button></th>
-          <th>Mediana</th>
-          <th>% positivos<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Porcentaje de veces que el precio subió en los 30 días siguientes.')">ⓘ</button></th>
-          <th class="hide-mobile">Mejor</th>
-          <th class="hide-mobile">Peor</th>
+          <th>Ret. medio 30d<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Retorno promedio del precio 30 días naturales después de registrar ese score.')">ⓘ</button></th>
+          <th class="hide-mobile">Ret. medio 90d<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Retorno promedio 90 días después.')">ⓘ</button></th>
+          <th>Mediana 30d</th>
+          <th>% pos. 30d<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Porcentaje de veces que el precio subió en los 30 días siguientes.')">ⓘ</button></th>
+          <th class="hide-mobile">% pos. 90d</th>
+          <th class="hide-mobile">Calmar<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Calmar ratio: retorno medio / max drawdown del período. Mayor es mejor.')">ⓘ</button></th>
+          <th class="hide-mobile">Mejor 30d</th>
+          <th class="hide-mobile">Peor 30d</th>
         </tr>
       </thead>
       <tbody>
@@ -55,6 +58,9 @@
           <td style="font-weight:600" class="{{ 'text-positive' if row.avg_ret > 0 else 'text-negative' }}">
             {{ "%+.2f"|format(row.avg_ret) }}%
           </td>
+          <td class="hide-mobile {{ 'text-positive' if row.get('avg_ret_90', 0) > 0 else 'text-negative' }}">
+            {% if row.get('avg_ret_90') is not none %}{{ "%+.2f"|format(row.avg_ret_90) }}%{% else %}—{% endif %}
+          </td>
           <td class="{{ 'text-positive' if row.med_ret > 0 else 'text-negative' }}">
             {{ "%+.2f"|format(row.med_ret) }}%
           </td>
@@ -65,6 +71,12 @@
               </div>
               <span>{{ row.pct_pos }}%</span>
             </div>
+          </td>
+          <td class="hide-mobile text-muted">
+            {% if row.get('pct_pos_90') is not none %}{{ row.pct_pos_90 }}%{% else %}—{% endif %}
+          </td>
+          <td class="hide-mobile text-muted">
+            {% if row.get('calmar') is not none %}{{ "%.2f"|format(row.calmar) }}{% else %}—{% endif %}
           </td>
           <td class="hide-mobile text-positive">{{ "%+.2f"|format(row.best) }}%</td>
           <td class="hide-mobile text-negative">{{ "%+.2f"|format(row.worst) }}%</td>

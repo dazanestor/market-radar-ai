@@ -159,6 +159,29 @@
                   </button>
                   <button x-show="editing" @click="editing=false" x-cloak
                           class="btn btn-ghost btn-sm" style="margin-right:4px">✕</button>
+                  {% if cat_key == 'watchlist' %}
+                  <!-- Mover a portfolio inline -->
+                  <span x-data="{ buying: false, sh: '', ap: '' }" style="display:inline">
+                    <button x-show="!buying" @click="buying=true" x-cloak
+                            class="btn btn-ghost btn-sm" style="margin-right:4px;color:#3fb950;border-color:rgba(63,185,80,0.3)" title="Registrar compra y mover a portfolio">
+                      → Comprado
+                    </button>
+                    <span x-show="buying" x-cloak style="display:inline-flex;align-items:center;gap:4px">
+                      <input type="number" x-model="sh" placeholder="Acciones" step="0.0001" min="0.0001"
+                             class="form-input" style="width:80px;padding:3px 6px;font-size:11px">
+                      <input type="number" x-model="ap" placeholder="Precio €" step="0.01" min="0.01"
+                             class="form-input" style="width:80px;padding:3px 6px;font-size:11px">
+                      <form method="post" action="/tickers/move-to-portfolio" style="display:inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="ticker" value="{{ ticker }}">
+                        <input type="hidden" name="shares" :value="sh">
+                        <input type="hidden" name="avg_price" :value="ap">
+                        <button type="submit" class="btn btn-primary btn-sm" :disabled="!sh || !ap">OK</button>
+                      </form>
+                      <button @click="buying=false" class="btn btn-ghost btn-sm" style="padding:3px 6px">✕</button>
+                    </span>
+                  </span>
+                  {% endif %}
                   <form method="post" action="/tickers/delete" style="display:inline" onsubmit="return confirm('¿Eliminar {{ ticker }}?')">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="ticker" value="{{ ticker }}">

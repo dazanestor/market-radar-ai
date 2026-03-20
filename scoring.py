@@ -149,6 +149,16 @@ def score_by_horizon(df):
     return df
 
 
+def get_weights(horizon: str, db_override: dict = None) -> dict:
+    """Retorna pesos para el horizonte dado. Si db_override tiene valores, los usa."""
+    base = dict(_WEIGHTS.get(horizon, _WEIGHTS["medio"]))
+    if db_override:
+        for factor, val in db_override.items():
+            if factor in base:
+                base[factor] = float(val)
+    return base
+
+
 def suggest_horizon(roe, pe_ratio, dividend_yield, volatility, momentum_3m) -> str:
     """Sugiere horizonte de inversión basado en características del activo.
 

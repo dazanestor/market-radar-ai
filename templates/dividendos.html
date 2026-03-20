@@ -146,5 +146,45 @@
   </div>
 </div>
 
+
+{% if calendar_data %}
+<!-- ── Calendario de cobros estimados ── -->
+<div style="margin-top:24px">
+  <div class="section-header">
+    <h2 class="section-title">Calendario de cobros estimados</h2>
+  </div>
+  {% set month_names = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'] %}
+  {% for year_offset in [0, 1] %}
+  <div style="margin-bottom:18px">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:#484f58;margin-bottom:8px">
+      {{ year + year_offset }}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      {% for m in range(1, 13) %}
+      {% set cal_key = m + year_offset * 12 %}
+      {% set entries = calendar_data.get(cal_key, []) %}
+      {% set total_m = calendar_totals.get(cal_key, 0) %}
+      <div class="card" style="padding:10px 12px;{% if total_m > 0 %}border-color:rgba(88,166,255,0.25){% endif %}">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;color:#8b949e;margin-bottom:4px">
+          {{ month_names[m-1] }}
+        </div>
+        {% if entries %}
+        <div style="font-size:14px;font-weight:700;color:#58a6ff;margin-bottom:4px">{{ total_m | eur }}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px">
+          {% for e in entries %}
+          <span class="badge badge-gray" style="font-size:10px">{{ e.ticker }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div style="font-size:12px;color:#484f58">—</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% endif %}
 {% endblock %}

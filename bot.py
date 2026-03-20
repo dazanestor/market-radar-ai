@@ -222,7 +222,7 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
     clear_fx_cache()
 
     csv_data = {}
-    has_advanced = any((len(a) > 5 and a[5] in ("drawdown", "score")) for a in alerts)
+    has_advanced = any((len(a) > 5 and a[5] in ("drawdown", "score", "price_pct")) for a in alerts)
     if has_advanced:
         try:
             csv_path = f"{OUTPUT_DIR}/precios_global.csv"
@@ -259,7 +259,17 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
         icon = "🔔"
         msg_detail = ""
 
-        if condition_type == "stoploss_pct":
+        if condition_type == "price_pct":
+            # condition_value = precio base en el momento de crear la alerta
+            condition_value = row[6] if len(row) > 6 else None
+            if condition_value is not None and not (isinstance(condition_value, float) and math.isnan(condition_value)):
+                threshold = float(condition_value) * (1 + float(target) / 100)
+                triggered = (direction == "below" and current <= threshold) or \
+                            (direction == "above" and current >= threshold)
+                if triggered:
+                    icon = "📉" if direction == "below" else "📈"
+                    msg_detail = f"Precio {'bajó' if direction == 'below' else 'subió'} {target:+.1f}% desde {condition_value:.2f} (umbral: {threshold:.2f}, actual: {current:.2f})"
+        elif condition_type == "stoploss_pct":
             pos = portfolio_positions.get(ticker)
             if pos:
                 _, avg_cost = pos

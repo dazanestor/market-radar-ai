@@ -42,6 +42,8 @@
                 <span class="badge badge-blue">Score</span>
               {% elif ctype == 'stoploss_pct' %}
                 <span class="badge badge-red">🛑 Stop-loss</span>
+              {% elif ctype == 'price_pct' %}
+                <span class="badge badge-yellow">% desde ahora</span>
               {% else %}
                 <span class="badge badge-gray">Precio</span>
               {% endif %}
@@ -53,6 +55,10 @@
                 Score &gt; {{ target | num }}
               {% elif ctype == 'stoploss_pct' %}
                 <span class="text-negative">Pérdida vs coste &gt; {{ target | num }}%</span>
+              {% elif ctype == 'price_pct' %}
+                <span class="{{ 'text-negative' if target < 0 else 'text-positive' }}">
+                  {% if target < 0 %}↓{% else %}↑{% endif %} {{ target | num }}% desde {{ cvalue | eur if cvalue else '—' }}
+                </span>
               {% elif direction == 'below' %}
                 <span class="text-negative">↓ baja a {{ target | eur }}</span>
               {% else %}
@@ -107,6 +113,7 @@
           <label class="form-label">Tipo de alerta</label>
           <select name="condition_type" class="form-input" x-model="ctype">
             <option value="price">Precio (€)</option>
+            <option value="price_pct">Caída/subida desde ahora (%)</option>
             <option value="stoploss_pct">Stop-loss dinámico (%)</option>
             <option value="drawdown">Drawdown (%)</option>
             <option value="score">Score</option>
@@ -114,9 +121,9 @@
         </div>
         <div>
           <label class="form-label"
-            x-text="ctype === 'price' ? 'Precio objetivo (€)' : ctype === 'stoploss_pct' ? 'Pérdida máx. desde coste (%)' : ctype === 'drawdown' ? 'Drawdown máximo (%)' : 'Score mínimo'">Valor *</label>
+            x-text="ctype === 'price' ? 'Precio objetivo (€)' : ctype === 'price_pct' ? 'Variación % (negativo=caída)' : ctype === 'stoploss_pct' ? 'Pérdida máx. desde coste (%)' : ctype === 'drawdown' ? 'Drawdown máximo (%)' : 'Score mínimo'">Valor *</label>
           <input type="number" name="target_price" class="form-input"
-                 :placeholder="ctype === 'price' ? '150.00' : ctype === 'stoploss_pct' ? '15' : ctype === 'drawdown' ? '-20' : '15'"
+                 :placeholder="ctype === 'price' ? '150.00' : ctype === 'price_pct' ? '-8' : ctype === 'stoploss_pct' ? '15' : ctype === 'drawdown' ? '-20' : '15'"
                  step="any" required>
         </div>
         <div style="display:flex;align-items:flex-end">
@@ -125,6 +132,7 @@
       </div>
       <p style="font-size:11px;color:#8b949e;margin-top:8px">
         <strong style="color:#c9d1d9">Precio:</strong> avisa cuando el precio cruza el umbral. ·
+        <strong style="color:#c9d1d9">% desde ahora:</strong> avisa cuando el precio sube o baja el % indicado desde el precio actual (ej: -8 para alerta si cae 8%). ·
         <strong style="color:#c9d1d9">Stop-loss:</strong> avisa cuando la pérdida vs precio de compra supera el % indicado. ·
         <strong style="color:#c9d1d9">Drawdown:</strong> avisa cuando la caída desde máximo anual supera el %. ·
         <strong style="color:#c9d1d9">Score:</strong> avisa cuando el score supera el umbral.
@@ -166,12 +174,14 @@
               {% if h_ctype == 'drawdown' %}<span class="badge badge-red">Drawdown</span>
               {% elif h_ctype == 'score' %}<span class="badge badge-blue">Score</span>
               {% elif h_ctype == 'stoploss_pct' %}<span class="badge badge-red">🛑 Stop-loss</span>
+              {% elif h_ctype == 'price_pct' %}<span class="badge badge-yellow">% desde ahora</span>
               {% else %}<span class="badge badge-gray">Precio</span>{% endif %}
             </td>
             <td>
               {% if h_ctype == 'drawdown' %}Drawdown &lt; {{ h_target | num }}%
               {% elif h_ctype == 'score' %}Score &gt; {{ h_target | num }}
               {% elif h_ctype == 'stoploss_pct' %}<span class="text-negative">Pérdida vs coste &gt; {{ h_target | num }}%</span>
+              {% elif h_ctype == 'price_pct' %}<span class="{{ 'text-negative' if h_target < 0 else 'text-positive' }}">{{ h_target | num }}%</span>
               {% elif h_dir == 'below' %}<span class="text-negative">↓ {{ h_target | eur }}</span>
               {% else %}<span class="text-positive">↑ {{ h_target | eur }}</span>{% endif %}
             </td>

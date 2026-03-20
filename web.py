@@ -80,7 +80,7 @@ from database import (
 )
 from fetch_data import get_macro_context, get_news, to_eur
 from generate_csv import generate
-from scoring import score_by_horizon, suggest_horizon, HORIZON_META
+from scoring import score_by_horizon, suggest_horizon, HORIZON_META, get_weights, _WEIGHTS
 
 logger = logging.getLogger("web")
 
@@ -1245,6 +1245,39 @@ _APP_SETTINGS = [
         "restart": False,
         "section": "Trade Republic",
     },
+    {
+        "key": "COMMISSION_EUR",
+        "label": "Comisión por operación (€)",
+        "hint": "Coste en euros de cada operación de compra o venta. Por defecto 1 €.",
+        "section": "Operaciones",
+        "type": "number",
+        "default": "1.0",
+        "restart": False,
+    },
+    # Scoring weights — largo
+    {"key": "SCORE_LARGO_DRAWDOWN",  "label": "Largo · Drawdown 52w",   "section": "Scoring — Pesos", "type": "number", "default": "0.20", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_LARGO_MOM3M",     "label": "Largo · Momentum 3m",    "section": "Scoring — Pesos", "type": "number", "default": "0.05", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_LARGO_VOL",       "label": "Largo · Volatilidad",     "section": "Scoring — Pesos", "type": "number", "default": "0.15", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_LARGO_DIV",       "label": "Largo · Dividendo",       "section": "Scoring — Pesos", "type": "number", "default": "0.20", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_LARGO_ROE",       "label": "Largo · ROE",             "section": "Scoring — Pesos", "type": "number", "default": "0.25", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_LARGO_PE",        "label": "Largo · PER",             "section": "Scoring — Pesos", "type": "number", "default": "0.15", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_LARGO_RSI",       "label": "Largo · RSI",             "section": "Scoring — Pesos", "type": "number", "default": "0.00", "hint": "Peso 0.0–1.0.", "restart": False},
+    # Scoring weights — medio
+    {"key": "SCORE_MEDIO_DRAWDOWN",  "label": "Medio · Drawdown 52w",   "section": "Scoring — Pesos", "type": "number", "default": "0.25", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_MEDIO_MOM3M",     "label": "Medio · Momentum 3m",    "section": "Scoring — Pesos", "type": "number", "default": "0.15", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_MEDIO_VOL",       "label": "Medio · Volatilidad",     "section": "Scoring — Pesos", "type": "number", "default": "0.10", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_MEDIO_DIV",       "label": "Medio · Dividendo",       "section": "Scoring — Pesos", "type": "number", "default": "0.10", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_MEDIO_ROE",       "label": "Medio · ROE",             "section": "Scoring — Pesos", "type": "number", "default": "0.15", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_MEDIO_PE",        "label": "Medio · PER",             "section": "Scoring — Pesos", "type": "number", "default": "0.15", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_MEDIO_RSI",       "label": "Medio · RSI",             "section": "Scoring — Pesos", "type": "number", "default": "0.10", "hint": "Peso 0.0–1.0.", "restart": False},
+    # Scoring weights — corto
+    {"key": "SCORE_CORTO_DRAWDOWN",  "label": "Corto · Drawdown 52w",   "section": "Scoring — Pesos", "type": "number", "default": "0.25", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_CORTO_MOM3M",     "label": "Corto · Momentum 3m",    "section": "Scoring — Pesos", "type": "number", "default": "0.20", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_CORTO_VOL",       "label": "Corto · Volatilidad",     "section": "Scoring — Pesos", "type": "number", "default": "0.05", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_CORTO_DIV",       "label": "Corto · Dividendo",       "section": "Scoring — Pesos", "type": "number", "default": "0.00", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_CORTO_ROE",       "label": "Corto · ROE",             "section": "Scoring — Pesos", "type": "number", "default": "0.00", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_CORTO_PE",        "label": "Corto · PER",             "section": "Scoring — Pesos", "type": "number", "default": "0.00", "hint": "Peso 0.0–1.0.", "restart": False},
+    {"key": "SCORE_CORTO_RSI",       "label": "Corto · RSI",             "section": "Scoring — Pesos", "type": "number", "default": "0.50", "hint": "Peso 0.0–1.0.", "restart": False},
 ]
 
 
@@ -1261,6 +1294,58 @@ def _missing_required_settings() -> list[str]:
         if not db.get(key) and not env_val:
             missing.append(key)
     return missing
+
+
+def _commission_eur() -> float:
+    """Devuelve la comisión por operación configurada (en EUR). Default: 1.0."""
+    try:
+        return float(effective("COMMISSION_EUR", "", "1.0"))
+    except Exception:
+        return 1.0
+
+
+def _get_scoring_weights_from_db() -> dict:
+    """Lee los pesos de scoring de la BD. Devuelve dict {horizonte: {factor: val}}."""
+    _KEY_MAP = {
+        "largo": {
+            "drawdown_52w":   "SCORE_LARGO_DRAWDOWN",
+            "momentum_3m":    "SCORE_LARGO_MOM3M",
+            "volatility":     "SCORE_LARGO_VOL",
+            "dividend_yield": "SCORE_LARGO_DIV",
+            "roe":            "SCORE_LARGO_ROE",
+            "pe_ratio":       "SCORE_LARGO_PE",
+            "rsi":            "SCORE_LARGO_RSI",
+        },
+        "medio": {
+            "drawdown_52w":   "SCORE_MEDIO_DRAWDOWN",
+            "momentum_3m":    "SCORE_MEDIO_MOM3M",
+            "volatility":     "SCORE_MEDIO_VOL",
+            "dividend_yield": "SCORE_MEDIO_DIV",
+            "roe":            "SCORE_MEDIO_ROE",
+            "pe_ratio":       "SCORE_MEDIO_PE",
+            "rsi":            "SCORE_MEDIO_RSI",
+        },
+        "corto": {
+            "drawdown_52w":   "SCORE_CORTO_DRAWDOWN",
+            "momentum_3m":    "SCORE_CORTO_MOM3M",
+            "volatility":     "SCORE_CORTO_VOL",
+            "dividend_yield": "SCORE_CORTO_DIV",
+            "roe":            "SCORE_CORTO_ROE",
+            "pe_ratio":       "SCORE_CORTO_PE",
+            "rsi":            "SCORE_CORTO_RSI",
+        },
+    }
+    db = get_all_settings()
+    result = {}
+    for horizon, factor_map in _KEY_MAP.items():
+        result[horizon] = {}
+        for factor, key in factor_map.items():
+            default = str(_WEIGHTS[horizon][factor])
+            try:
+                result[horizon][factor] = float(db.get(key, default) or default)
+            except (TypeError, ValueError):
+                result[horizon][factor] = _WEIGHTS[horizon][factor]
+    return result
 
 
 @app.get("/settings/app", response_class=HTMLResponse)
@@ -2009,6 +2094,7 @@ async def operaciones_page(
         "ticker_filter": ticker_filter,
         "saved": saved,
         "count": count_operations(),
+        "commission_eur": _commission_eur(),
     })
 
 
@@ -2034,7 +2120,7 @@ async def operaciones_add(
         datetime.date.fromisoformat(date)
     except ValueError:
         return RedirectResponse("/operaciones", status_code=303)
-    add_operation(t, date, op_type, shares, price_eur, notes.strip()[:500])
+    add_operation(t, date, op_type, shares, price_eur, notes.strip()[:500], commission_eur=_commission_eur())
     return RedirectResponse(f"/operaciones?saved={t}", status_code=303)
 
 
@@ -2266,7 +2352,26 @@ async def alertas_add(
     _require_csrf(request, csrf_token)
     t = ticker.strip().upper()
 
-    if condition_type == "stoploss_pct":
+    if condition_type == "price_pct":
+        # Alerta por % desde precio actual
+        pct = target_price  # puede ser negativo (caída) o positivo (subida)
+        if not (-100 <= pct <= 500) or pct == 0:
+            return RedirectResponse("/alertas?error=rango", status_code=303)
+        df = _read_csv()
+        current_price = None
+        if df is not None:
+            row = df[df["ticker"] == t]
+            if not row.empty:
+                p = row.iloc[0].get("price")
+                if p and not _is_nan(p):
+                    current_price = float(p)
+        if not current_price:
+            return RedirectResponse("/alertas?error=no_price", status_code=303)
+        direction = "below" if pct < 0 else "above"
+        add_price_alert(t, pct, direction, condition_type="price_pct",
+                        condition_value=current_price)
+        return RedirectResponse("/alertas", status_code=303)
+    elif condition_type == "stoploss_pct":
         # Stop-loss dinámico: % de pérdida desde precio de compra
         pct = abs(target_price)
         if not (0 < pct <= 100):
@@ -2703,18 +2808,26 @@ async def dividendos_page(request: Request, session: Optional[str] = Cookie(defa
                 else:
                     frequency = "anual"
 
+                # Calendario mensual: qué mes paga y cuánto (para próx. 24 meses)
+                monthly_calendar = {}
+                for m, avg_div in monthly_est.items():
+                    amount_eur = to_eur(avg_div * shares, currency)
+                    if amount_eur and not math.isnan(amount_eur):
+                        monthly_calendar[m] = round(amount_eur, 2)
+
                 results.append({
-                    "ticker":      ticker,
-                    "name":        info.get("longName") or info.get("shortName") or ticker,
-                    "shares":      shares,
-                    "q1_eur":      quarterly_eur[1],
-                    "q2_eur":      quarterly_eur[2],
-                    "q3_eur":      quarterly_eur[3],
-                    "q4_eur":      quarterly_eur[4],
-                    "annual_eur":  round(annual_eur, 2),
-                    "yield_pct":   yield_pct,
-                    "frequency":   frequency,
-                    "next_exdate": next_exdate,
+                    "ticker":           ticker,
+                    "name":             info.get("longName") or info.get("shortName") or ticker,
+                    "shares":           shares,
+                    "q1_eur":           quarterly_eur[1],
+                    "q2_eur":           quarterly_eur[2],
+                    "q3_eur":           quarterly_eur[3],
+                    "q4_eur":           quarterly_eur[4],
+                    "annual_eur":       round(annual_eur, 2),
+                    "yield_pct":        yield_pct,
+                    "frequency":        frequency,
+                    "next_exdate":      next_exdate,
+                    "monthly_calendar": monthly_calendar,
                 })
             except Exception:
                 logger.exception("Error calculando dividendos de %s", ticker)
@@ -2731,11 +2844,34 @@ async def dividendos_page(request: Request, session: Optional[str] = Cookie(defa
         "annual_eur": round(sum(r["annual_eur"] for r in rows), 2),
     }
 
+    # Build calendar_data: mes 1-12 = año actual, 13-24 = próximo año
+    today     = datetime.date.today()
+    cur_year  = today.year
+    calendar_data = {}  # key=1..24 → list of {ticker, amount_eur}
+    for r in rows:
+        monthly_calendar = r.get("monthly_calendar", {})
+        for month, amount_eur in monthly_calendar.items():
+            if amount_eur > 0:
+                # Current year month index 1..12
+                calendar_data.setdefault(month, []).append(
+                    {"ticker": r["ticker"], "amount_eur": amount_eur}
+                )
+                # Next year same month: index 13..24
+                calendar_data.setdefault(month + 12, []).append(
+                    {"ticker": r["ticker"], "amount_eur": amount_eur}
+                )
+
+    # Monthly totals
+    calendar_totals = {m: round(sum(e["amount_eur"] for e in entries), 2)
+                       for m, entries in calendar_data.items()}
+
     return templates.TemplateResponse("dividendos.html", {
-        "request": request,
-        "rows":    rows,
-        "totals":  totals,
-        "year":    datetime.date.today().year,
+        "request":        request,
+        "rows":           rows,
+        "totals":         totals,
+        "year":           cur_year,
+        "calendar_data":  calendar_data,
+        "calendar_totals": calendar_totals,
     })
 
 
@@ -3661,15 +3797,42 @@ async def backtesting_page(request: Request, session: Optional[str] = Cookie(def
                     if abs((nearest - idx).days) > 5:
                         continue
                     idx = nearest
-                future_idx = idx + pd.Timedelta(days=30)
-                diffs2 = abs(hist.index - future_idx)
+                future_30 = idx + pd.Timedelta(days=30)
+                future_90 = idx + pd.Timedelta(days=90)
+                diffs2 = abs(hist.index - future_30)
                 f_idx  = hist.index[diffs2.argmin()]
-                if abs((f_idx - future_idx).days) > 10:
+                if abs((f_idx - future_30).days) > 10:
                     continue
                 p0 = float(hist.loc[idx])
                 p1 = float(hist.loc[f_idx])
-                ret = (p1 - p0) / p0 * 100
-                results_raw.append({"bucket": bucket, "score": score, "ret_30d": ret})
+                ret_30 = (p1 - p0) / p0 * 100
+
+                ret_90 = None
+                try:
+                    diffs3 = abs(hist.index - future_90)
+                    f_idx3 = hist.index[diffs3.argmin()]
+                    if abs((f_idx3 - future_90).days) <= 15:
+                        p2 = float(hist.loc[f_idx3])
+                        ret_90 = (p2 - p0) / p0 * 100
+                except Exception:
+                    pass
+
+                # Max drawdown 30d period
+                try:
+                    period_prices = hist.loc[idx:f_idx]
+                    if len(period_prices) > 1:
+                        roll_max = period_prices.cummax()
+                        dd_series = (period_prices - roll_max) / roll_max * 100
+                        max_dd = float(dd_series.min())
+                    else:
+                        max_dd = None
+                except Exception:
+                    max_dd = None
+
+                results_raw.append({
+                    "bucket": bucket, "score": score,
+                    "ret_30d": ret_30, "ret_90d": ret_90, "max_dd": max_dd,
+                })
             except Exception:
                 continue
 
@@ -3679,16 +3842,29 @@ async def backtesting_page(request: Request, session: Optional[str] = Cookie(def
         df_bt = pd.DataFrame(results_raw)
         summary = []
         for b in ["ALTA", "MEDIA", "BAJA"]:
-            sub = df_bt[df_bt["bucket"] == b]["ret_30d"]
-            if len(sub) > 0:
+            sub = df_bt[df_bt["bucket"] == b]
+            sub30 = sub["ret_30d"]
+            if len(sub30) > 0:
+                sub90_vals = sub["ret_90d"].dropna()
+                avg_ret_90 = round(float(sub90_vals.mean()), 2) if len(sub90_vals) > 0 else None
+                pct_pos_90 = round(float((sub90_vals > 0).mean() * 100), 1) if len(sub90_vals) > 0 else None
+
+                avg_ret = float(sub30.mean())
+                dd_vals = sub["max_dd"].dropna()
+                avg_dd  = float(dd_vals.mean()) if len(dd_vals) > 0 else None
+                calmar  = round(avg_ret / abs(avg_dd), 2) if (avg_dd and avg_dd < 0) else None
+
                 summary.append({
-                    "bucket":   b,
-                    "n":        len(sub),
-                    "avg_ret":  round(float(sub.mean()), 2),
-                    "med_ret":  round(float(sub.median()), 2),
-                    "pct_pos":  round(float((sub > 0).mean() * 100), 1),
-                    "best":     round(float(sub.max()), 2),
-                    "worst":    round(float(sub.min()), 2),
+                    "bucket":      b,
+                    "n":           len(sub30),
+                    "avg_ret":     round(avg_ret, 2),
+                    "avg_ret_90":  avg_ret_90,
+                    "med_ret":     round(float(sub30.median()), 2),
+                    "pct_pos":     round(float((sub30 > 0).mean() * 100), 1),
+                    "pct_pos_90":  pct_pos_90,
+                    "calmar":      calmar,
+                    "best":        round(float(sub30.max()), 2),
+                    "worst":       round(float(sub30.min()), 2),
                 })
         return summary
 
@@ -3696,6 +3872,549 @@ async def backtesting_page(request: Request, session: Optional[str] = Cookie(def
     return templates.TemplateResponse("backtesting.html", {
         "request": request, "summary": summary,
     })
+
+
+# ── Fiscalidad FIFO ────────────────────────────────────────────────────────────
+
+@app.get("/fiscalidad", response_class=HTMLResponse)
+async def fiscalidad_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    def _compute():
+        from collections import defaultdict
+        ops_all = get_operations(limit=10000, order_asc=True)
+        # ops: id, ticker, date, type, shares, price_eur, notes, commission_eur
+
+        # Agrupar compras por ticker (FIFO queue) y calcular ventas realizadas
+        buy_queues = defaultdict(list)    # ticker -> list of (shares, price, commission)
+        fifo_ops   = []
+        annual_summary = defaultdict(lambda: {"gains": 0.0, "losses": 0.0, "commissions": 0.0})
+
+        for op in ops_all:
+            op_id, ticker, date_str, op_type, shares, price_eur, notes, commission = op
+            year = date_str[:4] if date_str else "?"
+
+            if op_type == "buy":
+                buy_queues[ticker].append([shares, price_eur, commission])
+            elif op_type == "sell":
+                remaining = shares
+                cost_basis = 0.0
+                buy_commissions = 0.0
+                sells_used = []
+                q = buy_queues[ticker]
+                while remaining > 0 and q:
+                    head_shares, head_price, head_comm = q[0]
+                    used = min(remaining, head_shares)
+                    cost_basis    += used * head_price
+                    buy_commissions += head_comm * (used / head_shares)
+                    sells_used.append((used, head_price))
+                    if used < head_shares:
+                        q[0][0] -= used
+                        q[0][2]  *= (head_shares - used) / head_shares
+                    else:
+                        q.pop(0)
+                    remaining -= used
+
+                proceeds   = shares * price_eur - commission
+                total_cost = cost_basis + buy_commissions
+                gain_loss  = proceeds - total_cost
+
+                annual_summary[year]["commissions"] += commission + buy_commissions
+                if gain_loss >= 0:
+                    annual_summary[year]["gains"] += gain_loss
+                else:
+                    annual_summary[year]["losses"] += gain_loss
+
+                fifo_ops.append({
+                    "date":         date_str,
+                    "ticker":       ticker,
+                    "shares":       shares,
+                    "sell_price":   price_eur,
+                    "cost_basis":   round(total_cost, 4),
+                    "commission":   round(commission + buy_commissions, 4),
+                    "gain_loss":    round(gain_loss, 2),
+                    "year":         year,
+                })
+
+        for year, data in annual_summary.items():
+            data["net"] = round(data["gains"] + data["losses"], 2)
+            data["gains"]       = round(data["gains"], 2)
+            data["losses"]      = round(data["losses"], 2)
+            data["commissions"] = round(data["commissions"], 2)
+
+        # Plusvalías latentes (posiciones no realizadas)
+        df = _read_csv()
+        unrealized = []
+        for ticker, remaining_buys in buy_queues.items():
+            if not remaining_buys:
+                continue
+            total_shares = sum(b[0] for b in remaining_buys)
+            total_cost   = sum(b[0] * b[1] for b in remaining_buys)
+            avg_cost_per_share = total_cost / total_shares if total_shares else 0
+
+            current_price = None
+            if df is not None:
+                row = df[df["ticker"] == ticker]
+                if not row.empty:
+                    p = row.iloc[0].get("price")
+                    if p and not _is_nan(p):
+                        current_price = float(p)
+
+            gain_latent = None
+            gain_pct    = None
+            if current_price:
+                gain_latent = (current_price - avg_cost_per_share) * total_shares
+                gain_pct    = (current_price - avg_cost_per_share) / avg_cost_per_share * 100 if avg_cost_per_share else None
+
+            unrealized.append({
+                "ticker":        ticker,
+                "shares":        round(total_shares, 4),
+                "avg_cost":      round(avg_cost_per_share, 4),
+                "current_price": current_price,
+                "gain_latent":   round(gain_latent, 2) if gain_latent is not None else None,
+                "gain_pct":      round(gain_pct, 2) if gain_pct is not None else None,
+            })
+
+        return fifo_ops, dict(annual_summary), unrealized
+
+    fifo_ops, annual_summary, unrealized = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
+    return templates.TemplateResponse("fiscalidad.html", {
+        "request":        request,
+        "fifo_ops":       fifo_ops,
+        "annual_summary": annual_summary,
+        "unrealized":     unrealized,
+        "commission_eur": _commission_eur(),
+    })
+
+
+# ── Monte Carlo ────────────────────────────────────────────────────────────────
+
+@app.get("/montecarlo", response_class=HTMLResponse)
+async def montecarlo_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    def _compute():
+        import warnings
+        warnings.filterwarnings("ignore")
+        df        = _read_csv()
+        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        if df is None or not positions:
+            return None, None
+
+        values = {}
+        vols   = {}
+        rets   = {}
+        for ticker, (shares, _) in positions.items():
+            row = df[df["ticker"] == ticker]
+            if row.empty:
+                continue
+            p = row.iloc[0].get("price")
+            if not p or _is_nan(p):
+                continue
+            values[ticker] = shares * float(p)
+            vol = row.iloc[0].get("volatility")
+            if vol and not _is_nan(vol):
+                vols[ticker] = float(vol) / 100.0
+            else:
+                vols[ticker] = 0.20
+            mom = row.iloc[0].get("momentum_3m")
+            if mom and not _is_nan(mom):
+                rets[ticker] = float(mom) / 100.0 * (252 / 63)
+            else:
+                rets[ticker] = 0.07
+
+        if not values:
+            return None, None
+
+        total    = sum(values.values())
+        weights  = {t: v / total for t, v in values.items()}
+        port_mu  = sum(weights[t] * rets.get(t, 0.07)  for t in weights)
+        port_sig = sum(weights[t] * vols.get(t, 0.20)  for t in weights)
+
+        N_PATHS  = 500
+        rng      = np.random.default_rng(42)
+        paths_1y  = np.zeros((N_PATHS, 253))
+        paths_3y  = np.zeros((N_PATHS, 757))
+        paths_1y[:, 0]  = total
+        paths_3y[:, 0]  = total
+
+        mu_d  = port_mu / 252
+        sig_d = port_sig / np.sqrt(252)
+
+        for t in range(1, 253):
+            z = rng.standard_normal(N_PATHS)
+            paths_1y[:, t] = paths_1y[:, t-1] * np.exp((mu_d - 0.5 * sig_d**2) + sig_d * z)
+        for t in range(1, 757):
+            z = rng.standard_normal(N_PATHS)
+            paths_3y[:, t] = paths_3y[:, t-1] * np.exp((mu_d - 0.5 * sig_d**2) + sig_d * z)
+
+        final_1y = paths_1y[:, 252]
+        final_3y = paths_3y[:, 756]
+        p10_1y  = float(np.percentile(final_1y, 10))
+        p25_1y  = float(np.percentile(final_1y, 25))
+        p50_1y  = float(np.percentile(final_1y, 50))
+        p75_1y  = float(np.percentile(final_1y, 75))
+        p90_1y  = float(np.percentile(final_1y, 90))
+        p10_3y  = float(np.percentile(final_3y, 10))
+        p50_3y  = float(np.percentile(final_3y, 50))
+        p90_3y  = float(np.percentile(final_3y, 90))
+
+        stats = {
+            "total":   total,
+            "p10_1y":  p10_1y,  "p25_1y": p25_1y, "p50_1y": p50_1y,
+            "p75_1y":  p75_1y,  "p90_1y": p90_1y,
+            "p10_3y":  p10_3y,  "p50_3y": p50_3y, "p90_3y": p90_3y,
+            "port_mu": round(port_mu * 100, 2),
+            "port_sig": round(port_sig * 100, 2),
+        }
+        # Store paths for chart (sample 100 paths to reduce data)
+        sample_idx = rng.choice(N_PATHS, size=min(100, N_PATHS), replace=False)
+        paths_sample_3y = paths_3y[sample_idx, :]
+        # Compute percentile curves
+        pct_curves = {
+            "p10": list(np.percentile(paths_3y, 10, axis=0).round(2)),
+            "p25": list(np.percentile(paths_3y, 25, axis=0).round(2)),
+            "p50": list(np.percentile(paths_3y, 50, axis=0).round(2)),
+            "p75": list(np.percentile(paths_3y, 75, axis=0).round(2)),
+            "p90": list(np.percentile(paths_3y, 90, axis=0).round(2)),
+        }
+        return stats, pct_curves
+
+    stats, pct_curves = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
+    return templates.TemplateResponse("montecarlo.html", {
+        "request": request,
+        "stats":   stats,
+        "has_data": stats is not None,
+    })
+
+
+@app.get("/chart/montecarlo")
+async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        raise HTTPException(403)
+
+    def _make():
+        import warnings
+        warnings.filterwarnings("ignore")
+        df        = _read_csv()
+        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        if df is None or not positions:
+            return None
+
+        values = {}
+        vols   = {}
+        rets   = {}
+        for ticker, (shares, _) in positions.items():
+            row = df[df["ticker"] == ticker]
+            if row.empty:
+                continue
+            p = row.iloc[0].get("price")
+            if not p or _is_nan(p):
+                continue
+            values[ticker] = shares * float(p)
+            vol = row.iloc[0].get("volatility")
+            vols[ticker] = float(vol) / 100.0 if (vol and not _is_nan(vol)) else 0.20
+            mom = row.iloc[0].get("momentum_3m")
+            rets[ticker] = float(mom) / 100.0 * (252 / 63) if (mom and not _is_nan(mom)) else 0.07
+
+        if not values:
+            return None
+
+        total    = sum(values.values())
+        weights  = {t: v / total for t, v in values.items()}
+        port_mu  = sum(weights[t] * rets.get(t, 0.07)  for t in weights)
+        port_sig = sum(weights[t] * vols.get(t, 0.20)  for t in weights)
+
+        N_PATHS = 500
+        rng     = np.random.default_rng(42)
+        days    = 757
+        paths   = np.zeros((N_PATHS, days))
+        paths[:, 0] = total
+        mu_d    = port_mu / 252
+        sig_d   = port_sig / np.sqrt(252)
+
+        for t in range(1, days):
+            z = rng.standard_normal(N_PATHS)
+            paths[:, t] = paths[:, t-1] * np.exp((mu_d - 0.5 * sig_d**2) + sig_d * z)
+
+        x = np.arange(days)
+        p10 = np.percentile(paths, 10, axis=0)
+        p25 = np.percentile(paths, 25, axis=0)
+        p50 = np.percentile(paths, 50, axis=0)
+        p75 = np.percentile(paths, 75, axis=0)
+        p90 = np.percentile(paths, 90, axis=0)
+
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        _style_ax(ax, fig)
+
+        ax.fill_between(x, p10, p90, alpha=0.18, color=_C_BLUE, label="P10–P90")
+        ax.fill_between(x, p25, p75, alpha=0.35, color=_C_BLUE, label="P25–P75")
+        ax.plot(x, p50, color=_C_FG, linewidth=2, label="Mediana")
+        ax.axhline(total, color=_C_TEXT, linewidth=0.8, linestyle="--", label="Valor inicial")
+        ax.axvline(252, color=_C_GREEN, linewidth=0.8, linestyle=":", alpha=0.8)
+        ax.axvline(756, color=_C_GREEN, linewidth=0.8, linestyle=":", alpha=0.8)
+        ax.text(252, ax.get_ylim()[1] * 0.98, "1 año", color=_C_GREEN, fontsize=8, ha="center", va="top")
+        ax.text(756, ax.get_ylim()[1] * 0.98, "3 años", color=_C_GREEN, fontsize=8, ha="center", va="top")
+
+        ax.set_title("Monte Carlo — Simulación de cartera (500 paths, distribución log-normal)", fontsize=11, pad=8)
+        ax.set_xlabel("Días", fontsize=9)
+        ax.set_ylabel("Valor (€)", fontsize=9)
+        ax.legend(fontsize=8, facecolor=_C_CARD, edgecolor=_C_GRID, labelcolor=_C_FG)
+        fig.tight_layout()
+        return fig
+
+    fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)
+    if fig is None:
+        raise HTTPException(404, "Sin datos suficientes")
+    return _fig_to_response(fig)
+
+
+# ── Stress Testing ─────────────────────────────────────────────────────────────
+
+STRESS_SCENARIOS = [
+    {"name": "Corrección moderada",   "desc": "Caída general de mercado",        "shock": -0.15, "sectors_shock": {}},
+    {"name": "Bear market",           "desc": "Caída severa de mercado",          "shock": -0.35, "sectors_shock": {}},
+    {"name": "Crash tecnológico",     "desc": "Caída del 50% en tecnología",      "shock": -0.10, "sectors_shock": {"Tecnología": -0.50}},
+    {"name": "Crisis financiera",     "desc": "Caída del 40% en financieras",     "shock": -0.20, "sectors_shock": {"Financiero": -0.40}},
+    {"name": "Rally de mercado",      "desc": "Subida general del 25%",           "shock": +0.25, "sectors_shock": {}},
+]
+
+
+@app.get("/stress-test", response_class=HTMLResponse)
+async def stress_test_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    df        = _read_csv()
+    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+
+    portfolio_data = []
+    total_current = 0.0
+
+    if df is not None:
+        for ticker, (shares, avg) in positions.items():
+            row = df[df["ticker"] == ticker]
+            if row.empty:
+                continue
+            p = row.iloc[0].get("price")
+            if not p or _is_nan(p):
+                continue
+            value  = shares * float(p)
+            sector = row.iloc[0].get("block") or ""
+            total_current += value
+            portfolio_data.append({
+                "ticker": ticker,
+                "name":   row.iloc[0].get("name", ticker),
+                "shares": shares,
+                "price":  float(p),
+                "value":  value,
+                "sector": sector,
+            })
+
+    scenarios_results = []
+    for scenario in STRESS_SCENARIOS:
+        shock        = scenario["shock"]
+        sec_shock    = scenario["sectors_shock"]
+        total_new    = 0.0
+        ticker_rows  = []
+        for pos in portfolio_data:
+            sector = pos["sector"]
+            if sec_shock and sector in sec_shock:
+                applied_shock = sec_shock[sector]
+            else:
+                applied_shock = shock
+            new_value = pos["value"] * (1 + applied_shock)
+            total_new += new_value
+            ticker_rows.append({
+                "ticker":       pos["ticker"],
+                "name":         pos["name"],
+                "value_before": pos["value"],
+                "value_after":  new_value,
+                "impact_eur":   new_value - pos["value"],
+                "impact_pct":   applied_shock * 100,
+            })
+        impact_eur = total_new - total_current
+        impact_pct = (impact_eur / total_current * 100) if total_current else 0
+        scenarios_results.append({
+            "name":          scenario["name"],
+            "desc":          scenario["desc"],
+            "total_before":  total_current,
+            "total_after":   total_new,
+            "impact_eur":    round(impact_eur, 2),
+            "impact_pct":    round(impact_pct, 2),
+            "tickers":       ticker_rows,
+        })
+
+    return templates.TemplateResponse("stress_test.html", {
+        "request":           request,
+        "scenarios":         scenarios_results,
+        "total_current":     total_current,
+        "has_data":          bool(portfolio_data),
+    })
+
+
+# ── Mover ticker de watchlist a portfolio ─────────────────────────────────────
+
+@app.post("/tickers/move-to-portfolio")
+async def move_to_portfolio(
+    request:    Request,
+    session:    Optional[str] = Cookie(default=None),
+    ticker:     str   = Form(...),
+    shares:     float = Form(...),
+    avg_price:  float = Form(...),
+    csrf_token: Optional[str] = Form(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    _require_csrf(request, csrf_token)
+    t = ticker.strip().upper()
+    if shares <= 0 or avg_price <= 0:
+        return RedirectResponse("/tickers?tab=tickers&error=invalid", status_code=303)
+
+    tickers = _load_tickers()
+    watchlist = tickers.get("watchlist", {})
+    portfolio = tickers.get("portfolio", {})
+
+    if t not in watchlist:
+        return RedirectResponse("/tickers?tab=tickers&error=not_in_watchlist", status_code=303)
+
+    meta = watchlist.pop(t)
+    portfolio[t] = meta
+    tickers["watchlist"] = watchlist
+    tickers["portfolio"] = portfolio
+    _save_tickers(tickers)
+    upsert_position(t, shares, avg_price)
+    return RedirectResponse("/tickers?tab=tickers&saved=1", status_code=303)
+
+
+# ── Treemap de cartera ─────────────────────────────────────────────────────────
+
+def _squarify(values, x, y, w, h):
+    """Algoritmo Slice-and-Dice simplificado para treemap."""
+    if not values:
+        return []
+    total = sum(v for v, _ in values)
+    if total <= 0:
+        return []
+    rects = []
+    _slice_dice(values, x, y, w, h, total, True, rects)
+    return rects
+
+
+def _slice_dice(items, x, y, w, h, total, horizontal, rects):
+    if not items:
+        return
+    if len(items) == 1:
+        rects.append((x, y, w, h, items[0][1]))
+        return
+    # Split into two halves by area
+    half = total / 2
+    acc  = 0.0
+    split_idx = 0
+    for i, (val, _) in enumerate(items):
+        acc += val
+        split_idx = i
+        if acc >= half:
+            break
+    left  = items[:split_idx + 1]
+    right = items[split_idx + 1:]
+    left_total  = sum(v for v, _ in left)
+    right_total = sum(v for v, _ in right)
+    if horizontal:
+        split_w = w * left_total / total if total else w / 2
+        _slice_dice(left,  x,            y, split_w,         h, left_total,  not horizontal, rects)
+        _slice_dice(right, x + split_w,  y, w - split_w,     h, right_total, not horizontal, rects)
+    else:
+        split_h = h * left_total / total if total else h / 2
+        _slice_dice(left,  x, y,            w, split_h,        left_total,  not horizontal, rects)
+        _slice_dice(right, x, y + split_h,  w, h - split_h,    right_total, not horizontal, rects)
+
+
+@app.get("/treemap", response_class=HTMLResponse)
+async def treemap_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse("treemap.html", {"request": request})
+
+
+@app.get("/chart/treemap")
+async def chart_treemap(session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        raise HTTPException(403)
+
+    def _make():
+        df        = _read_csv()
+        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        if df is None or not positions:
+            return None
+
+        items = []
+        for ticker, (shares, avg) in positions.items():
+            row = df[df["ticker"] == ticker]
+            if row.empty:
+                continue
+            p = row.iloc[0].get("price")
+            if not p or _is_nan(p):
+                continue
+            value  = shares * float(p)
+            pnl    = (float(p) - float(avg)) / float(avg) * 100 if avg else 0
+            name   = row.iloc[0].get("name", ticker)
+            items.append((value, {"ticker": ticker, "name": name, "value": value, "pnl": pnl}))
+
+        if not items:
+            return None
+
+        items.sort(key=lambda x: -x[0])
+        rects = _squarify(items, 0, 0, 12, 8)
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        _style_ax(ax, fig)
+        ax.set_xlim(0, 12)
+        ax.set_ylim(0, 8)
+        ax.set_aspect("auto")
+        ax.axis("off")
+        ax.set_title("Treemap de cartera — Tamaño: valor, Color: P&L%", fontsize=12, pad=8)
+
+        for rx, ry, rw, rh, meta in rects:
+            pnl = meta["pnl"]
+            if pnl >= 10:
+                color = "#1a5c2a"
+            elif pnl >= 5:
+                color = "#22863a"
+            elif pnl >= 0:
+                color = "#2ea043"
+            elif pnl >= -5:
+                color = "#b91c1c"
+            elif pnl >= -10:
+                color = "#991b1b"
+            else:
+                color = "#7f1d1d"
+
+            rect = plt.Rectangle((rx + 0.02, ry + 0.02), rw - 0.04, rh - 0.04,
+                                  facecolor=color, edgecolor="#30363d", linewidth=0.5)
+            ax.add_patch(rect)
+            cx, cy = rx + rw / 2, ry + rh / 2
+            fs = max(5, min(11, int(rw * rh * 1.2)))
+            ticker_text = meta["ticker"]
+            ax.text(cx, cy + rh * 0.08, ticker_text,
+                    ha="center", va="center", fontsize=fs,
+                    fontweight="bold", color="#e6edf3")
+            if rw > 1.0 and rh > 0.5:
+                ax.text(cx, cy - rh * 0.15, f"€{meta['value']:,.0f}",
+                        ha="center", va="center", fontsize=max(5, fs - 2), color="#c9d1d9")
+                ax.text(cx, cy - rh * 0.38, f"{pnl:+.1f}%",
+                        ha="center", va="center", fontsize=max(5, fs - 2),
+                        color="#3fb950" if pnl >= 0 else "#f85149")
+
+        fig.tight_layout()
+        return fig
+
+    fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)
+    if fig is None:
+        raise HTTPException(404, "Sin posiciones")
+    return _fig_to_response(fig)
 
 
 # ── Exportación PDF (HTML optimizado para impresión) ──────────────────────────

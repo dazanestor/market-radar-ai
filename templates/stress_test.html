@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block page_title %}Stress Testing{% endblock %}
+
+{% block content %}
+<p style="font-size:12px;color:#8b949e;margin:0 0 16px">
+  Impacto estimado de distintos escenarios de mercado sobre el valor actual de la cartera.
+  Los sectores afectados usan el campo "Bloque" de cada activo en tickers.yaml.
+</p>
+
+{% if not has_data %}
+<div class="empty-state">
+  <svg width="36" height="36" fill="none" stroke="#484f58" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/></svg>
+  <div style="margin-top:8px">No hay posiciones con datos de precio disponibles.</div>
+  <div style="font-size:11px;margin-top:4px">Genera un reporte y registra posiciones para calcular el stress test.</div>
+</div>
+{% else %}
+
+<!-- ── Resumen por escenario ── -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">Resumen por escenario</h2>
+    <span style="font-size:11px;color:#8b949e">Valor actual: <strong style="color:#e6edf3">{{ total_current | eur }}</strong></span>
+  </div>
+  <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px">
+    {% for s in scenarios %}
+    <div class="stat-card" style="border-color:{{ 'rgba(63,185,80,0.3)' if s.impact_pct >= 0 else 'rgba(248,81,73,0.3)' }}">
+      <div class="stat-label">{{ s.name }}</div>
+      <div class="stat-value" style="font-size:18px;color:{{ '#3fb950' if s.impact_pct >= 0 else '#f85149' }}">
+        {{ "%+.1f"|format(s.impact_pct) }}%
+      </div>
+      <div class="stat-sub" style="color:{{ '#3fb950' if s.impact_eur >= 0 else '#f85149' }}">
+        {{ s.impact_eur | eur }} → {{ s.total_after | eur }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ── Detalle por escenario ── -->
+{% for s in scenarios %}
+<div class="section" x-data="{ open: false }">
+  <div class="card">
+    <button class="collapse-btn" @click="open = !open">
+      <div>
+        <span style="font-weight:600;color:#e6edf3">{{ s.name }}</span>
+        <span style="font-size:12px;color:#8b949e;margin-left:8px">{{ s.desc }}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-weight:700;font-size:15px;color:{{ '#3fb950' if s.impact_pct >= 0 else '#f85149' }}">
+          {{ "%+.1f"|format(s.impact_pct) }}% / {{ s.impact_eur | eur }}
+        </span>
+        <svg :style="open ? 'transform:rotate(180deg)' : ''" style="width:12px;height:12px;transition:transform 0.15s;color:#8b949e;flex-shrink:0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </button>
+    <div x-show="open" x-transition x-cloak class="collapse-body" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th class="hide-mobile">Nombre</th>
+              <th>Antes</th>
+              <th>Después</th>
+              <th>Impacto (€)</th>
+              <th>Shock aplicado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in s.tickers | sort(attribute='value_before', reverse=true) %}
+            <tr>
+              <td><a href="/ticker/{{ t.ticker }}" class="ticker-cell">{{ t.ticker }}</a></td>
+              <td class="hide-mobile text-muted" style="font-size:12px">{{ t.name }}</td>
+              <td>{{ t.value_before | eur }}</td>
+              <td style="font-weight:600">{{ t.value_after | eur }}</td>
+              <td class="{{ 'text-positive' if t.impact_eur >= 0 else 'text-negative' }}">
+                {{ t.impact_eur | eur }}
+              </td>
+              <td class="{{ 'text-positive' if t.impact_pct >= 0 else 'text-negative' }}">
+                {{ "%+.1f"|format(t.impact_pct) }}%
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+
+<div style="margin-top:16px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
+  <p style="font-size:12px;color:#8b949e;margin:0">
+    ⚠️ Los escenarios son hipotéticos y se aplican de forma estática (sin modelar correlaciones dinámicas, efectos de cola ni cambios de valoración fundamentales).
+    Úsalos como referencia de magnitud de riesgo, no como predicciones.
+  </p>
+</div>
+
+{% endblock %}

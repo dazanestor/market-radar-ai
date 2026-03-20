@@ -79,7 +79,7 @@
             <td class="hide-mobile">
               {% if row.rsi is not none %}
               <span class="{% if row.rsi < 30 %}text-positive{% elif row.rsi > 70 %}text-negative{% else %}text-muted{% endif %}">
-                {{ "%.0f"|format(row.rsi) }}
+                {{ row.rsi | num }}
               </span>
               {% else %}<span class="text-muted">—</span>{% endif %}
             </td>

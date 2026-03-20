@@ -99,6 +99,8 @@ def generate():
     errors = []
 
     for category, assets in (tickers or {}).items():
+        if category not in ("portfolio", "watchlist"):
+            continue
         for ticker, meta in (assets or {}).items():
             try:
                 hist, dividends, info = fetch_stock_data(ticker)

@@ -93,11 +93,11 @@
         </div>
         <div class="kv-item">
           <span class="kv-label">PER</span>
-          <span class="kv-value">{{ "%.1f" % fundamentals.pe_ratio if fundamentals.pe_ratio else "—" }}</span>
+          <span class="kv-value">{{ fundamentals.pe_ratio | num }}</span>
         </div>
         <div class="kv-item">
           <span class="kv-label">P/B</span>
-          <span class="kv-value">{{ "%.2f" % fundamentals.pb_ratio if fundamentals.pb_ratio else "—" }}</span>
+          <span class="kv-value">{{ fundamentals.pb_ratio | num }}</span>
         </div>
         <div class="kv-item">
           <span class="kv-label">ROE</span>
@@ -115,7 +115,7 @@
         </div>
         <div class="kv-item">
           <span class="kv-label">Deuda/Equity</span>
-          <span class="kv-value">{{ "%.2f" % fundamentals.debt_equity if fundamentals.debt_equity else "—" }}</span>
+          <span class="kv-value">{{ fundamentals.debt_equity | num }}</span>
         </div>
       </div>
     </div>

@@ -90,7 +90,7 @@
           <td class="{{ r.drawdown_52w | dd_class }}">{{ r.drawdown_52w | pct if r.drawdown_52w else '—' }}</td>
           <td class="hide-mobile">{{ r.momentum_3m | pct if r.momentum_3m else '—' }}</td>
           <td class="hide-mobile">{{ r.dividend_yield | pct if r.dividend_yield else '—' }}</td>
-          <td class="hide-mobile" style="color:{% if r.rsi and r.rsi < 30 %}#3fb950{% elif r.rsi and r.rsi > 70 %}#f85149{% else %}#8b949e{% endif %}">{{ "%.0f"|format(r.rsi) if r.rsi else '—' }}</td>
+          <td class="hide-mobile" style="color:{% if r.rsi and r.rsi < 30 %}#3fb950{% elif r.rsi and r.rsi > 70 %}#f85149{% else %}#8b949e{% endif %}">{{ r.rsi | num }}</td>
           <td class="hide-mobile" style="font-size:12px;color:#8b949e">{{ r.block or '—' }}</td>
           <td class="hide-mobile" style="font-size:12px;color:#8b949e">{{ r.region or '—' }}</td>
         </tr>

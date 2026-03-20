@@ -368,6 +368,11 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Jobs scheduler paralelizados**: `job_check_price_alerts()`, `job_check_exdividend()` y `job_check_earnings()` usan `ThreadPoolExecutor` para fetches de yfinance en paralelo.
 - **`get_macro_context()` paralelo**: SPY, VIX y TNX se descargan en paralelo con 3 workers.
 - **`_fx_cache` con TTL de 1h**: el caché de tipos de cambio expira a los 60 min en lugar de vaciarse completamente con `clear_fx_cache()`, lo que evita re-fetches innecesarios entre jobs.
+- **`_get_positions()` con caché de 60 s**: sustituye `get_all_positions()` en ~22 endpoints de web.py; se invalida al modificar/añadir/eliminar posiciones.
+- **`_get_scored_df(df)` con caché de score**: `score_by_horizon()` solo se recalcula cuando cambia el CSV (TTL compartido); el resultado se reutiliza en todos los endpoints del mismo ciclo.
+- **`_get_ticker_hist(ticker)` con caché de 1 h**: los históricos yfinance para gráficos se cachean en memoria; `/chart/precio/{ticker}` no descarga de nuevo hasta que expire.
+- **`/tickers/enrich` paralelo**: los fetches de yfinance para enriquecer tickers se ejecutan con hasta 5 workers concurrentes (antes secuencial, 10 tickers ≈ 30 s → ≈ 6 s).
+- **`get_latest_snapshot_as_df()` usa `ROW_NUMBER() OVER`**: reemplaza el `GROUP BY + INNER JOIN` por window function, más eficiente en tablas grandes.
 
 ## Trabajo pendiente / próximas funcionalidades
 

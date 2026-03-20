@@ -2,11 +2,9 @@ import math
 import os
 from datetime import date
 import pandas as pd
-import yaml
 
 from fetch_data import fetch_stock_data, to_eur, clear_fx_cache
-from database import get_trend, get_portfolio_position, get_ticker_history
-from config import OUTPUT_DIR
+from database import get_trend, get_portfolio_position, get_ticker_history, get_tickers_as_yaml_dict
 
 def _safe_round(v, n=2):
     return round(v, n) if v is not None and not math.isnan(v) else None
@@ -83,16 +81,12 @@ def _detect_trend(ticker):
     return "empeorando" if newest_dd < oldest_dd else "mejorando"
 
 def generate():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
     clear_fx_cache()
 
     try:
-        with open("tickers.yaml") as f:
-            tickers = yaml.safe_load(f)
-    except FileNotFoundError:
-        return pd.DataFrame(), ["tickers.yaml no encontrado"]
-    except yaml.YAMLError as e:
-        return pd.DataFrame(), [f"tickers.yaml inválido: {e}"]
+        tickers = get_tickers_as_yaml_dict()
+    except Exception as e:
+        return pd.DataFrame(), [f"Error leyendo tickers de BD: {e}"]
 
     today = date.today().isoformat()
     rows = []
@@ -156,6 +150,7 @@ def generate():
                     "block": meta.get("block", "—"),
                     "region": meta.get("region", "—"),
                     "target_weight": meta.get("target_weight"),
+                    "target_price": meta.get("target_price"),
                     "horizon": meta.get("horizon"),
                     "price": round(price, 2),
                     "drawdown_52w": round(drawdown, 2),
@@ -174,7 +169,4 @@ def generate():
                 errors.append(f"{ticker}: {e}")
 
     df = pd.DataFrame(rows)
-    if not df.empty:
-        df.to_csv(f"{OUTPUT_DIR}/precios_global.csv", index=False, encoding="utf-8")
-
     return df, errors

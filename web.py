@@ -28,7 +28,6 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
-import yaml
 import yfinance as yf
 
 from fastapi import Cookie, FastAPI, Form, HTTPException, Request, UploadFile, File
@@ -47,7 +46,6 @@ from ai_analysis import (
     analyze_operations,
     suggest_ticker_meta,
 )
-from config import OUTPUT_DIR
 from database import (
     add_operation,
     add_price_alert,
@@ -77,6 +75,18 @@ from database import (
     get_all_settings,
     upsert_push_subscription,
     delete_push_subscription,
+    get_latest_snapshot_as_df,
+    get_all_tickers,
+    get_tickers_as_yaml_dict,
+    get_ticker_meta,
+    upsert_ticker,
+    update_ticker_fields,
+    delete_ticker_record,
+    ticker_exists,
+    get_tr_isin_map,
+    upsert_tr_isin,
+    delete_tr_isin,
+    _db,
 )
 from fetch_data import get_macro_context, get_news, to_eur
 from generate_csv import generate
@@ -475,20 +485,26 @@ def _validate_tickers_schema(data: dict) -> dict:
 
 
 def _load_tickers() -> dict:
-    try:
-        with open("tickers.yaml") as f:
-            data = yaml.safe_load(f) or {}
-        return _validate_tickers_schema(data)
-    except FileNotFoundError:
-        return {}
-    except yaml.YAMLError as e:
-        logger.error("tickers.yaml inválido: %s", e)
-        return {}
+    """Carga la configuración de tickers desde la BD."""
+    return get_tickers_as_yaml_dict()
 
 
-def _save_tickers(data: dict):
-    with open("tickers.yaml", "w") as f:
-        yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+def _save_tickers(data: dict) -> None:
+    """Guarda la configuración de tickers en la BD."""
+    for cat in ("portfolio", "watchlist"):
+        for ticker, meta in (data.get(cat) or {}).items():
+            if not isinstance(meta, dict):
+                meta = {}
+            upsert_ticker(
+                ticker=ticker, category=cat,
+                name=meta.get("name"), block=meta.get("block"),
+                region=meta.get("region"), horizon=meta.get("horizon"),
+                target_weight=meta.get("target_weight"),
+                target_price=meta.get("target_price"),
+                notes=meta.get("notes"),
+            )
+    for isin, t in (data.get("tr_isin_map") or {}).items():
+        upsert_tr_isin(isin, t)
 
 
 _SECTOR_TO_BLOCK = {
@@ -585,16 +601,10 @@ def _read_csv() -> Optional[pd.DataFrame]:
         now = _time.monotonic()
         if _csv_cache["df"] is not None and now - _csv_cache["ts"] < _CSV_CACHE_TTL:
             return _csv_cache["df"]
-        path = f"{OUTPUT_DIR}/precios_global.csv"
-        if os.path.exists(path):
-            try:
-                df = pd.read_csv(path)
-                _csv_cache["df"] = df
-                _csv_cache["ts"] = now
-                return df
-            except Exception:
-                logger.exception("Error leyendo CSV de precios")
-        return None
+        df = get_latest_snapshot_as_df()
+        _csv_cache["df"] = df
+        _csv_cache["ts"] = now
+        return df
 
 def _invalidate_csv_cache() -> None:
     with _csv_cache_lock:
@@ -901,17 +911,18 @@ def _make_qr_svg(uri: str) -> str:
 @app.get("/health")
 async def health():
     status = "ok"
+    snapshot_date = None
     try:
-        from database import _db
         with _db() as conn:
             conn.execute("SELECT 1")
+            _snap = conn.execute("SELECT MAX(date) FROM price_history").fetchone()
+            snapshot_date = _snap[0] if _snap and _snap[0] else None
     except Exception as exc:
         status = f"db_error: {exc}"
-    csv_path = f"{OUTPUT_DIR}/precios_global.csv"
     return JSONResponse({
-        "status":     status,
-        "csv_exists": os.path.exists(csv_path),
-        "timestamp":  datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "status":        status,
+        "snapshot_date": snapshot_date,
+        "timestamp":     datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
 
@@ -1460,18 +1471,16 @@ async def dashboard(
     if tr_cash is not None and total_value is not None:
         total_value += tr_cash
 
-    # Antigüedad de datos: fecha de modificación del CSV
-    csv_path = f"{OUTPUT_DIR}/precios_global.csv"
+    # Antigüedad de datos: fecha del snapshot más reciente en BD
     data_age = None
-    if os.path.exists(csv_path):
-        mtime = os.path.getmtime(csv_path)
-        age_sec = _time.time() - mtime
-        if age_sec < 3600:
-            data_age = f"hace {int(age_sec // 60)} min"
-        elif age_sec < 86400:
-            data_age = f"hace {int(age_sec // 3600)} h"
-        else:
-            data_age = datetime.datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M")
+    try:
+        with _db() as _conn:
+            _row = _conn.execute("SELECT MAX(date) FROM price_history").fetchone()
+            last_update = _row[0] if _row and _row[0] else None
+        if last_update:
+            data_age = last_update
+    except Exception:
+        pass
 
     has_value_history = len(get_portfolio_value_history(days=365)) >= 2
 
@@ -2009,6 +2018,7 @@ async def tickers_delete(
     tickers = _load_tickers()
     if categoria in tickers and ticker in tickers[categoria]:
         del tickers[categoria][ticker]
+        delete_ticker_record(ticker)
     _save_tickers(tickers)
     return RedirectResponse("/tickers", status_code=303)
 
@@ -2532,6 +2542,8 @@ async def tr_sync(
         bad_ticker = isin_map_yaml.pop(isin)
         portfolio_yaml.pop(bad_ticker, None)
         delete_position(bad_ticker)
+        delete_ticker_record(bad_ticker)
+        delete_tr_isin(isin)
         yaml_changed = True
         logger.info("TR: ticker %s no coincide con país del ISIN %s, se re-resolverá", bad_ticker, isin)
 

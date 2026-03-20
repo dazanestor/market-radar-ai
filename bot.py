@@ -1,13 +1,11 @@
 import logging
 import datetime
 import math
-import os
 import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import asyncio
 import pandas as pd
-import yaml
 import yfinance as yf
 from zoneinfo import ZoneInfo
 
@@ -23,6 +21,8 @@ from database import (
     get_unnotified_alerts, mark_alert_notified, vacuum_db,
     purge_old_price_history, purge_old_news_cache, effective,
     get_all_positions,
+    get_tickers_as_yaml_dict,
+    get_latest_snapshot_as_df,
 )
 try:
     from push_utils import send_push_to_all as _send_push_to_all
@@ -31,7 +31,7 @@ except Exception:
     _PUSH_AVAILABLE = False
     def _send_push_to_all(*a, **kw): return 0
 from config import (
-    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OUTPUT_DIR,
+    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
     REPORT_HOUR, TIMEZONE,
     TELEGRAM_MAX_CHARS, DRAWDOWN_ALERT_THRESHOLD,
     split_telegram_text,
@@ -99,17 +99,8 @@ def _validate_tickers_schema(data: dict) -> dict:
     return result
 
 
-def _load_tickers():
-    try:
-        with open("tickers.yaml") as f:
-            data = yaml.safe_load(f) or {}
-        data = _validate_tickers_schema(data)
-        return {k: (v or {}) for k, v in data.items()}
-    except FileNotFoundError:
-        return {}
-    except yaml.YAMLError as e:
-        logging.error(f"tickers.yaml inválido: {e}")
-        return {}
+def _load_tickers() -> dict:
+    return get_tickers_as_yaml_dict()
 
 
 def _build_alerts(df):
@@ -225,13 +216,12 @@ async def job_check_price_alerts(context: ContextTypes.DEFAULT_TYPE):
     has_advanced = any((len(a) > 5 and a[5] in ("drawdown", "score", "price_pct")) for a in alerts)
     if has_advanced:
         try:
-            csv_path = f"{OUTPUT_DIR}/precios_global.csv"
-            if os.path.exists(csv_path):
-                df = pd.read_csv(csv_path)
+            df = get_latest_snapshot_as_df()
+            if df is not None:
                 for _, row in df.iterrows():
                     csv_data[row["ticker"]] = row.to_dict()
         except Exception:
-            logging.exception("Error leyendo CSV para alertas avanzadas")
+            logging.exception("Error leyendo snapshot de BD para alertas avanzadas")
 
     for ticker in tickers_needed:
         try:
@@ -523,12 +513,9 @@ async def job_check_earnings(context: ContextTypes.DEFAULT_TYPE):
 async def job_check_sector_concentration(context: ContextTypes.DEFAULT_TYPE):
     """Alerta si algún sector supera el 40% de la cartera."""
     try:
-        from config import OUTPUT_DIR
-        import os
-        csv_path = f"{OUTPUT_DIR}/precios_global.csv"
-        if not os.path.exists(csv_path):
+        df = get_latest_snapshot_as_df()
+        if df is None:
             return
-        df = pd.read_csv(csv_path)
         portfolio = df[df["category"] == "portfolio"].copy()
         if portfolio.empty:
             return

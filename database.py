@@ -114,6 +114,27 @@ def init_db():
         )
         """)
         c.execute("""
+CREATE TABLE IF NOT EXISTS tickers (
+    ticker        TEXT PRIMARY KEY,
+    category      TEXT NOT NULL,
+    name          TEXT,
+    block         TEXT,
+    region        TEXT,
+    horizon       TEXT,
+    target_weight REAL,
+    target_price  REAL,
+    notes         TEXT,
+    created       TEXT NOT NULL,
+    updated       TEXT NOT NULL
+)
+""")
+        c.execute("""
+CREATE TABLE IF NOT EXISTS tr_isin_map (
+    isin   TEXT PRIMARY KEY,
+    ticker TEXT
+)
+""")
+        c.execute("""
         CREATE TABLE IF NOT EXISTS push_subscriptions (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             endpoint   TEXT NOT NULL UNIQUE,
@@ -130,6 +151,25 @@ def init_db():
         _add_column_if_missing(conn, "alert_history", "notified",        "INTEGER DEFAULT 0")
         _add_column_if_missing(conn, "price_history", "rsi",             "REAL")
         _add_column_if_missing(conn, "operations",    "commission_eur",  "REAL DEFAULT 1.0")
+        _add_column_if_missing(conn, "price_history", "category",      "TEXT")
+        _add_column_if_missing(conn, "price_history", "name",          "TEXT")
+        _add_column_if_missing(conn, "price_history", "block",         "TEXT")
+        _add_column_if_missing(conn, "price_history", "region",        "TEXT")
+        _add_column_if_missing(conn, "price_history", "horizon",       "TEXT")
+        _add_column_if_missing(conn, "price_history", "target_weight", "REAL")
+        _add_column_if_missing(conn, "price_history", "target_price",  "REAL")
+        _add_column_if_missing(conn, "price_history", "pe_ratio",      "REAL")
+        _add_column_if_missing(conn, "price_history", "pb_ratio",      "REAL")
+        _add_column_if_missing(conn, "price_history", "profit_margin", "REAL")
+        _add_column_if_missing(conn, "price_history", "roe",           "REAL")
+        _add_column_if_missing(conn, "price_history", "debt_equity",   "REAL")
+        _add_column_if_missing(conn, "price_history", "revenue_growth","REAL")
+        _add_column_if_missing(conn, "price_history", "market_cap_b",  "REAL")
+        _add_column_if_missing(conn, "price_history", "analyst_rec",   "REAL")
+        _add_column_if_missing(conn, "price_history", "analyst_target","REAL")
+        _add_column_if_missing(conn, "price_history", "analyst_n",     "INTEGER")
+        _add_column_if_missing(conn, "price_history", "trend",         "TEXT")
+        _add_column_if_missing(conn, "price_history", "pnl",           "REAL")
 
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
         # Composite index for get_ticker_history queries (ticker + date DESC)
@@ -142,6 +182,9 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_operations_date ON operations(date DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_value_date ON portfolio_value(date DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON push_subscriptions(endpoint)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tickers_category ON tickers(category)")
+
+        _migrate_tickers_from_yaml_if_needed(conn)
 
 
 def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:
@@ -168,21 +211,24 @@ def _db():
 # ── price_history ─────────────────────────────────────────────────────────────
 
 def save_snapshot(rows):
+    _SNAPSHOT_COLS = (
+        "ticker", "date", "price", "drawdown_52w", "momentum_3m", "momentum_6m",
+        "volatility", "dividend_yield", "rsi", "score", "opportunity",
+        "category", "name", "block", "region", "horizon", "target_weight",
+        "target_price", "pe_ratio", "pb_ratio", "profit_margin", "roe",
+        "debt_equity", "revenue_growth", "market_cap_b",
+        "analyst_rec", "analyst_target", "analyst_n", "trend", "pnl",
+    )
+    placeholders = ", ".join("?" * len(_SNAPSHOT_COLS))
+    col_names    = ", ".join(_SNAPSHOT_COLS)
     with _db() as conn:
         c = conn.cursor()
         for row in rows:
-            c.execute("""
-            INSERT OR REPLACE INTO price_history
-                (ticker, date, price, drawdown_52w, momentum_3m, momentum_6m,
-                 volatility, dividend_yield, rsi, score, opportunity)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                row["ticker"], row["date"], row["price"], row["drawdown_52w"],
-                row.get("momentum_3m"), row.get("momentum_6m"),
-                row.get("volatility"), row.get("dividend_yield"),
-                row.get("rsi"),
-                row.get("score"), row.get("opportunity")
-            ))
+            values = tuple(row.get(col) for col in _SNAPSHOT_COLS)
+            c.execute(
+                f"INSERT OR REPLACE INTO price_history ({col_names}) VALUES ({placeholders})",
+                values,
+            )
 
 def get_trend(ticker, days=5):
     with _db() as conn:
@@ -543,6 +589,178 @@ def get_cached_translation(headline: str, max_age_hours: int = 24) -> Optional[s
     except Exception:
         return None
     return row[0]
+
+
+# ── snapshots (reemplaza CSV) ──────────────────────────────────────────────────
+
+def get_latest_snapshot_as_df():
+    """Devuelve el snapshot más reciente de price_history para todos los tickers como DataFrame."""
+    try:
+        import pandas as pd
+    except ImportError:
+        return None
+    with _db() as conn:
+        df = pd.read_sql_query("""
+            SELECT ph.*
+            FROM price_history ph
+            INNER JOIN (
+                SELECT ticker, MAX(date) AS max_date
+                FROM price_history
+                GROUP BY ticker
+            ) latest ON ph.ticker = latest.ticker AND ph.date = latest.max_date
+            ORDER BY ph.category, ph.ticker
+        """, conn)
+    return df if not df.empty else None
+
+
+# ── tickers (reemplaza tickers.yaml) ──────────────────────────────────────────
+
+def get_all_tickers() -> list:
+    """Devuelve todos los tickers ordenados por categoría y ticker."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT ticker, category, name, block, region, horizon, target_weight, target_price, notes, created, updated FROM tickers ORDER BY category, ticker")
+        cols = [d[0] for d in c.description]
+        return [dict(zip(cols, row)) for row in c.fetchall()]
+
+
+def get_tickers_as_yaml_dict() -> dict:
+    """Reconstruye la estructura equivalente al antiguo tickers.yaml."""
+    rows = get_all_tickers()
+    result = {"portfolio": {}, "watchlist": {}}
+    for r in rows:
+        cat = r["category"] if r["category"] in ("portfolio", "watchlist") else "watchlist"
+        entry = {}
+        for field in ("name", "block", "region", "horizon", "target_weight", "target_price", "notes"):
+            if r.get(field) is not None:
+                entry[field] = r[field]
+        result[cat][r["ticker"]] = entry
+    # Añadir tr_isin_map
+    isin_map = get_tr_isin_map()
+    if isin_map:
+        result["tr_isin_map"] = isin_map
+    return result
+
+
+def get_ticker_meta(ticker: str) -> Optional[dict]:
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT ticker, category, name, block, region, horizon, target_weight, target_price, notes FROM tickers WHERE ticker = ?", (ticker,))
+        row = c.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in c.description]
+        return dict(zip(cols, row))
+
+
+def upsert_ticker(ticker: str, category: str, name: str = None, block: str = None,
+                  region: str = None, horizon: str = None, target_weight=None,
+                  target_price=None, notes: str = None) -> None:
+    now = datetime.now().isoformat(timespec="minutes")
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT INTO tickers (ticker, category, name, block, region, horizon,
+                                 target_weight, target_price, notes, created, updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                category=excluded.category,
+                name=COALESCE(excluded.name, name),
+                block=COALESCE(excluded.block, block),
+                region=COALESCE(excluded.region, region),
+                horizon=COALESCE(excluded.horizon, horizon),
+                target_weight=COALESCE(excluded.target_weight, target_weight),
+                target_price=COALESCE(excluded.target_price, target_price),
+                notes=COALESCE(excluded.notes, notes),
+                updated=excluded.updated
+        """, (ticker, category, name, block, region, horizon, target_weight, target_price, notes, now, now))
+
+
+def update_ticker_fields(ticker: str, **kwargs) -> None:
+    """Actualiza solo los campos especificados en kwargs."""
+    allowed = {"category", "name", "block", "region", "horizon", "target_weight", "target_price", "notes"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return
+    now = datetime.now().isoformat(timespec="minutes")
+    fields["updated"] = now
+    sets = ", ".join(f"{k}=?" for k in fields)
+    values = list(fields.values()) + [ticker]
+    with _db() as conn:
+        conn.cursor().execute(f"UPDATE tickers SET {sets} WHERE ticker=?", values)
+
+
+def delete_ticker_record(ticker: str) -> None:
+    with _db() as conn:
+        conn.cursor().execute("DELETE FROM tickers WHERE ticker=?", (ticker,))
+
+
+def ticker_exists(ticker: str) -> bool:
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM tickers WHERE ticker=?", (ticker,))
+        return c.fetchone() is not None
+
+
+# ── tr_isin_map ────────────────────────────────────────────────────────────────
+
+def get_tr_isin_map() -> dict:
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT isin, ticker FROM tr_isin_map")
+        return {row[0]: row[1] for row in c.fetchall()}
+
+
+def upsert_tr_isin(isin: str, ticker: Optional[str]) -> None:
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT INTO tr_isin_map (isin, ticker) VALUES (?, ?)
+            ON CONFLICT(isin) DO UPDATE SET ticker=excluded.ticker
+        """, (isin, ticker))
+
+
+def delete_tr_isin(isin: str) -> None:
+    with _db() as conn:
+        conn.cursor().execute("DELETE FROM tr_isin_map WHERE isin=?", (isin,))
+
+
+# ── migración automática desde tickers.yaml ───────────────────────────────────
+
+def _migrate_tickers_from_yaml_if_needed(conn) -> None:
+    """Importa tickers.yaml a la tabla tickers si esta está vacía. Solo una vez."""
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM tickers").fetchone()[0]
+        if count > 0:
+            return
+        yaml_path = "tickers.yaml"
+        if not os.path.exists(yaml_path):
+            return
+        import yaml as _yaml
+        with open(yaml_path) as f:
+            data = _yaml.safe_load(f) or {}
+        now = datetime.now().isoformat(timespec="minutes")
+        n = 0
+        for cat in ("portfolio", "watchlist"):
+            for ticker, meta in (data.get(cat) or {}).items():
+                if not isinstance(meta, dict):
+                    meta = {}
+                conn.execute("""
+                    INSERT OR IGNORE INTO tickers
+                        (ticker, category, name, block, region, horizon,
+                         target_weight, target_price, notes, created, updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    ticker, cat,
+                    meta.get("name"), meta.get("block"), meta.get("region"),
+                    meta.get("horizon"), meta.get("target_weight"),
+                    meta.get("target_price"), meta.get("notes"),
+                    now, now,
+                ))
+                n += 1
+        for isin, t in (data.get("tr_isin_map") or {}).items():
+            conn.execute("INSERT OR IGNORE INTO tr_isin_map (isin, ticker) VALUES (?, ?)", (isin, t))
+        logger.info("Migración tickers.yaml completada: %d tickers importados.", n)
+    except Exception:
+        logger.exception("Error en migración tickers.yaml → BD (no crítico).")
 
 
 # ── push_subscriptions ────────────────────────────────────────────────────────

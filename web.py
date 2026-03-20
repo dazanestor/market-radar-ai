@@ -3548,10 +3548,9 @@ async def optimizacion_page(request: Request, session: Optional[str] = Cookie(de
         _executor, _get_opt_cached, df_port, positions,
     )
     return templates.TemplateResponse("optimizacion.html", {
-        "request":    request,
-        "has_data":   opt is not None,
-        "opt":        opt,
-        "csrf_token": CSRF_TOKEN,
+        "request":  request,
+        "has_data": opt is not None,
+        "opt":      opt,
     })
 
 

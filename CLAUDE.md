@@ -14,6 +14,7 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - **Base de datos**: SQLite con WAL mode (`data/radar.db`)
 - **Config**: `tickers.yaml` (PyYAML) para cartera y watchlist
 - **Visualización**: `matplotlib` con backend Agg (sin display), tema oscuro
+- **Optimización de cartera**: `scipy` (SLSQP) — Mínima Varianza, Máximo Sharpe y Paridad de Riesgo con frontera eficiente
 - **Despliegue**: Docker + Docker Compose, publicado en GHCR, multi-arquitectura (amd64 + arm64)
 - **Web Push PWA**: `push_utils.py` — notificaciones push al navegador sin dependencias externas (VAPID RFC 8292 + cifrado RFC 8291 con `cryptography` y `requests` ya disponibles)
 
@@ -24,7 +25,7 @@ bot.py              # Bot Telegram principal: comandos, jobs APScheduler, gráfi
 scheduler.py        # Ejecución standalone (sin bot, útil con cron externo)
 generate_csv.py     # Pipeline de datos: descarga, cálculo de métricas, CSV (incluye analyst_rec/target/n de yfinance)
 fetch_data.py       # Wrappers yfinance: precios, dividendos, fundamentales, FX, noticias
-scoring.py          # Algoritmo de puntuación multi-factor (6 factores → score)
+scoring.py          # Algoritmo de puntuación multi-factor (7 factores → score, pesos por horizonte)
 ai_analysis.py      # Integración Claude: genera el análisis diario
 web.py              # Dashboard FastAPI: reportes, posiciones, alertas, rebalanceo
 push_utils.py       # Web Push VAPID: genera claves, cifra payload, envía push al navegador
@@ -73,7 +74,7 @@ uvicorn web:app --host 0.0.0.0 --port 8589  # Solo dashboard web
 Tablas en `data/radar.db`:
 - **`portfolio`** — `ticker PK`, `shares`, `avg_price` (en EUR)
 - **`price_history`** — snapshots diarios con métricas: `price`, `drawdown_52w`, `momentum_3m/6m`, `volatility`, `dividend_yield`, `score`, `opportunity`; constraint UNIQUE en `(ticker, date)`
-- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `condition_type` (price/drawdown/score), `condition_value`, `active`
+- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `condition_type` (price/drawdown/score/stoploss_pct), `condition_value`, `active`
 - **`alert_history`** — historial de alertas disparadas: `ticker`, `target_price`, `direction`, `condition_type`, `condition_value`, `triggered_at`, `price_at_trigger`
 - **`reports`** — informes guardados: `date`, `content`
 - **`news_cache`** — caché de traducciones de titulares: `headline_hash PK`, `translation`, `fetched_at` (TTL 24h)
@@ -104,6 +105,42 @@ Clasificación: `ALTA` (>15), `MEDIA` (>8), `BAJA` (≤8), `—` (sin datos)
 
 `suggest_horizon(roe, pe, div, vol, mom3m)` infiere el horizonte óptimo automáticamente.
 `HORIZON_META` expone etiquetas, rangos y descripciones para UI y bot.
+
+## Algoritmo de optimización de cartera (web.py)
+
+`_compute_optimization(df_portfolio, positions_map)` calcula tres carteras óptimas usando la teoría moderna de carteras (Markowitz) con scipy SLSQP.
+
+### Retornos esperados multi-factor (horizon-aware)
+
+Los retornos esperados de cada activo combinan 5 fuentes con pesos que varían según el horizonte del ticker:
+
+| Factor | Corto plazo | Medio plazo | Largo plazo |
+|--------|------------|------------|------------|
+| Retorno histórico 1 año | 35% | 40% | 40% |
+| Score del radar | 20% | 20% | 20% |
+| Precio objetivo analistas | 10% | 15% | 20% |
+| Momentum 3m/6m | 25% | 15% | 5% |
+| Calidad fundamental (ROE, PER) | 10% | 10% | 15% |
+
+### Tres carteras óptimas
+
+| Cartera | Objetivo | Restricciones |
+|---------|----------|---------------|
+| **Mínima Varianza** | `min w'Σw` | Suma=1, sin cortos, 1%≤wᵢ≤max_w |
+| **Máximo Sharpe** | `max (μ'w − Rf) / √(w'Σw)` | Ídem; Rf=3% anual |
+| **Paridad de Riesgo** | `min Σᵢ(RCᵢ − 1/n)²` donde `RCᵢ = wᵢ·(Σw)ᵢ / w'Σw` | Suma=1, 1%≤wᵢ≤max_w |
+
+Restricción de concentración: peso máximo = `min(40%, max(3/n, 10%))` donde `n` es el número de activos.
+
+### Frontera eficiente
+
+40 puntos entre el retorno de la cartera de mínima varianza y el retorno máximo individual. Cada punto es una optimización de varianza mínima con restricción de retorno igual a target. El gráfico incluye la Capital Market Line desde Rf hasta Máximo Sharpe.
+
+### Caché de optimización
+
+- `_opt_cache: dict` + `_opt_cache_lock: threading.RLock()` — TTL de 5 minutos (`_OPT_CACHE_TTL = 300.0`)
+- La función `_get_opt_cached(df_portfolio, positions_map)` es usada tanto por `/optimizacion` como por `/chart/frontera-eficiente` para evitar doble cómputo
+- `_invalidate_csv_cache()` también invalida `_opt_cache` para que el siguiente reporte regenere la optimización con datos frescos
 
 ## Conversión FX a EUR (fetch_data.py)
 
@@ -144,7 +181,7 @@ Toda la gestión (tickers, posiciones, alertas, Trade Republic) se realiza desde
 Tablas en `data/radar.db`:
 - **`portfolio`** — `ticker PK`, `shares`, `avg_price` (en EUR)
 - **`price_history`** — snapshots diarios con métricas: `price`, `drawdown_52w`, `momentum_3m/6m`, `volatility`, `dividend_yield`, `rsi`, `score`, `opportunity`; constraint UNIQUE en `(ticker, date)`
-- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `condition_type` (price/drawdown/score), `active`
+- **`price_alerts`** — alertas: `ticker`, `target_price`, `direction` (above/below), `condition_type` (price/drawdown/score/stoploss_pct), `active`
 - **`alert_history`** — historial de alertas disparadas con `notified` flag
 - **`reports`** — informes guardados: `date`, `content`
 - **`tr_cache`** — caché clave-valor para datos Trade Republic (cash_eur, transacciones)
@@ -257,6 +294,7 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 - El dashboard web usa un executor de hilos para no bloquear al generar informes
 - El timeout de Claude (120s) está configurado en el constructor `anthropic.Anthropic(timeout=120)`, no en `messages.create()`
 - CSV en memoria cacheado 5 min (`_csv_cache`); se invalida al generar reporte
+- Optimización de cartera cacheada 5 min (`_opt_cache`); se invalida junto con `_csv_cache` al generar reporte
 - Si el job diario falla, se notifica automáticamente por Telegram con el error
 
 ## Trampas conocidas y decisiones de diseño
@@ -321,6 +359,7 @@ Cada ticker admite los siguientes campos en su metadata:
 - **CSRF rotation thread-safe**: `_rotate_csrf_if_needed()` usa double-checked locking con `_csrf_lock` para evitar race condition entre workers.
 - **`_fig_to_response` try/finally**: `plt.close(fig)` se llama en `finally` para garantizar liberación de memoria incluso si `savefig` falla.
 - **Dead code alertas**: bloque inalcanzable `if condition_type in ("drawdown", "score")` eliminado de `alertas_add` (los casos ya retornan antes).
+- **`stoploss_pct` en historial de alertas**: `alertas.html` no mostraba el badge ni la condición correcta para alertas de tipo `stoploss_pct` en la sección de historial (solo en alertas activas). Añadido `{% elif h_ctype == 'stoploss_pct' %}` en ambos bloques.
 - **`tickers_search` max length**: consultas de más de 50 caracteres retornan `[]` sin llamar a yfinance.
 - **scheduler.py usa `effective()`**: `send_telegram` lee `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` desde BD (con fallback a env) en tiempo de ejecución.
 - **`get_portfolio_value_history` SQL corregido**: usar filtro por fecha (`WHERE date >= date('now', ?)`) en lugar de `LIMIT` que devolvía los registros más antiguos.

@@ -47,6 +47,7 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - **Simulador de aportación**: calcula qué comprar dado un importe para respetar pesos objetivo
 - **Comparativa vs benchmark**: rendimiento de cartera vs SPY (S&P500) y EWQ (Euro Stoxx) en base 100
 - **Screener reactivo**: filtra todos los tickers por sector, región, score, drawdown y oportunidad
+- **Optimización de cartera**: Mínima Varianza, Máximo Sharpe y Paridad de Riesgo con frontera eficiente; retornos esperados multi-factor combinando histórico, score del radar, precio objetivo de analistas, momentum y fundamentales
 - **Precio objetivo y notas por ticker**: `target_price` y `notes` en tickers.yaml
 - **Alertas ex-dividend**: aviso automático en Telegram 3 días antes de la fecha de ex-dividendo
 - Despliegue con Docker usando imagen pre-compilada de GitHub Container Registry (GHCR)
@@ -370,10 +371,11 @@ Snapshot diario de cada ticker. Se guarda una entrada por ticker por día.
 | `score` / `opportunity` | Puntuación y nivel de oportunidad |
 
 ### `price_alerts`
-Alertas activas o disparadas. Soporta tres tipos de condición:
+Alertas activas o disparadas. Soporta cuatro tipos de condición:
 - **price** — precio de mercado supera/baja de un umbral
 - **drawdown** — drawdown desde máximo 52s supera un umbral
 - **score** — score del activo supera un umbral
+- **stoploss_pct** — pérdida vs precio de compra supera el % indicado
 
 ### `alert_history`
 Historial de alertas disparadas: ticker, tipo, valor objetivo, precio en el momento del disparo y timestamp.
@@ -391,16 +393,24 @@ Caché de datos de Trade Republic (posiciones y saldo).
 
 ## Scoring
 
-Cada activo recibe un score numérico calculado con 6 factores. El score se calcula tanto para portfolio como para watchlist:
+Cada activo recibe un score numérico calculado con **7 factores** con pesos que varían según el horizonte de inversión del ticker (`corto`, `medio`, `largo`). El score se calcula tanto para portfolio como para watchlist:
 
-| Factor | Peso | Lógica |
-|---|---|---|
-| Drawdown 52s | 30% | Mayor caída desde máximo = más oportunidad |
-| Momentum 3m inverso | 15% | Caída reciente puede indicar punto de entrada |
-| Volatilidad | 15% | Menor volatilidad = negocio más predecible (cap en 30%) |
-| Dividendo | 15% | Mayor rentabilidad por dividendo = más calidad |
-| ROE | 15% | ROE alto indica negocio de calidad (cap en 30%) |
-| PER | 10% | PER bajo indica mayor margen de seguridad (rango 0-60) |
+| Factor | Largo plazo | Medio plazo | Corto plazo |
+|--------|------------|------------|------------|
+| Drawdown 52w | 20% | 25% | 25% |
+| Momentum 3m | 5% | 15% | 20% |
+| Volatilidad | 15% | 10% | 5% |
+| Dividendo | 20% | 10% | 0% |
+| ROE | 25% | 15% | 0% |
+| PER | 15% | 15% | 0% |
+| RSI(14) | 0% | 10% | **50%** |
+
+**Horizontes temporales:**
+- `corto`: días – 3 meses. Señales técnicas (RSI, momentum, rebotes).
+- `medio`: 3 meses – 18 meses. Mix fundamentales + momentum.
+- `largo`: 18 meses – varios años. Calidad del negocio + dividendo.
+
+`suggest_horizon()` infiere el horizonte óptimo automáticamente si no está configurado en `tickers.yaml`.
 
 Clasificación final:
 - **ALTA**: score > 15
@@ -450,7 +460,8 @@ Accede desde el navegador a `http://<IP-servidor>:8589`.
 - **Ticker detalle** — fundamentales, métricas técnicas, historial drawdown y noticias
 - **Tickers** — añadir/eliminar activos; importar en masa desde CSV; exportar cartera o watchlist a CSV; badge visual para tickers con posición registrada
 - **Posiciones** — registrar y eliminar posiciones con P&L en euros; sincronización con Trade Republic; feedback visual al guardar; icono ⓘ en cada columna con explicación del concepto
-- **Alertas** — crear alertas de precio, drawdown y score; historial de alertas disparadas
+- **Alertas** — crear alertas de precio, drawdown, score y stop-loss dinámico; historial de alertas disparadas
+- **Optimización de cartera** — tres carteras óptimas (Mínima Varianza, Máximo Sharpe, Paridad de Riesgo) con frontera eficiente y Capital Market Line; retornos multi-factor ajustados por horizonte
 - **Reportes** — historial paginado de análisis Claude (10 por página)
 - **Generar reporte** — lanza el pipeline completo desde el navegador (máx. 2 por minuto); muestra error si el pipeline falla
 - **`/health`** — endpoint JSON con estado de la base de datos, existencia del CSV y timestamp UTC; útil para healthchecks externos

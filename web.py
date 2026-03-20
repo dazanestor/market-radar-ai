@@ -1391,8 +1391,7 @@ async def dashboard(
         df_s      = score_by_horizon(df)
         positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
 
-        for _, row in df_s[df_s["category"] == "portfolio"].iterrows():
-            d     = row.to_dict()
+        for d in df_s[df_s["category"] == "portfolio"].to_dict("records"):
             price = d.get("price")
             pnl   = value = shares = avg = None
             if d["ticker"] in positions:
@@ -1412,9 +1411,9 @@ async def dashboard(
             d["pnl_eur"]   = pnl_eur
             portfolio.append(d)
 
-        for _, row in df_s[df_s["category"] == "watchlist"] \
-                          .sort_values("score", ascending=False).iterrows():
-            watchlist.append(row.to_dict())
+        for d in df_s[df_s["category"] == "watchlist"] \
+                          .sort_values("score", ascending=False).to_dict("records"):
+            watchlist.append(d)
 
     reports = get_recent_reports(n=1)
 
@@ -1487,7 +1486,7 @@ async def rebalanceo_page(request: Request, session: Optional[str] = Cookie(defa
     rows_data = []
 
     if df is not None:
-        for _, row in df[df["category"] == "portfolio"].iterrows():
+        for row in df[df["category"] == "portfolio"].to_dict("records"):
             ticker = row["ticker"]
             if ticker not in positions:
                 continue
@@ -1553,12 +1552,12 @@ async def oportunidades_page(request: Request, session: Optional[str] = Cookie(d
 
     if df is not None:
         df_s = score_by_horizon(df)
-        for _, row in df_s.iterrows():
-            h = row.get("horizon") or "medio"
+        for d in df_s.to_dict("records"):
+            h = d.get("horizon") or "medio"
             if h not in by_horizon:
                 h = "medio"
-            if row.get("opportunity") in ("ALTA", "MEDIA"):
-                by_horizon[h].append(row.to_dict())
+            if d.get("opportunity") in ("ALTA", "MEDIA"):
+                by_horizon[h].append(d)
 
         # Ordenar cada horizonte por score descendente
         for h in by_horizon:
@@ -1678,7 +1677,8 @@ async def ticker_detalle(ticker: str, request: Request,
 # ── Tickers ───────────────────────────────────────────────────────────────────
 
 @app.get("/tickers/search")
-async def tickers_search(q: str = "", session: Optional[str] = Cookie(default=None)):
+@limiter.limit("10/minute")
+async def tickers_search(request: Request, q: str = "", session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return JSONResponse([])
     if len(q) < 2 or len(q) > 50:
@@ -2120,7 +2120,7 @@ async def distribucion_page(request: Request, session: Optional[str] = Cookie(de
     total = 0.0
 
     if df is not None:
-        for _, row in df.iterrows():
+        for row in df.to_dict("records"):
             ticker = row["ticker"]
             price = row.get("price")
             if not price or _is_nan(price):
@@ -2171,7 +2171,7 @@ async def simulador_page(
     if df is not None and importe > 0 and positions:
         rows_data = []
         total_value = 0.0
-        for _, row in df[df["category"] == "portfolio"].iterrows():
+        for row in df[df["category"] == "portfolio"].to_dict("records"):
             ticker = row["ticker"]
             if ticker not in positions:
                 continue
@@ -2264,8 +2264,7 @@ async def screener_page(request: Request, session: Optional[str] = Cookie(defaul
 
     if df is not None:
         df_s = score_by_horizon(df)
-        for _, row in df_s.iterrows():
-            d = row.to_dict()
+        for d in df_s.to_dict("records"):
             sector = d.get("block")
             region = d.get("region")
             sector = sector if isinstance(sector, str) and sector else ""
@@ -2295,7 +2294,7 @@ async def alertas_page(request: Request, session: Optional[str] = Cookie(default
     df = _read_csv()
     tickers_disponibles = []
     if df is not None:
-        for _, r in df.sort_values("ticker").iterrows():
+        for r in df.sort_values("ticker").to_dict("records"):
             tickers_disponibles.append({"ticker": r["ticker"], "name": r.get("name", r["ticker"])})
     return templates.TemplateResponse("alertas.html", {
         "request":             request,
@@ -4320,7 +4319,7 @@ async def export_pdf(request: Request, session: Optional[str] = Cookie(default=N
     total_cost  = 0.0
 
     if df is not None:
-        for _, row in df[df["category"] == "portfolio"].iterrows():
+        for row in df[df["category"] == "portfolio"].to_dict("records"):
             t = row["ticker"]
             if t not in positions:
                 continue
@@ -4418,7 +4417,7 @@ async def rebalanceo_sugerencia(session: Optional[str] = Cookie(default=None)):
     rows_data = []
 
     if df is not None:
-        for _, row in df[df["category"] == "portfolio"].iterrows():
+        for row in df[df["category"] == "portfolio"].to_dict("records"):
             t = row["ticker"]
             if t not in positions:
                 continue
@@ -4503,7 +4502,7 @@ async def operaciones_analizar(session: Optional[str] = Cookie(default=None)):
     df  = _read_csv()
     current_prices: dict = {}
     if df is not None:
-        for _, row in df.iterrows():
+        for row in df.to_dict("records"):
             p = row.get("price")
             if p and not _is_nan(p):
                 current_prices[row["ticker"]] = float(p)
@@ -4550,8 +4549,7 @@ async def export_portfolio(session: Optional[str] = Cookie(default=None)):
     positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
     rows = []
     if df is not None:
-        for _, row in df[df["category"] == "portfolio"].iterrows():
-            d = row.to_dict()
+        for d in df[df["category"] == "portfolio"].to_dict("records"):
             ticker = d["ticker"]
             shares = avg = pnl = value = None
             if ticker in positions:
@@ -4597,8 +4595,7 @@ async def export_watchlist(session: Optional[str] = Cookie(default=None)):
     df = _read_csv()
     rows = []
     if df is not None:
-        for _, row in df[df["category"] == "watchlist"].sort_values("score", ascending=False).iterrows():
-            d = row.to_dict()
+        for d in df[df["category"] == "watchlist"].sort_values("score", ascending=False).to_dict("records"):
             rows.append({
                 "ticker": d["ticker"], "name": d.get("name", ""),
                 "price": d.get("price", ""), "score": d.get("score", ""),

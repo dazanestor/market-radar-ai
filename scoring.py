@@ -117,7 +117,6 @@ def _opportunity_label(score: float) -> str:
 
 def score_watchlist(df):
     """Scoring genérico (horizonte neutro) para compatibilidad con código existente."""
-    df = df.copy()
     weights = _WEIGHTS["medio"]
     df["score"] = df.apply(lambda row: _compute_score(row, weights), axis=1)
     df["opportunity"] = df.apply(
@@ -131,10 +130,7 @@ def score_by_horizon(df):
     """Calcula score y oportunidad usando los pesos específicos del horizonte de cada fila.
 
     Si una fila no tiene horizonte definido, usa los pesos 'medio'.
-    Añade columnas: score_h, opportunity_h (h = horizonte).
     """
-    df = df.copy()
-
     def _row_score(row):
         h = row.get("horizon") or "medio"
         if h not in _WEIGHTS:

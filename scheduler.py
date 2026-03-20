@@ -48,13 +48,13 @@ def _fmt(price):
 
 def _build_alerts(df):
     alerts = []
-    for _, row in df.iterrows():
-        if row["drawdown_52w"] < DRAWDOWN_ALERT_THRESHOLD:
+    for d in df.to_dict("records"):
+        if d["drawdown_52w"] < DRAWDOWN_ALERT_THRESHOLD:
             alerts.append(
-                f"{row['ticker']} ({row['name']}): drawdown {row['drawdown_52w']:.1f}%"
+                f"{d['ticker']} ({d['name']}): drawdown {d['drawdown_52w']:.1f}%"
             )
-        if row.get("trend") == "empeorando":
-            alerts.append(f"{row['ticker']}: drawdown en tendencia creciente esta semana")
+        if d.get("trend") == "empeorando":
+            alerts.append(f"{d['ticker']}: drawdown en tendencia creciente esta semana")
     return alerts
 
 
@@ -138,22 +138,23 @@ def job_check_price_alerts():
         try:
             df = get_latest_snapshot_as_df()
             if df is not None:
-                for _, row in df.iterrows():
-                    csv_data[row["ticker"]] = row.to_dict()
+                csv_data = {d["ticker"]: d for d in df.to_dict("records")}
         except Exception:
             logging.exception("Error leyendo snapshot para alertas avanzadas")
 
+    _currency_cache: dict = {}
     for ticker in tickers_needed:
         try:
             t = yf.Ticker(ticker)
             hist = t.history(period="2d")
             if not hist.empty:
                 price_raw = hist["Close"].iloc[-1]
-                try:
-                    currency = (t.info or {}).get("currency", "USD")
-                except Exception:
-                    currency = "USD"
-                prices[ticker] = to_eur(price_raw, currency)
+                if ticker not in _currency_cache:
+                    try:
+                        _currency_cache[ticker] = (t.fast_info.get("currency") or "USD")
+                    except Exception:
+                        _currency_cache[ticker] = "USD"
+                prices[ticker] = to_eur(price_raw, _currency_cache[ticker])
         except Exception as e:
             logging.warning("Error obteniendo precio de %s: %s", ticker, e)
 

@@ -197,21 +197,32 @@ def send_push_notification(endpoint: str, p256dh: str, auth: str,
 
 def send_push_to_all(title: str, body: str, url: str = "/alertas") -> int:
     """
-    Envía la notificación a todas las suscripciones activas.
+    Envía la notificación a todas las suscripciones activas en paralelo.
     Elimina automáticamente las suscripciones expiradas (410 o error).
     Devuelve el número de envíos exitosos.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     subs = get_all_push_subscriptions()
     if not subs:
         return 0
+
+    def _send(sub):
+        endpoint, p256dh, auth = sub
+        return endpoint, send_push_notification(endpoint, p256dh, auth, title, body, url)
+
     ok = 0
-    for endpoint, p256dh, auth in subs:
-        success = send_push_notification(endpoint, p256dh, auth, title, body, url)
-        if success:
-            ok += 1
-        else:
+    with ThreadPoolExecutor(max_workers=min(len(subs), 8)) as pool:
+        futures = [pool.submit(_send, s) for s in subs]
+        for fut in as_completed(futures):
             try:
-                delete_push_subscription(endpoint)
+                endpoint, success = fut.result()
+                if success:
+                    ok += 1
+                else:
+                    try:
+                        delete_push_subscription(endpoint)
+                    except Exception:
+                        pass
             except Exception:
                 pass
     return ok

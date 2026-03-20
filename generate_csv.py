@@ -1,7 +1,10 @@
+import logging
 import math
 import os
 from datetime import date
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from fetch_data import fetch_stock_data, to_eur, clear_fx_cache
 from database import get_trend, get_portfolio_position, get_ticker_history, get_tickers_as_yaml_dict
@@ -166,6 +169,7 @@ def generate():
                 })
 
             except Exception as e:
+                logger.exception("Error procesando ticker %s", ticker)
                 errors.append(f"{ticker}: {e}")
 
     df = pd.DataFrame(rows)

@@ -10,8 +10,28 @@ from config import ANTHROPIC_API_KEY, MODEL
 
 logger = logging.getLogger("fetch_data")
 
-_translate_cache: dict = {}
 _fx_cache: dict = {}
+
+# Caché de traducciones con TTL de 24h: {headline: (translation, timestamp)}
+_TRANSLATE_TTL = 86400
+_translate_cache: dict = {}
+
+
+def _translate_cache_get(key: str):
+    entry = _translate_cache.get(key)
+    if entry is None:
+        return None
+    value, ts = entry
+    import time as _time
+    if _time.monotonic() - ts > _TRANSLATE_TTL:
+        del _translate_cache[key]
+        return None
+    return value
+
+
+def _translate_cache_set(key: str, value: str):
+    import time as _time
+    _translate_cache[key] = (value, _time.monotonic())
 
 def to_eur(price, currency):
     """Convierte un precio a EUR usando el tipo de cambio de yfinance."""
@@ -69,12 +89,12 @@ def translate_headlines(headlines: list) -> list:
 
     to_translate = []
     for h in headlines:
-        if h in _translate_cache:
+        if _translate_cache_get(h) is not None:
             continue
         if _db_cache_available:
             cached = get_cached_translation(h)
             if cached is not None:
-                _translate_cache[h] = cached
+                _translate_cache_set(h, cached)
                 continue
         to_translate.append(h)
 
@@ -115,21 +135,21 @@ def translate_headlines(headlines: list) -> list:
 
             # Guardar en caché; si Claude devuelve menos líneas, usar original
             for orig, trans in zip(to_translate, translated):
-                _translate_cache[orig] = trans
+                _translate_cache_set(orig, trans)
                 if _db_cache_available:
                     try:
                         cache_news_translation(orig, trans)
                     except Exception:
                         pass
             for h in to_translate[len(translated):]:
-                _translate_cache[h] = h
+                _translate_cache_set(h, h)
 
         except Exception:
             logger.exception("Error traduciendo titulares con Claude")
             for h in to_translate:
-                _translate_cache[h] = h
+                _translate_cache_set(h, h)
 
-    return [_translate_cache.get(h, h) for h in headlines]
+    return [_translate_cache_get(h) or h for h in headlines]
 
 
 def get_news(ticker, n=3, translate=False):

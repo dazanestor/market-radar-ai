@@ -167,6 +167,7 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 | `/distribucion` | GET | Distribución de cartera por sector y región con barras de porcentaje |
 | `/simulador` | GET | Simulador de aportación: dado un importe, calcula cuánto comprar de cada posición |
 | `/benchmark` | GET | Comparativa cartera vs SPY (S&P500) y EWQ (Euro Stoxx) base 100 |
+| `/optimizacion` | GET | Optimización de cartera: Mínima Varianza, Máximo Sharpe (score-aware), Paridad de Riesgo + frontera eficiente |
 | `/operaciones` | GET | Historial de operaciones buy/sell por ticker |
 | `/noticias` | GET | Titulares recientes por ticker, traducidos con Claude |
 | `/ticker/{ticker}` | GET | Detalle de un ticker: fundamentales, noticias, historial drawdown |
@@ -188,6 +189,7 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 | `/chart/historial/{ticker}` | GET | PNG del drawdown histórico 30 días (tema oscuro) |
 | `/chart/valor-cartera` | GET | PNG de la evolución del valor total de cartera |
 | `/chart/benchmark` | GET | PNG comparativa cartera vs SPY/EWQ (base 100) |
+| `/chart/frontera-eficiente` | GET | PNG frontera eficiente con Capital Market Line y 4 carteras marcadas |
 | `/cartera/valor-historico` | GET | JSON historial valor cartera 90 días |
 | `/login` | GET/POST | Formulario de login |
 | `/logout` | GET | Borra cookie de sesión |

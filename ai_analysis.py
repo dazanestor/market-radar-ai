@@ -72,64 +72,158 @@ def _format_news(news_by_ticker):
         return ""
     return "## NOTICIAS RECIENTES\n" + "\n\n".join(sections)
 
-def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
-    portfolio_str = portfolio_df.to_string(index=False) if not portfolio_df.empty else "Sin posiciones."
-    watchlist_str = watchlist_df.to_string(index=False) if not watchlist_df.empty else "Sin activos en watchlist."
+def _fmt(v, suffix="", decimals=2, na="—"):
+    """Formatea un valor numérico de forma segura."""
+    if v is None:
+        return na
+    try:
+        f = float(v)
+        if math.isnan(f):
+            return na
+        return f"{f:.{decimals}f}{suffix}"
+    except (TypeError, ValueError):
+        return na
 
+
+_HORIZON_FOCUS = {
+    "corto": (
+        "CORTO PLAZO (días–3m): Prioriza señales técnicas. "
+        "Analiza RSI, momentum 3m y drawdown desde máximo. "
+        "No penalices por fundamentales débiles."
+    ),
+    "medio": (
+        "MEDIO PLAZO (3–18m): Equilibra técnico y fundamental. "
+        "Considera momentum, score, PER y ROE. "
+        "Identifica catalizadores próximos."
+    ),
+    "largo": (
+        "LARGO PLAZO (>18m): Prioriza calidad del negocio, dividendo y ventaja competitiva. "
+        "Destaca ROE, margen, deuda y yield. "
+        "Ignora ruido de corto plazo; busca si el precio está atractivo a largo."
+    ),
+}
+
+
+def _build_position_block(row) -> str:
+    """Construye un bloque de texto estructurado para una fila del DataFrame."""
+    ticker   = row.get("ticker", "?")
+    name     = row.get("name", ticker)
+    horizon  = str(row.get("horizon") or "").strip()
+    if not horizon or horizon == "nan":
+        horizon = None
+
+    horizon_label = {
+        "corto": "⚡ Corto plazo",
+        "medio": "📈 Medio plazo",
+        "largo": "🏦 Largo plazo",
+    }.get(horizon, "❓ No definido")
+
+    focus = _HORIZON_FOCUS.get(horizon, "Sin horizonte definido — usar criterio equilibrado.")
+
+    price   = _fmt(row.get("price"), suffix=" EUR")
+    dd      = _fmt(row.get("drawdown_52w"), suffix="%")
+    mom3    = _fmt(row.get("momentum_3m"), suffix="%")
+    mom6    = _fmt(row.get("momentum_6m"), suffix="%")
+    vol     = _fmt(row.get("volatility"), suffix="%")
+    rsi     = _fmt(row.get("rsi"), decimals=1)
+    div     = _fmt(row.get("dividend_yield"), suffix="%")
+    score   = _fmt(row.get("score"), decimals=1)
+    opp     = str(row.get("opportunity") or "—")
+    pnl     = _fmt(row.get("pnl"), suffix="%")
+    trend   = str(row.get("trend") or "—")
+    block   = str(row.get("block") or "—")
+    region  = str(row.get("region") or "—")
+
+    per     = _fmt(row.get("pe_ratio"), decimals=1)
+    pb      = _fmt(row.get("pb_ratio"), decimals=2)
+    roe     = _fmt(row.get("roe"), suffix="%")
+    margin  = _fmt(row.get("profit_margin"), suffix="%")
+    de      = _fmt(row.get("debt_equity"), decimals=2)
+    rev_g   = _fmt(row.get("revenue_growth"), suffix="%")
+    cap     = _fmt(row.get("market_cap_b"), decimals=1, suffix=" Bn€")
+
+    a_rec    = _fmt(row.get("analyst_rec"), decimals=1)
+    a_target = _fmt(row.get("analyst_target"), suffix=" EUR")
+    a_n      = row.get("analyst_n")
+    analyst_str = ""
+    if a_rec != "—" or a_target != "—":
+        analyst_str = f"  Analistas: rec={a_rec}/5 · target={a_target}"
+        if a_n and not math.isnan(float(a_n)) if isinstance(a_n, float) else a_n:
+            analyst_str += f" ({int(float(a_n))} analistas)"
+
+    lines = [
+        f"[{ticker}] {name} | {block} · {region} | {horizon_label}",
+        f"  Enfoque: {focus}",
+        f"  Precio: {price} | Drawdown 52s: {dd} | Momentum 3m: {mom3} | Momentum 6m: {mom6}",
+        f"  RSI(14): {rsi} | Volatilidad: {vol} | Dividendo: {div} | Tendencia: {trend}",
+        f"  Score: {score} | Oportunidad: {opp}" + (f" | P&L vs coste: {pnl}" if pnl != "—" else ""),
+        f"  PER: {per} | P/B: {pb} | ROE: {roe} | Margen: {margin} | D/E: {de} | Crec.Ing: {rev_g} | Cap: {cap}",
+    ]
+    if analyst_str:
+        lines.append(analyst_str)
+
+    return "\n".join(lines)
+
+
+def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
     macro_str = ""
     if macro:
-        macro_str = f"""
-## CONTEXTO MACRO
-- S&P 500: €{macro.get('sp500_price', '—')} | YTD (año actual): {macro.get('sp500_ytd', '—')}% | Drawdown 52s: {macro.get('sp500_drawdown', '—')}%
-- VIX (volatilidad de mercado): {macro.get('vix', '—')}
-- Bono EE.UU. 10 años: {macro.get('treasury_10y', '—')}%
-"""
+        macro_str = (
+            "*CONTEXTO MACRO*\n"
+            f"- S&P 500: €{macro.get('sp500_price', '—')} | "
+            f"YTD: {macro.get('sp500_ytd', '—')}% | "
+            f"Drawdown 52s: {macro.get('sp500_drawdown', '—')}%\n"
+            f"- VIX: {macro.get('vix', '—')}\n"
+            f"- Bono EE.UU. 10 años: {macro.get('treasury_10y', '—')}%\n"
+        )
+
+    # Build per-ticker blocks, grouped by horizon for the portfolio
+    portfolio_blocks = []
+    if not portfolio_df.empty:
+        for _, row in portfolio_df.iterrows():
+            portfolio_blocks.append(_build_position_block(row.to_dict()))
+    portfolio_str = "\n\n".join(portfolio_blocks) if portfolio_blocks else "Sin posiciones."
+
+    watchlist_blocks = []
+    if not watchlist_df.empty:
+        # Sort watchlist by score descending so Claude sees best opportunities first
+        sorted_wl = watchlist_df.sort_values("score", ascending=False) if "score" in watchlist_df.columns else watchlist_df
+        for _, row in sorted_wl.iterrows():
+            watchlist_blocks.append(_build_position_block(row.to_dict()))
+    watchlist_str = "\n\n".join(watchlist_blocks) if watchlist_blocks else "Sin activos en watchlist."
 
     news_str = _format_news(news_by_ticker)
 
-    prompt = f"""
-Eres un analista de inversiones disciplinado, estilo Buffett. Sé breve y estructurado.
-IMPORTANTE: El texto se enviará por Telegram. NO uses tablas markdown (|), NO uses ## o ### para cabeceras, NO uses **negrita** con doble asterisco. Usa *negrita* con asterisco simple, guiones para listas y texto plano.
+    prompt = f"""Eres un analista de inversiones disciplinado. Sé breve, concreto y estructurado.
+IMPORTANTE: Texto para Telegram. NO uses tablas markdown (|), NO uses ## o ###, NO uses **negrita**. Usa *negrita* con asterisco simple, guiones para listas.
+
 {macro_str}
-## CARTERA ACTUAL
+
+*INSTRUCCIONES DE ANÁLISIS POR HORIZONTE*
+Para cada activo, el campo "Enfoque" indica la metodología a aplicar:
+- Horizonte CORTO (⚡): Prioriza RSI, momentum y drawdown. No exijas fundamentales sólidos. Busca rebotes técnicos.
+- Horizonte MEDIO (📈): Equilibra técnico y fundamental. Considera momentum, PER y ROE. Identifica catalizadores.
+- Horizonte LARGO (🏦): Prioriza calidad del negocio, dividendo y ventaja competitiva. ROE, margen, D/E. Ignora ruido diario.
+- Sin horizonte (❓): Aplica criterio equilibrado, menciona que sería útil definir el horizonte.
+
+*CARTERA ACTUAL*
 {portfolio_str}
 
-## WATCHLIST
+*WATCHLIST* (ordenada por score, mayor primero)
 {watchlist_str}
 
 {news_str}
 
-Todos los precios están en EUR. Columnas de precio/técnico: price (EUR), drawdown_52w (% caída desde máx anual), \
-momentum_3m/6m (% rendimiento), volatility (volatilidad anualizada %), dividend_yield (%), \
-trend (mejorando/empeorando), pnl (% vs precio compra en EUR).
-
-Columnas fundamentales: pe_ratio (PER), pb_ratio (P/B), profit_margin (%), roe (%), \
-debt_equity (D/E), revenue_growth (% YoY), market_cap_b (capitalización en miles de millones).
-
-Columna horizonte (horizon): plazo de inversión esperado para cada activo.
-- *corto* (días – 3 meses): prioriza señales técnicas (RSI, momentum, rebotes). No exijas fundamentales sólidos.
-- *medio* (3 – 18 meses): equilibra fundamentales y momentum. Considera catalizadores próximos.
-- *largo* (>18 meses): prioriza calidad del negocio, dividendo y ventaja competitiva. Ignora ruido de corto plazo.
-Adapta siempre la recomendación al horizonte del activo.
-
-Columnas de consenso de analistas (pueden estar vacías si yfinance no dispone de datos):
-- analyst_rec: recomendación media (1=Compra fuerte, 2=Compra, 3=Neutral, 4=Venta, 5=Venta fuerte)
-- analyst_target: precio objetivo medio de los analistas en EUR
-- analyst_n: número de analistas que cubren el valor
-Cuando estén disponibles, compara el precio actual con analyst_target para estimar el potencial y menciona si el consenso respalda o contradice tu análisis.
-
 Responde en este formato exacto:
 
 *CARTERA*
-Para cada posición: acción recomendada (mantener/recortar X%/añadir X%), motivo adaptado al horizonte del activo. \
-Si hay precio objetivo de analistas, indica el potencial implícito. \
-Si recomiendas recortar o añadir, especifica el porcentaje aproximado de la posición actual.
+Para cada posición (en el orden recibido): acción recomendada (mantener / recortar X% / añadir X%), motivo adaptado estrictamente al horizonte del activo. Si hay precio objetivo de analistas, indica el potencial implícito (precio actual vs target). Máximo 2 líneas por posición.
 
 *WATCHLIST — TOP OPORTUNIDADES*
-Los 3 activos con mejor relación calidad/precio ahora, teniendo en cuenta su horizonte y el consenso de analistas cuando esté disponible.
+Los 3 activos con mejor relación calidad/precio considerando su horizonte específico. Para cada uno: por qué es atractivo ahora y qué nivel/condición lo haría más interesante aún. Si el consenso de analistas está disponible, menciónalo.
 
 *ALERTAS*
-Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, drawdown acelerado, consenso muy negativo) o "Sin alertas." si no hay.
+Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, drawdown acelerado, RSI sobrecomprado en corto plazo, consenso negativo) o "Sin alertas." si no hay ninguna.
 """
 
     response = _call_claude(prompt)

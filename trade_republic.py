@@ -20,8 +20,6 @@ import os
 import pathlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import yaml
-
 logger = logging.getLogger(__name__)
 
 TR_PHONE        = os.getenv("TR_PHONE", "")
@@ -53,23 +51,18 @@ def _build_isin_map() -> dict:
     """
     Construye el mapa ISIN → ticker con dos fuentes (por orden de prioridad):
 
-    1. Sección `tr_isin_map` en tickers.yaml (manual, máxima prioridad):
-         tr_isin_map:
-           US0378331005: AAPL
-           DE0005140008: DBK.DE
-
+    1. Tabla tr_isin_map en BD (mapeos manuales, máxima prioridad).
     2. Auto-match via yfinance: consulta yf.Ticker(t).isin para cada ticker
-       conocido en tickers.yaml en paralelo (timeout total 20 s).
+       de la BD que aún no tenga ISIN mapeado (timeout total 20 s).
     """
     import yfinance as yf
+    from database import get_tr_isin_map, get_tickers_as_yaml_dict
 
     isin_map: dict = {}
     try:
-        with open("tickers.yaml") as f:
-            data = yaml.safe_load(f) or {}
+        isin_map.update(get_tr_isin_map())
 
-        isin_map.update(data.get("tr_isin_map", {}))
-
+        data = get_tickers_as_yaml_dict()
         existing_tickers = set(isin_map.values())
         candidates = [
             t for cat in ("portfolio", "watchlist")
@@ -94,12 +87,12 @@ def _build_isin_map() -> dict:
                         isin, ticker = fut.result(timeout=3)
                         if isin and isin not in isin_map:
                             isin_map[isin] = ticker
-                            logger.debug(f"TR auto-mapeado: {isin} → {ticker}")
+                            logger.debug("TR auto-mapeado: %s → %s", isin, ticker)
                     except Exception:
                         pass
 
     except Exception as e:
-        logger.warning(f"Error construyendo isin_map: {e}")
+        logger.warning("Error construyendo isin_map: %s", e)
 
     return isin_map
 

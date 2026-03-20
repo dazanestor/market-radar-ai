@@ -459,31 +459,6 @@ def _require_csrf(request: Request, token: Optional[str]) -> None:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-_KNOWN_TICKERS_KEYS = {"portfolio", "watchlist", "tr_isin_map"}
-
-
-def _validate_tickers_schema(data: dict) -> dict:
-    """Valida y sanea la estructura básica de tickers.yaml. Devuelve solo las partes válidas."""
-    if not isinstance(data, dict):
-        logger.error("tickers.yaml: estructura inválida (se esperaba un dict)")
-        return {}
-    result = {}
-    for key, value in data.items():
-        if key not in _KNOWN_TICKERS_KEYS:
-            logger.warning("tickers.yaml: clave desconocida '%s', ignorada", key)
-            continue
-        if key in ("portfolio", "watchlist"):
-            if value is None:
-                result[key] = {}
-            elif isinstance(value, dict):
-                result[key] = value
-            else:
-                logger.error("tickers.yaml: '%s' debe ser un dict, ignorado", key)
-        else:
-            result[key] = value
-    return result
-
-
 def _load_tickers() -> dict:
     """Carga la configuración de tickers desde la BD."""
     return get_tickers_as_yaml_dict()

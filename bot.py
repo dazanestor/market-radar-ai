@@ -75,30 +75,6 @@ async def _send_long(bot, chat_id, text, parse_mode="Markdown"):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-_KNOWN_TICKERS_KEYS = {"portfolio", "watchlist", "tr_isin_map"}
-
-
-def _validate_tickers_schema(data: dict) -> dict:
-    if not isinstance(data, dict):
-        logging.error("tickers.yaml: estructura inválida (se esperaba un dict)")
-        return {}
-    result = {}
-    for key, value in data.items():
-        if key not in _KNOWN_TICKERS_KEYS:
-            logging.warning(f"tickers.yaml: clave desconocida '{key}', ignorada")
-            continue
-        if key in ("portfolio", "watchlist"):
-            if value is None:
-                result[key] = {}
-            elif isinstance(value, dict):
-                result[key] = value
-            else:
-                logging.error(f"tickers.yaml: '{key}' debe ser un dict, ignorado")
-        else:
-            result[key] = value
-    return result
-
-
 def _load_tickers() -> dict:
     return get_tickers_as_yaml_dict()
 

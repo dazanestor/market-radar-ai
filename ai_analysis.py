@@ -199,16 +199,16 @@ def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
                 lambda h: _HORIZON_ORDER.get(str(h).strip() if h and str(h) != "nan" else "", 3)
             )
             sorted_port = sorted_port.sort_values("_h_ord")
-        for _, row in sorted_port.iterrows():
-            portfolio_blocks.append(_build_position_block(row.to_dict()))
+        for d in sorted_port.to_dict("records"):
+            portfolio_blocks.append(_build_position_block(d))
     portfolio_str = "\n\n".join(portfolio_blocks) if portfolio_blocks else "Sin posiciones."
 
     watchlist_blocks = []
     if not watchlist_df.empty:
         # Watchlist ordenada por score descendente para que Claude vea las mejores oportunidades primero
         sorted_wl = watchlist_df.sort_values("score", ascending=False) if "score" in watchlist_df.columns else watchlist_df
-        for _, row in sorted_wl.iterrows():
-            watchlist_blocks.append(_build_position_block(row.to_dict()))
+        for d in sorted_wl.to_dict("records"):
+            watchlist_blocks.append(_build_position_block(d))
     watchlist_str = "\n\n".join(watchlist_blocks) if watchlist_blocks else "Sin activos en watchlist."
 
     news_str = _format_news(news_by_ticker)

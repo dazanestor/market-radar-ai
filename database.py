@@ -221,14 +221,12 @@ def save_snapshot(rows):
     )
     placeholders = ", ".join("?" * len(_SNAPSHOT_COLS))
     col_names    = ", ".join(_SNAPSHOT_COLS)
+    all_values = [tuple(row.get(col) for col in _SNAPSHOT_COLS) for row in rows]
     with _db() as conn:
-        c = conn.cursor()
-        for row in rows:
-            values = tuple(row.get(col) for col in _SNAPSHOT_COLS)
-            c.execute(
-                f"INSERT OR REPLACE INTO price_history ({col_names}) VALUES ({placeholders})",
-                values,
-            )
+        conn.executemany(
+            f"INSERT OR REPLACE INTO price_history ({col_names}) VALUES ({placeholders})",
+            all_values,
+        )
 
 def get_trend(ticker, days=5):
     with _db() as conn:

@@ -142,21 +142,25 @@ def job_check_price_alerts():
         except Exception:
             logging.exception("Error leyendo snapshot para alertas avanzadas")
 
-    _currency_cache: dict = {}
-    for ticker in tickers_needed:
+    def _fetch_price(ticker):
         try:
             t = yf.Ticker(ticker)
             hist = t.history(period="2d")
             if not hist.empty:
                 price_raw = hist["Close"].iloc[-1]
-                if ticker not in _currency_cache:
-                    try:
-                        _currency_cache[ticker] = (t.fast_info.get("currency") or "USD")
-                    except Exception:
-                        _currency_cache[ticker] = "USD"
-                prices[ticker] = to_eur(price_raw, _currency_cache[ticker])
+                try:
+                    currency = t.fast_info.get("currency") or "USD"
+                except Exception:
+                    currency = "USD"
+                return ticker, to_eur(price_raw, currency)
         except Exception as e:
             logging.warning("Error obteniendo precio de %s: %s", ticker, e)
+        return ticker, None
+
+    with ThreadPoolExecutor(max_workers=min(len(tickers_needed), 10)) as pool:
+        for ticker, price_eur in pool.map(_fetch_price, tickers_needed):
+            if price_eur is not None:
+                prices[ticker] = price_eur
 
     for row in alerts:
         alert_id, ticker, target, direction = row[0], row[1], row[2], row[3]
@@ -286,22 +290,26 @@ def job_check_exdividend():
 
     today = datetime.date.today()
     alerts = []
-    for ticker, name in all_tickers:
+
+    def _check_exdiv(ticker_name):
+        ticker, name = ticker_name
         try:
             info = yf.Ticker(ticker).info or {}
             ex_date_ts = info.get("exDividendDate")
             if not ex_date_ts:
-                continue
+                return None
             ex_date = datetime.date.fromtimestamp(ex_date_ts)
             days_until = (ex_date - today).days
             if 0 <= days_until <= 3:
                 div = info.get("dividendRate") or info.get("lastDividendValue")
                 div_str = f" (${div:.2f}/acción)" if div else ""
-                alerts.append(
-                    f"{name} ({ticker}): {ex_date.strftime('%d/%m/%Y')} en {days_until}d{div_str}"
-                )
+                return f"{name} ({ticker}): {ex_date.strftime('%d/%m/%Y')} en {days_until}d{div_str}"
         except Exception:
             logging.debug("Error obteniendo ex-dividend de %s", ticker)
+        return None
+
+    with ThreadPoolExecutor(max_workers=min(len(all_tickers), 10)) as pool:
+        alerts = [r for r in pool.map(_check_exdiv, all_tickers) if r]
 
     if alerts:
         body = "; ".join(alerts[:3])
@@ -324,8 +332,9 @@ def job_check_earnings():
         return
 
     today = datetime.date.today()
-    alerts = []
-    for ticker, name in all_tickers:
+
+    def _check_earnings(ticker_name):
+        ticker, name = ticker_name
         try:
             stock = yf.Ticker(ticker)
             cal = {}
@@ -344,7 +353,7 @@ def job_check_earnings():
                 if isinstance(ts, (int, float)):
                     earnings_date = datetime.date.fromtimestamp(ts)
             if not earnings_date:
-                continue
+                return None
             if hasattr(earnings_date, "date"):
                 earnings_date = earnings_date.date()
             days_until = (earnings_date - today).days
@@ -356,11 +365,13 @@ def job_check_earnings():
                         eps_str = f" EPS est: ${float(eps):.2f}"
                     except Exception:
                         pass
-                alerts.append(
-                    f"{name} ({ticker}): {earnings_date.strftime('%d/%m/%Y')} en {days_until}d{eps_str}"
-                )
+                return f"{name} ({ticker}): {earnings_date.strftime('%d/%m/%Y')} en {days_until}d{eps_str}"
         except Exception:
             logging.debug("Error obteniendo earnings de %s", ticker)
+        return None
+
+    with ThreadPoolExecutor(max_workers=min(len(all_tickers), 10)) as pool:
+        alerts = [r for r in pool.map(_check_earnings, all_tickers) if r]
 
     if alerts:
         body = "; ".join(alerts[:3])

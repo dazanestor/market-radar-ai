@@ -2,6 +2,7 @@ import anthropic
 import logging
 import math
 import yfinance as yf
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -10,7 +11,8 @@ from config import ANTHROPIC_API_KEY, MODEL
 
 logger = logging.getLogger("fetch_data")
 
-_fx_cache: dict = {}
+_fx_cache: dict = {}        # {currency: (rate, timestamp)}
+_FX_TTL = 3600              # 1 hora
 
 # Caché de traducciones con TTL de 24h: {headline: (translation, timestamp)}
 _TRANSLATE_TTL = 86400
@@ -35,6 +37,7 @@ def _translate_cache_set(key: str, value: str):
 
 def to_eur(price, currency):
     """Convierte un precio a EUR usando el tipo de cambio de yfinance."""
+    import time as _time
     if price is None or (isinstance(price, float) and math.isnan(price)):
         return None
     if currency == "EUR" or not currency:
@@ -43,15 +46,16 @@ def to_eur(price, currency):
     if currency == "GBp":
         price    = price / 100
         currency = "GBP"
-    if currency not in _fx_cache:
+    cached = _fx_cache.get(currency)
+    if cached is None or (_time.monotonic() - cached[1]) > _FX_TTL:
         try:
             hist = yf.Ticker(f"{currency}EUR=X").history(period="2d")
             rate = float(hist["Close"].iloc[-1]) if not hist.empty else 1.0
-            _fx_cache[currency] = rate if not math.isnan(rate) else 1.0
+            _fx_cache[currency] = (rate if not math.isnan(rate) else 1.0, _time.monotonic())
         except Exception:
             logging.warning(f"No se pudo obtener tipo de cambio {currency}EUR=X, usando 1.0 como fallback")
-            _fx_cache[currency] = 1.0
-    return price * _fx_cache[currency]
+            _fx_cache[currency] = (1.0, _time.monotonic())
+    return price * _fx_cache[currency][0]
 
 def clear_fx_cache():
     _fx_cache.clear()
@@ -181,35 +185,47 @@ def get_news(ticker, n=3, translate=False):
 
 
 def get_macro_context():
-    """Obtiene S&P500, VIX y bono a 10 años para contexto macro."""
+    """Obtiene S&P500, VIX y bono a 10 años para contexto macro (en paralelo)."""
     result = {}
 
-    try:
-        spy_hist = yf.Ticker("SPY").history(period="1y")
-        if not spy_hist.empty:
-            price_usd = spy_hist["Close"].iloc[-1]
-            price_eur = to_eur(price_usd, "USD")
-            result["sp500_price"] = round(price_eur, 2)
-            current_year = spy_hist.index[-1].year
-            ytd_data = spy_hist[spy_hist.index.year == current_year]
-            if not ytd_data.empty:
-                result["sp500_ytd"] = round((price_usd / ytd_data["Close"].iloc[0] - 1) * 100, 1)
-            result["sp500_drawdown"] = round((price_usd / spy_hist["Close"].tail(252).max() - 1) * 100, 1)
-    except Exception:
-        pass
+    def _fetch_spy():
+        try:
+            hist = yf.Ticker("SPY").history(period="1y")
+            if not hist.empty:
+                price_usd = hist["Close"].iloc[-1]
+                price_eur = to_eur(price_usd, "USD")
+                out = {"sp500_price": round(price_eur, 2)}
+                current_year = hist.index[-1].year
+                ytd_data = hist[hist.index.year == current_year]
+                if not ytd_data.empty:
+                    out["sp500_ytd"] = round((price_usd / ytd_data["Close"].iloc[0] - 1) * 100, 1)
+                out["sp500_drawdown"] = round((price_usd / hist["Close"].tail(252).max() - 1) * 100, 1)
+                return out
+        except Exception:
+            pass
+        return {}
 
-    try:
-        vix_hist = yf.Ticker("^VIX").history(period="5d")
-        if not vix_hist.empty:
-            result["vix"] = round(vix_hist["Close"].iloc[-1], 1)
-    except Exception:
-        pass
+    def _fetch_vix():
+        try:
+            hist = yf.Ticker("^VIX").history(period="5d")
+            if not hist.empty:
+                return {"vix": round(hist["Close"].iloc[-1], 1)}
+        except Exception:
+            pass
+        return {}
 
-    try:
-        tnx_hist = yf.Ticker("^TNX").history(period="5d")
-        if not tnx_hist.empty:
-            result["treasury_10y"] = round(tnx_hist["Close"].iloc[-1], 2)
-    except Exception:
-        pass
+    def _fetch_tnx():
+        try:
+            hist = yf.Ticker("^TNX").history(period="5d")
+            if not hist.empty:
+                return {"treasury_10y": round(hist["Close"].iloc[-1], 2)}
+        except Exception:
+            pass
+        return {}
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futs = [pool.submit(f) for f in (_fetch_spy, _fetch_vix, _fetch_tnx)]
+        for fut in futs:
+            result.update(fut.result())
 
     return result

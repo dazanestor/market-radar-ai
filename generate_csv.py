@@ -1,13 +1,16 @@
 import logging
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 from fetch_data import fetch_stock_data, to_eur, clear_fx_cache
-from database import get_trend, get_portfolio_position, get_ticker_history, get_tickers_as_yaml_dict
+from database import get_trend, get_all_positions, get_ticker_history, get_tickers_as_yaml_dict
+
+_MAX_WORKERS = int(os.environ.get("FETCH_WORKERS", "10"))
 
 def _safe_round(v, n=2):
     return round(v, n) if v is not None and not math.isnan(v) else None
@@ -83,6 +86,80 @@ def _detect_trend(ticker):
         return None
     return "empeorando" if newest_dd < oldest_dd else "mejorando"
 
+
+def _process_ticker(ticker, category, meta, today, portfolio_positions):
+    """Descarga y calcula métricas para un ticker. Retorna (row_dict | None, error_str | None)."""
+    try:
+        hist, dividends, info = fetch_stock_data(ticker)
+        if hist.empty:
+            # Distinguish delisted/suspended from never-seen tickers
+            if get_ticker_history(ticker, days=1):
+                return None, f"{ticker}: ⚠️ sin datos recientes (posible baja o suspensión)"
+            else:
+                return None, f"{ticker}: sin datos"
+
+        close = hist["Close"].dropna()
+        if close.empty:
+            return None, f"{ticker}: serie de precios vacía"
+
+        currency = info.get("currency", "USD")
+        price_orig = close.iloc[-1]
+        price = to_eur(price_orig, currency)
+        high_52w = to_eur(close.tail(252).max(), currency)
+        if not high_52w or math.isnan(high_52w):
+            return None, f"{ticker}: precio máximo 52s es 0 o NaN, datos corruptos"
+        drawdown = (price / high_52w - 1) * 100
+
+        base_3m_raw = close.iloc[-63] if len(close) >= 63 else None
+        base_6m_raw = close.iloc[-126] if len(close) >= 126 else None
+        base_3m_eur = to_eur(base_3m_raw, currency) if base_3m_raw is not None else None
+        base_6m_eur = to_eur(base_6m_raw, currency) if base_6m_raw is not None else None
+        momentum_3m = (price / base_3m_eur - 1) * 100 if base_3m_eur and not math.isnan(base_3m_eur) and base_3m_eur > 0 else None
+        momentum_6m = (price / base_6m_eur - 1) * 100 if base_6m_eur and not math.isnan(base_6m_eur) and base_6m_eur > 0 else None
+
+        daily_returns = close.pct_change().dropna()
+        volatility = daily_returns.tail(252).std() * (252 ** 0.5) * 100 if len(daily_returns) >= 2 else None
+
+        rsi_val = _rsi(close)
+        div_yield = _dividend_yield(dividends, price_orig)
+        fundamentals = _extract_fundamentals(info)
+        trend = _detect_trend(ticker)
+
+        pnl = None
+        if category == "portfolio":
+            position = portfolio_positions.get(ticker)
+            if position:
+                shares, avg_price = position
+                if avg_price:
+                    pnl = (price - avg_price) / avg_price * 100
+
+        return {
+            "category": category,
+            "ticker": ticker,
+            "name": meta.get("name", ticker),
+            "block": meta.get("block", "—"),
+            "region": meta.get("region", "—"),
+            "target_weight": meta.get("target_weight"),
+            "target_price": meta.get("target_price"),
+            "horizon": meta.get("horizon"),
+            "price": round(price, 2),
+            "drawdown_52w": round(drawdown, 2),
+            "momentum_3m": _safe_round(momentum_3m),
+            "momentum_6m": _safe_round(momentum_6m),
+            "volatility": _safe_round(volatility),
+            "dividend_yield": round(div_yield, 2),
+            "rsi": rsi_val,
+            "trend": trend,
+            "pnl": _safe_round(pnl),
+            **fundamentals,
+            "date": today,
+        }, None
+
+    except Exception as e:
+        logger.exception("Error procesando ticker %s", ticker)
+        return None, f"{ticker}: {e}"
+
+
 def generate():
     clear_fx_cache()
 
@@ -92,84 +169,39 @@ def generate():
         return pd.DataFrame(), [f"Error leyendo tickers de BD: {e}"]
 
     today = date.today().isoformat()
-    rows = []
-    errors = []
 
+    # Pre-fetch all portfolio positions in a single DB query
+    portfolio_positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+
+    # Build flat task list
+    tasks = []
     for category, assets in (tickers or {}).items():
         if category not in ("portfolio", "watchlist"):
             continue
         for ticker, meta in (assets or {}).items():
+            tasks.append((ticker, category, meta))
+
+    if not tasks:
+        return pd.DataFrame(), []
+
+    rows = []
+    errors = []
+
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        futures = {
+            pool.submit(_process_ticker, ticker, cat, meta, today, portfolio_positions): ticker
+            for ticker, cat, meta in tasks
+        }
+        for fut in as_completed(futures):
             try:
-                hist, dividends, info = fetch_stock_data(ticker)
-                if hist.empty:
-                    # Distinguish delisted/suspended from never-seen tickers
-                    if get_ticker_history(ticker, days=1):
-                        errors.append(f"{ticker}: ⚠️ sin datos recientes (posible baja o suspensión)")
-                    else:
-                        errors.append(f"{ticker}: sin datos")
-                    continue
-
-                close = hist["Close"].dropna()
-                if close.empty:
-                    errors.append(f"{ticker}: serie de precios vacía")
-                    continue
-
-                currency = info.get("currency", "USD")
-                price_orig = close.iloc[-1]
-                price = to_eur(price_orig, currency)
-                high_52w = to_eur(close.tail(252).max(), currency)
-                if not high_52w or math.isnan(high_52w):
-                    errors.append(f"{ticker}: precio máximo 52s es 0 o NaN, datos corruptos")
-                    continue
-                drawdown = (price / high_52w - 1) * 100
-
-                base_3m_raw = close.iloc[-63] if len(close) >= 63 else None
-                base_6m_raw = close.iloc[-126] if len(close) >= 126 else None
-                base_3m_eur = to_eur(base_3m_raw, currency) if base_3m_raw is not None else None
-                base_6m_eur = to_eur(base_6m_raw, currency) if base_6m_raw is not None else None
-                momentum_3m = (price / base_3m_eur - 1) * 100 if base_3m_eur and not math.isnan(base_3m_eur) and base_3m_eur > 0 else None
-                momentum_6m = (price / base_6m_eur - 1) * 100 if base_6m_eur and not math.isnan(base_6m_eur) and base_6m_eur > 0 else None
-
-                daily_returns = close.pct_change().dropna()
-                volatility = daily_returns.tail(252).std() * (252 ** 0.5) * 100 if not daily_returns.empty else None
-
-                rsi_val = _rsi(close)
-                div_yield = _dividend_yield(dividends, price_orig)
-                fundamentals = _extract_fundamentals(info)
-                trend = _detect_trend(ticker)
-
-                pnl = None
-                if category == "portfolio":
-                    position = get_portfolio_position(ticker)
-                    if position:
-                        shares, avg_price = position
-                        if avg_price:
-                            pnl = (price - avg_price) / avg_price * 100
-
-                rows.append({
-                    "category": category,
-                    "ticker": ticker,
-                    "name": meta.get("name", ticker),
-                    "block": meta.get("block", "—"),
-                    "region": meta.get("region", "—"),
-                    "target_weight": meta.get("target_weight"),
-                    "target_price": meta.get("target_price"),
-                    "horizon": meta.get("horizon"),
-                    "price": round(price, 2),
-                    "drawdown_52w": round(drawdown, 2),
-                    "momentum_3m": _safe_round(momentum_3m),
-                    "momentum_6m": _safe_round(momentum_6m),
-                    "volatility": _safe_round(volatility),
-                    "dividend_yield": round(div_yield, 2),
-                    "rsi": rsi_val,
-                    "trend": trend,
-                    "pnl": _safe_round(pnl),
-                    **fundamentals,
-                    "date": today,
-                })
-
+                row, err = fut.result()
+                if row:
+                    rows.append(row)
+                elif err:
+                    errors.append(err)
             except Exception as e:
-                logger.exception("Error procesando ticker %s", ticker)
+                ticker = futures[fut]
+                logger.exception("Error inesperado procesando %s", ticker)
                 errors.append(f"{ticker}: {e}")
 
     df = pd.DataFrame(rows)

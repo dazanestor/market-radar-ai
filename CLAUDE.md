@@ -363,6 +363,11 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Push paralelo**: `send_push_to_all()` en `push_utils.py` usa `ThreadPoolExecutor` (máx. 8 workers) para enviar notificaciones en paralelo.
 - **`_currency_cache` en scheduler.py**: `fast_info.get("currency")` se cachea por ticker para evitar llamadas extra a yfinance en el job de alertas.
 - **Rate limit en `/tickers/search`**: `@limiter.limit("10/minute")` añadido para prevenir abuso del endpoint de búsqueda.
+- **Paralelismo en generate_csv.py**: `_process_ticker()` se ejecuta en `ThreadPoolExecutor` (hasta 10 workers, configurable con env `FETCH_WORKERS`). Las posiciones se pre-fetchen en una sola query en lugar de N llamadas individuales.
+- **`save_snapshot()` usa `executemany()`**: inserta todos los snapshots en una sola operación en vez de N `execute()` separados.
+- **Jobs scheduler paralelizados**: `job_check_price_alerts()`, `job_check_exdividend()` y `job_check_earnings()` usan `ThreadPoolExecutor` para fetches de yfinance en paralelo.
+- **`get_macro_context()` paralelo**: SPY, VIX y TNX se descargan en paralelo con 3 workers.
+- **`_fx_cache` con TTL de 1h**: el caché de tipos de cambio expira a los 60 min en lugar de vaciarse completamente con `clear_fx_cache()`, lo que evita re-fetches innecesarios entre jobs.
 
 ## Trabajo pendiente / próximas funcionalidades
 

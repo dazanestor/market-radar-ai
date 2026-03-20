@@ -48,7 +48,7 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - **Comparativa vs benchmark**: rendimiento de cartera vs SPY (S&P500) y EWQ (Euro Stoxx) en base 100
 - **Screener reactivo**: filtra todos los tickers por sector, región, score, drawdown y oportunidad
 - **Optimización de cartera**: Mínima Varianza, Máximo Sharpe y Paridad de Riesgo con frontera eficiente; retornos esperados multi-factor combinando histórico, score del radar, precio objetivo de analistas, momentum y fundamentales
-- **Precio objetivo y notas por ticker**: `target_price` y `notes` en tickers.yaml
+- **Precio objetivo y notas por ticker**: `target_price` y `notes` por ticker, gestionados desde el dashboard
 - **Alertas ex-dividend**: aviso automático en Telegram 3 días antes de la fecha de ex-dividendo
 - Despliegue con Docker usando imagen pre-compilada de GitHub Container Registry (GHCR)
 - CI/CD con GitHub Actions: build automático multi-arquitectura (amd64 + arm64) en cada push a `main`
@@ -58,20 +58,22 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 ## Arquitectura
 
 ```
-tickers.yaml          ← tickers configurados (portfolio + watchlist)
+database.py (tickers)   ← configuración: cartera + watchlist + metadata por ticker
      |
-fetch_data.py         ← descarga datos de yfinance (precios, dividendos, fundamentales, noticias, macro)
+fetch_data.py           ← descarga datos de yfinance (precios, dividendos, fundamentales, noticias, macro)
      |
-generate_csv.py       ← calcula métricas técnicas y fundamentales, exporta CSV
+generate_csv.py         ← calcula métricas técnicas y fundamentales, guarda snapshots en BD
      |
-scoring.py            ← puntúa cada activo con score multi-factor
+scoring.py              ← puntúa cada activo con score multi-factor (pesos por horizonte)
      |
-ai_analysis.py        ← genera análisis con Claude (Anthropic)
+ai_analysis.py          ← genera análisis con Claude (Anthropic), adaptado al horizonte por ticker
      |
-bot.py                ← bot de Telegram: comandos, jobs periódicos, charts
+bot.py                  ← bot de Telegram: jobs periódicos, charts, alertas
      |
-database.py           ← persistencia SQLite (historial, posiciones, alertas, reportes)
+database.py (snapshots) ← price_history, alertas, reportes, operaciones, valor cartera
 ```
+
+> **SQLite es la única fuente de datos.** No se escriben ficheros CSV ni YAML. `tickers.yaml` solo se usa para migración inicial automática la primera vez que arranca (si la tabla `tickers` está vacía); puede borrarse después.
 
 `scheduler.py` es una alternativa standalone (sin bot) para ejecutar el análisis manualmente.
 

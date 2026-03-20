@@ -12,7 +12,7 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 - **IA**: `anthropic` SDK — Claude para análisis de informes y traducción de titulares
 - **Web**: `FastAPI` + `uvicorn` + `Jinja2` — dashboard web opcional en puerto 8589
 - **Base de datos**: SQLite con WAL mode (`data/radar.db`)
-- **Config**: `tickers.yaml` (PyYAML) para cartera y watchlist
+- **Config**: tabla `tickers` en SQLite — cartera y watchlist; `tickers.yaml` solo se usa para migración inicial (one-time) si la tabla está vacía
 - **Visualización**: `matplotlib` con backend Agg (sin display), tema oscuro
 - **Optimización de cartera**: `scipy` (SLSQP) — Mínima Varianza, Máximo Sharpe y Paridad de Riesgo con frontera eficiente
 - **Despliegue**: Docker + Docker Compose, publicado en GHCR, multi-arquitectura (amd64 + arm64)
@@ -23,15 +23,15 @@ Bot de Telegram para monitoreo de cartera e inversiones. Descarga datos de merca
 ```
 bot.py              # Bot Telegram principal: comandos, jobs APScheduler, gráficos
 scheduler.py        # Ejecución standalone (sin bot, útil con cron externo)
-generate_csv.py     # Pipeline de datos: descarga, cálculo de métricas, CSV (incluye analyst_rec/target/n de yfinance)
+generate_csv.py     # Pipeline de datos: descarga, cálculo de métricas, guarda snapshots en BD (no escribe CSV)
 fetch_data.py       # Wrappers yfinance: precios, dividendos, fundamentales, FX, noticias
 scoring.py          # Algoritmo de puntuación multi-factor (7 factores → score, pesos por horizonte)
 ai_analysis.py      # Integración Claude: genera el análisis diario
 web.py              # Dashboard FastAPI: reportes, posiciones, alertas, rebalanceo
 push_utils.py       # Web Push VAPID: genera claves, cifra payload, envía push al navegador
-database.py         # CRUD SQLite: portfolio, price_history, price_alerts, reports
+database.py         # CRUD SQLite: portfolio, tickers, price_history, price_alerts, reports, operations
 config.py           # Parsing y validación de variables de entorno
-tickers.yaml        # Cartera y watchlist del usuario (editado via comandos Telegram)
+tickers.yaml        # Solo para migración inicial; se puede eliminar una vez arrancado por primera vez
 requirements.txt    # Dependencias Python
 Dockerfile          # python:3.12-slim, usuario no-root appuser
 docker-compose.yml  # Servicios: init, market-radar (bot), market-radar-web
@@ -290,6 +290,7 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 
 ## Trampas conocidas y decisiones de diseño
 
+- **SQLite como única fuente de verdad**: la arquitectura migró de CSV + tickers.yaml a SQLite puro. `generate_csv.py` ya no escribe fichero CSV; `_read_csv()` en web.py lee de `get_latest_snapshot_as_df()`. `tickers.yaml` solo se importa una vez (migración automática en `init_db()` si la tabla `tickers` está vacía). Ambos ficheros se pueden borrar sin que la aplicación falle.
 - **Alpine.js `:style` + `style` estático**: si `:style` devuelve `''`, Alpine sobreescribe el atributo `style` completo y elimina `width`/`height`. Siempre consolidar todo en un único `:style` concatenando la parte estática + dinámica.
 - **Jinja2 y métodos dict**: `entry.items`, `cat_items.items()`, etc. resuelven al método Python `dict.items()` en lugar de la clave. Usar `entry['items']` o `dictsort` para iterar dicts en templates.
 - **NaN en Python es truthy**: `if cap_eur` pasa cuando `cap_eur` es NaN. Usar siempre `is not None` + `math.isnan()` o el helper `_is_nan()` de web.py.

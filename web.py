@@ -2781,14 +2781,14 @@ async def analistas_page(request: Request, session: Optional[str] = Cookie(defau
                 upside = (tgt_mean - current) / current * 100
             return {
                 "ticker":   t, "name": name, "cat": cat,
-                "rec_mean": round(rec_mean, 1) if rec_mean else None,
+                "rec_mean": round(rec_mean, 1) if rec_mean is not None else None,
                 "rec_key":  rec_key,
                 "n":        int(n_analysts),
-                "tgt_mean": round(tgt_mean, 2) if tgt_mean else None,
-                "tgt_high": round(tgt_high, 2) if tgt_high else None,
-                "tgt_low":  round(tgt_low, 2) if tgt_low else None,
-                "current":  round(current, 2) if current else None,
-                "upside":   round(upside, 1) if upside else None,
+                "tgt_mean": round(tgt_mean, 2) if tgt_mean is not None else None,
+                "tgt_high": round(tgt_high, 2) if tgt_high is not None else None,
+                "tgt_low":  round(tgt_low, 2) if tgt_low is not None else None,
+                "current":  round(current, 2) if current is not None else None,
+                "upside":   round(upside, 1) if upside is not None else None,
             }
 
         rows = []
@@ -2863,8 +2863,8 @@ async def earnings_page(request: Request, session: Optional[str] = Cookie(defaul
                     "ticker": t, "name": name, "cat": cat,
                     "earnings_date": str(earnings_date) if earnings_date else None,
                     "days_until": days_until,
-                    "eps_est":   round(eps_avg, 2) if eps_avg else None,
-                    "rev_est_b": round(rev_avg, 2) if rev_avg else None,
+                    "eps_est":   round(eps_avg, 2) if eps_avg is not None else None,
+                    "rev_est_b": round(rev_avg, 2) if rev_avg is not None else None,
                 }
             except Exception:
                 return {"ticker": t, "name": name, "cat": cat,
@@ -3103,7 +3103,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
         "request":   request,
         "has_data":  var_data is not None,
         "var_data":  var_data,
-        "total":     var_data["total"] if var_data else 0,
+        "total":     var_data.get("total", 0) if var_data else 0,
         "error_msg": error_msg,
     })
 
@@ -3599,8 +3599,8 @@ async def export_portfolio(session: Optional[str] = Cookie(default=None)):
                 "price": d.get("price", ""), "drawdown_52w": d.get("drawdown_52w", ""),
                 "momentum_3m": d.get("momentum_3m", ""), "score": d.get("score", ""),
                 "shares": shares or "", "avg_price": avg or "",
-                "value_eur": round(value, 2) if value else "",
-                "pnl_pct": round(pnl, 2) if pnl else "",
+                "value_eur": round(value, 2) if value is not None else "",
+                "pnl_pct": round(pnl, 2) if pnl is not None else "",
             })
 
     def _gen():

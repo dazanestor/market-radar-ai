@@ -156,7 +156,7 @@ def _build_position_block(row) -> str:
         f"  Enfoque: {focus}",
         f"  Precio: {price} | Drawdown 52s: {dd} | Momentum 3m: {mom3} | Momentum 6m: {mom6}",
         f"  RSI(14): {rsi} | Volatilidad: {vol} | Dividendo: {div} | Tendencia: {trend}",
-        f"  Score: {score} | Oportunidad: {opp}" + (f" | P&L vs coste: {pnl}" if pnl != "—" else ""),
+        f"  Score: {score} | Oportunidad: {opp}" + (f" | P&L vs coste (EUR): {pnl}" if pnl != "—" else ""),
         f"  PER: {per} | P/B: {pb} | ROE: {roe} | Margen: {margin} | D/E: {de} | Crec.Ing: {rev_g} | Cap: {cap}",
     ]
     if analyst_str:
@@ -177,16 +177,35 @@ def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
             f"- Bono EE.UU. 10 años: {macro.get('treasury_10y', '—')}%\n"
         )
 
-    # Build per-ticker blocks, grouped by horizon for the portfolio
+    # Valor total de cartera desde el último snapshot guardado en BD
+    portfolio_total_str = ""
+    try:
+        from database import get_portfolio_value_history
+        history = get_portfolio_value_history(days=3)
+        if history:
+            total_eur = history[-1][1]  # (date, total_eur, positions_count)
+            if total_eur and total_eur > 0:
+                portfolio_total_str = f"Valor total cartera (último snapshot, EUR): €{total_eur:,.0f}\n"
+    except Exception:
+        pass
+
+    # Portfolio ordenado por horizonte: corto → medio → largo → sin definir
+    _HORIZON_ORDER = {"corto": 0, "medio": 1, "largo": 2}
     portfolio_blocks = []
     if not portfolio_df.empty:
-        for _, row in portfolio_df.iterrows():
+        sorted_port = portfolio_df.copy()
+        if "horizon" in sorted_port.columns:
+            sorted_port["_h_ord"] = sorted_port["horizon"].apply(
+                lambda h: _HORIZON_ORDER.get(str(h).strip() if h and str(h) != "nan" else "", 3)
+            )
+            sorted_port = sorted_port.sort_values("_h_ord")
+        for _, row in sorted_port.iterrows():
             portfolio_blocks.append(_build_position_block(row.to_dict()))
     portfolio_str = "\n\n".join(portfolio_blocks) if portfolio_blocks else "Sin posiciones."
 
     watchlist_blocks = []
     if not watchlist_df.empty:
-        # Sort watchlist by score descending so Claude sees best opportunities first
+        # Watchlist ordenada por score descendente para que Claude vea las mejores oportunidades primero
         sorted_wl = watchlist_df.sort_values("score", ascending=False) if "score" in watchlist_df.columns else watchlist_df
         for _, row in sorted_wl.iterrows():
             watchlist_blocks.append(_build_position_block(row.to_dict()))
@@ -197,8 +216,7 @@ def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
     prompt = f"""Eres un analista de inversiones disciplinado. Sé breve, concreto y estructurado.
 IMPORTANTE: Texto para Telegram. NO uses tablas markdown (|), NO uses ## o ###, NO uses **negrita**. Usa *negrita* con asterisco simple, guiones para listas.
 
-{macro_str}
-
+{macro_str}{portfolio_total_str}
 *INSTRUCCIONES DE ANÁLISIS POR HORIZONTE*
 Para cada activo, el campo "Enfoque" indica la metodología a aplicar:
 - Horizonte CORTO (⚡): Prioriza RSI, momentum y drawdown. No exijas fundamentales sólidos. Busca rebotes técnicos.
@@ -206,7 +224,7 @@ Para cada activo, el campo "Enfoque" indica la metodología a aplicar:
 - Horizonte LARGO (🏦): Prioriza calidad del negocio, dividendo y ventaja competitiva. ROE, margen, D/E. Ignora ruido diario.
 - Sin horizonte (❓): Aplica criterio equilibrado, menciona que sería útil definir el horizonte.
 
-*CARTERA ACTUAL*
+*CARTERA ACTUAL* (ordenada por horizonte: corto → medio → largo)
 {portfolio_str}
 
 *WATCHLIST* (ordenada por score, mayor primero)
@@ -214,10 +232,13 @@ Para cada activo, el campo "Enfoque" indica la metodología a aplicar:
 
 {news_str}
 
-Responde en este formato exacto:
+Responde en este formato exacto (sin añadir secciones extra):
+
+*RESUMEN EJECUTIVO*
+1-2 frases: estado general de la cartera hoy en relación al contexto macro.
 
 *CARTERA*
-Para cada posición (en el orden recibido): acción recomendada (mantener / recortar X% / añadir X%), motivo adaptado estrictamente al horizonte del activo. Si hay precio objetivo de analistas, indica el potencial implícito (precio actual vs target). Máximo 2 líneas por posición.
+Para cada posición: acción recomendada (mantener / recortar X% / añadir X%), motivo adaptado estrictamente al horizonte del activo. Si hay precio objetivo de analistas, indica el potencial implícito (precio actual vs target). Máximo 2 líneas por posición.
 
 *WATCHLIST — TOP OPORTUNIDADES*
 Los 3 activos con mejor relación calidad/precio considerando su horizonte específico. Para cada uno: por qué es atractivo ahora y qué nivel/condición lo haría más interesante aún. Si el consenso de analistas está disponible, menciónalo.
@@ -300,13 +321,18 @@ def explain_ticker(ticker: str, notes: str, csv_row: dict, fundamentals: dict) -
 
     data_str = "\n".join(parts) if parts else "Sin datos suficientes."
 
+    horizon = csv_row.get("horizon") if csv_row else None
+    horizon_inst = _HORIZON_FOCUS.get(str(horizon).strip() if horizon and str(horizon) != "nan" else "", "")
+    horizon_line = f"\nHorizonte de inversión configurado: {horizon_inst}" if horizon_inst else ""
+
     prompt = (
-        f"Eres un analista de inversiones value. Evalúa la posición "
-        f"{ticker} ({fundamentals.get('name', '')}) en 4-5 líneas concisas:\n\n"
+        f"Eres un analista de inversiones. Evalúa la posición "
+        f"{ticker} ({fundamentals.get('name', '')}) en 4-5 líneas concisas.\n"
+        f"Todos los precios están en EUR.{horizon_line}\n\n"
         f"{data_str}\n\n"
         "Responde a: 1) ¿El score y métricas justifican mantener/ampliar/reducir? "
         "2) ¿La tesis sigue vigente o hay señales en contra? "
-        "Sé directo. Sin introducción. En español."
+        "Adapta el análisis al horizonte indicado. Sé directo. Sin introducción. En español."
     )
     return _call_claude_short(prompt, max_tokens=400)
 
@@ -336,15 +362,20 @@ def analyze_operations(ops: list, current_prices: dict) -> str:
         return ""
     lines = []
     for op in ops[:25]:
-        op_id, ticker, date, op_type, shares, price, notes = op
+        # get_operations devuelve: id, ticker, date, type, shares, price_eur, notes, commission_eur
+        op_id, ticker, date, op_type, shares, price, notes = op[:7]
+        commission = op[7] if len(op) > 7 else 1.0
         current = current_prices.get(ticker)
         pnl_str = ""
         if current and not _nan(float(current)) and price and not _nan(float(price)):
             if op_type == "buy":
-                pnl = (float(current) - float(price)) / float(price) * 100
-                pnl_str = f" → P&L actual: {pnl:+.1f}%"
+                net_cost = float(shares) * float(price) + float(commission or 1.0)
+                net_current = float(shares) * float(current)
+                pnl = (net_current - net_cost) / net_cost * 100
+                pnl_str = f" → P&L neto (comisión incl.): {pnl:+.1f}%"
+        commission_str = f" [comisión: €{float(commission or 1.0):.2f}]" if commission else ""
         lines.append(
-            f"- {date} {op_type.upper()} {ticker}: {shares:.4g} acc. a €{price:.2f}{pnl_str}"
+            f"- {date} {op_type.upper()} {ticker}: {shares:.4g} acc. a €{price:.2f}{commission_str}{pnl_str}"
             + (f" (nota: {notes})" if notes else "")
         )
     prompt = (

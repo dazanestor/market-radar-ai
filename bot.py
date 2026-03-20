@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from telegram.ext import ApplicationBuilder, ContextTypes
 
 from generate_csv import generate
-from scoring import score_watchlist
+from scoring import score_by_horizon
 from ai_analysis import analyze, check_api_health, summarize_alerts, summarize_report
 from fetch_data import get_macro_context, get_news, to_eur, clear_fx_cache
 from database import (
@@ -133,7 +133,7 @@ async def _run_report(bot, chat_id):
         await bot.send_message(chat_id=chat_id, text=f"❌ No se pudo obtener datos de ningún ticker.{detail}")
         return
 
-    df = score_watchlist(df)
+    df = score_by_horizon(df)
     save_snapshot(df.to_dict("records"))
 
     portfolio_df = df[df["category"] == "portfolio"].copy()

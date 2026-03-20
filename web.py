@@ -80,7 +80,7 @@ from database import (
 )
 from fetch_data import get_macro_context, get_news, to_eur
 from generate_csv import generate
-from scoring import score_watchlist, score_by_horizon, suggest_horizon, HORIZON_META
+from scoring import score_by_horizon, suggest_horizon, HORIZON_META
 
 logger = logging.getLogger("web")
 
@@ -267,6 +267,15 @@ def _is_nan(v) -> bool:
         return math.isnan(float(v))
     except (TypeError, ValueError):
         return False
+
+
+def _safe_float(v, default=None):
+    """Convierte v a float; devuelve default si falla o es NaN."""
+    try:
+        f = float(v)
+        return f if not math.isnan(f) else default
+    except (TypeError, ValueError):
+        return default
 
 
 def fmt_eur(v) -> str:
@@ -624,7 +633,7 @@ def _do_generate_report():
     df, _ = generate()
     if df.empty:
         return
-    df = score_watchlist(df)
+    df = score_by_horizon(df)
     save_snapshot(df.to_dict("records"))
     portfolio_df = df[df["category"] == "portfolio"].copy()
     watchlist_df = df[df["category"] == "watchlist"].copy()
@@ -1318,7 +1327,7 @@ async def dashboard(
     total_value = 0.0
 
     if df is not None:
-        df_s      = score_watchlist(df)
+        df_s      = score_by_horizon(df)
         positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
 
         for _, row in df_s[df_s["category"] == "portfolio"].iterrows():
@@ -1355,7 +1364,7 @@ async def dashboard(
             tr_cash = float(tr_cash_row[0])
         except (TypeError, ValueError):
             tr_cash = None
-    if tr_cash and total_value is not None:
+    if tr_cash is not None and total_value is not None:
         total_value += tr_cash
 
     # Antigüedad de datos: fecha de modificación del CSV
@@ -1763,7 +1772,7 @@ async def tickers_page(
         "tickers_with_position": {p["ticker"] for p in pos_data},
         "positions":             pos_data,
         "tr_status":             _tr_status(),
-        "tr_cash":               float(tr_cash_row[0]) if tr_cash_row else None,
+        "tr_cash":               _safe_float(tr_cash_row[0]) if tr_cash_row else None,
         "tr_unmatched":          tr_unmatched,
         "active_tab":            tab if tab in ("tickers", "tr") else "tickers",
         "saved":                 saved,
@@ -2200,7 +2209,7 @@ async def screener_page(request: Request, session: Optional[str] = Cookie(defaul
     regions = set()
 
     if df is not None:
-        df_s = score_watchlist(df)
+        df_s = score_by_horizon(df)
         for _, row in df_s.iterrows():
             d = row.to_dict()
             sector = d.get("block")

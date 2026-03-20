@@ -7,7 +7,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from generate_csv import generate
-from scoring import score_watchlist
+from scoring import score_by_horizon
 from ai_analysis import analyze, summarize_report
 from database import init_db, save_snapshot, save_report, vacuum_db, effective
 from fetch_data import get_macro_context, get_news
@@ -46,7 +46,7 @@ def run():
         send_telegram("❌ Error: no se pudo obtener datos de ningún ticker.")
         return
 
-    df = score_watchlist(df)
+    df = score_by_horizon(df)
     save_snapshot(df.to_dict("records"))
 
     portfolio_df = df[df["category"] == "portfolio"].copy()

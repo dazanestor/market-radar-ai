@@ -599,16 +599,17 @@ def get_latest_snapshot_as_df():
         return None
     with _db() as conn:
         df = pd.read_sql_query("""
-            SELECT ph.*
-            FROM price_history ph
-            INNER JOIN (
-                SELECT ticker, MAX(date) AS max_date
-                FROM price_history
-                GROUP BY ticker
-            ) latest ON ph.ticker = latest.ticker AND ph.date = latest.max_date
-            ORDER BY ph.category, ph.ticker
+            SELECT * FROM (
+                SELECT ph.*,
+                       ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS _rn
+                FROM price_history ph
+            ) WHERE _rn = 1
+            ORDER BY category, ticker
         """, conn)
-    return df if not df.empty else None
+    if df.empty:
+        return None
+    df.drop(columns=["_rn"], inplace=True)
+    return df
 
 
 # ── tickers (reemplaza tickers.yaml) ──────────────────────────────────────────

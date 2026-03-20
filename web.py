@@ -137,6 +137,64 @@ _opt_cache: dict = {"data": None, "ts": 0.0}
 _OPT_CACHE_TTL  = 300.0   # 5 minutos
 _opt_cache_lock = threading.RLock()
 
+# Caché de posiciones (evita N queries idénticas a portfolio por request)
+_pos_cache: dict = {"data": None, "ts": 0.0}
+_POS_CACHE_TTL  = 60.0    # 1 minuto
+_pos_cache_lock = threading.RLock()
+
+# Caché de score_by_horizon ligado al TTL del CSV
+_scored_cache: dict = {"df": None, "csv_ts": 0.0}
+_scored_cache_lock = threading.RLock()
+
+# Caché de históricos yfinance para gráficos (evita re-descargar en cada request)
+_hist_cache: dict = {}   # {ticker: (df, monotonic_ts)}
+_HIST_CACHE_TTL = 3600.0  # 1 hora
+_hist_cache_lock = threading.RLock()
+
+
+def _get_positions():
+    """get_all_positions() con caché de 60 s para evitar N queries idénticas."""
+    import time as _t
+    with _pos_cache_lock:
+        if _pos_cache["data"] is not None and _t.monotonic() - _pos_cache["ts"] < _POS_CACHE_TTL:
+            return _pos_cache["data"]
+    data = get_all_positions()
+    with _pos_cache_lock:
+        _pos_cache["data"] = data
+        _pos_cache["ts"] = _t.monotonic()
+    return data
+
+
+def _invalidate_positions_cache():
+    with _pos_cache_lock:
+        _pos_cache["data"] = None
+
+
+def _get_scored_df(df):
+    """score_by_horizon(df) con caché vinculado al TTL del CSV (misma vida útil)."""
+    import time as _t
+    with _scored_cache_lock:
+        if _scored_cache["df"] is not None and _scored_cache["csv_ts"] == _csv_cache["ts"]:
+            return _scored_cache["df"]
+    scored = score_by_horizon(df)
+    with _scored_cache_lock:
+        _scored_cache["df"] = scored
+        _scored_cache["csv_ts"] = _csv_cache["ts"]
+    return scored
+
+
+def _get_ticker_hist(ticker: str, period: str = "1y"):
+    """yf.Ticker().history() con caché en memoria de 1 h por ticker."""
+    import time as _t
+    with _hist_cache_lock:
+        entry = _hist_cache.get(ticker)
+        if entry is not None and _t.monotonic() - entry[1] < _HIST_CACHE_TTL:
+            return entry[0]
+    hist = yf.Ticker(ticker).history(period=period)
+    with _hist_cache_lock:
+        _hist_cache[ticker] = (hist, _t.monotonic())
+    return hist
+
 
 # ── Credential helpers ────────────────────────────────────────────────────────
 
@@ -645,7 +703,7 @@ def _do_generate_report():
 
     # Guardar valor total de la cartera
     try:
-        positions = get_all_positions()
+        positions = _get_positions()
         total_val = 0.0
         for ticker_p, shares_p, _ in positions:
             row_p = df[df["ticker"] == ticker_p]
@@ -750,7 +808,7 @@ async def chart_precio(ticker: str, session: Optional[str] = Cookie(default=None
 
     def _fetch():
         try:
-            return yf.Ticker(ticker).history(period="1y")
+            return _get_ticker_hist(ticker, period="1y")
         except Exception:
             logger.exception("Error obteniendo historial de %s", ticker)
             return pd.DataFrame()
@@ -1388,8 +1446,8 @@ async def dashboard(
     total_value = 0.0
 
     if df is not None:
-        df_s      = score_by_horizon(df)
-        positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+        df_s      = _get_scored_df(df)
+        positions = {row[0]: (row[1], row[2]) for row in _get_positions()}
 
         for d in df_s[df_s["category"] == "portfolio"].to_dict("records"):
             price = d.get("price")
@@ -1482,7 +1540,7 @@ async def rebalanceo_page(request: Request, session: Optional[str] = Cookie(defa
         return RedirectResponse("/login", status_code=302)
 
     df        = _read_csv()
-    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+    positions = {row[0]: (row[1], row[2]) for row in _get_positions()}
     rows_data = []
 
     if df is not None:
@@ -1551,7 +1609,7 @@ async def oportunidades_page(request: Request, session: Optional[str] = Cookie(d
     by_horizon: dict = {h: [] for h in ("corto", "medio", "largo")}
 
     if df is not None:
-        df_s = score_by_horizon(df)
+        df_s = _get_scored_df(df)
         for d in df_s.to_dict("records"):
             h = d.get("horizon") or "medio"
             if h not in by_horizon:
@@ -1786,7 +1844,7 @@ async def tickers_page(
                 yaml_names[t] = meta["name"]
 
     pos_data = []
-    for ticker_row, shares, avg_price in get_all_positions():
+    for ticker_row, shares, avg_price in _get_positions():
         price = pnl = value = name = None
         if df is not None:
             row = df[df["ticker"] == ticker_row]
@@ -1944,6 +2002,8 @@ async def tickers_enrich(
     changed = False
     def _do_enrich():
         nonlocal changed
+        # Recopilar los que necesitan enriquecimiento
+        tasks = []
         for cat in ("portfolio", "watchlist"):
             for ticker, meta in (tickers_data.get(cat) or {}).items():
                 if not isinstance(meta, dict):
@@ -1951,8 +2011,18 @@ async def tickers_enrich(
                 has_name = meta.get("name") and meta.get("name") != ticker
                 if has_name and meta.get("block") and meta.get("region") and meta.get("horizon"):
                     continue
-                enriched = _enrich_ticker_meta(ticker, dict(meta))
-                if enriched != meta:
+                tasks.append((cat, ticker, dict(meta)))
+        if not tasks:
+            return
+        # Paralelizar los fetches de yfinance (hasta 5 workers)
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        def _enrich_one(args):
+            cat, ticker, meta = args
+            return cat, ticker, _enrich_ticker_meta(ticker, meta)
+        with _TPE(max_workers=min(len(tasks), 5)) as pool:
+            for cat, ticker, enriched in pool.map(_enrich_one, tasks):
+                orig = tickers_data[cat].get(ticker, {})
+                if enriched != orig:
                     tickers_data[cat][ticker] = enriched
                     changed = True
     await asyncio.get_running_loop().run_in_executor(_executor, _do_enrich)
@@ -2015,6 +2085,7 @@ async def posiciones_add(
     t = ticker.strip().upper()
     if 0 < shares < 1_000_000 and 0 < avg_price < 1_000_000:
         upsert_position(t, shares, avg_price)
+        _invalidate_positions_cache()
         return RedirectResponse(f"/tickers?saved={t}", status_code=303)
     return RedirectResponse("/tickers?error=datos_invalidos", status_code=303)
 
@@ -2030,6 +2101,7 @@ async def posiciones_delete(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     delete_position(ticker)
+    _invalidate_positions_cache()
     return RedirectResponse("/tickers", status_code=303)
 
 
@@ -2113,7 +2185,7 @@ async def distribucion_page(request: Request, session: Optional[str] = Cookie(de
         return RedirectResponse("/login", status_code=302)
 
     df = _read_csv()
-    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+    positions = {row[0]: (row[1], row[2]) for row in _get_positions()}
 
     by_sector = {}
     by_region = {}
@@ -2165,7 +2237,7 @@ async def simulador_page(
         return RedirectResponse("/login", status_code=302)
 
     df = _read_csv()
-    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+    positions = {row[0]: (row[1], row[2]) for row in _get_positions()}
     suggestions = []
 
     if df is not None and importe > 0 and positions:
@@ -2237,7 +2309,7 @@ async def benchmark_page(request: Request, session: Optional[str] = Cookie(defau
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
 
-    positions = get_all_positions()
+    positions = _get_positions()
     has_positions = bool(positions)
     value_history = get_portfolio_value_history(days=365)
     has_history = len(value_history) >= 5
@@ -2263,7 +2335,7 @@ async def screener_page(request: Request, session: Optional[str] = Cookie(defaul
     regions = set()
 
     if df is not None:
-        df_s = score_by_horizon(df)
+        df_s = _get_scored_df(df)
         for d in df_s.to_dict("records"):
             sector = d.get("block")
             region = d.get("region")
@@ -2563,6 +2635,9 @@ async def tr_sync(
     if yaml_changed:
         _save_tickers(tickers_data)
 
+    if synced > 0:
+        _invalidate_positions_cache()
+
     if cash_eur is not None:
         set_tr_cache("cash_eur", str(cash_eur))
     set_tr_cache("tr_unmatched", json.dumps(unmatched))
@@ -2684,7 +2759,7 @@ async def dividendos_page(request: Request, session: Optional[str] = Cookie(defa
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
 
-    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+    positions = {row[0]: (row[1], row[2]) for row in _get_positions()}
 
     def _fetch():
         from collections import defaultdict
@@ -3006,7 +3081,7 @@ async def earnings_page(request: Request, session: Optional[str] = Cookie(defaul
 async def correlacion_page(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
-    positions = get_all_positions()
+    positions = _get_positions()
     tickers   = [r[0] for r in positions]
     return templates.TemplateResponse("correlacion.html", {
         "request": request, "tickers": tickers, "n": len(tickers),
@@ -3018,7 +3093,7 @@ async def chart_correlacion(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
 
-    positions = get_all_positions()
+    positions = _get_positions()
     tickers   = [r[0] for r in positions]
     if len(tickers) < 2:
         raise HTTPException(status_code=400, detail="Se necesitan al menos 2 posiciones")
@@ -3084,7 +3159,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
         import warnings
         warnings.filterwarnings("ignore")
         df        = _read_csv()
-        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
         if df is None:
             return {"_error": "csv"}
         if not positions:
@@ -3220,7 +3295,7 @@ async def chart_riesgo_returns(session: Optional[str] = Cookie(default=None)):
 
     def _fetch():
         df        = _read_csv()
-        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
         if not positions or df is None:
             return None
         values = {}
@@ -3534,7 +3609,7 @@ async def optimizacion_page(request: Request, session: Optional[str] = Cookie(de
         return RedirectResponse("/login", status_code=302)
 
     df = _read_csv()
-    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
 
     if df is None or not positions:
         return templates.TemplateResponse("optimizacion.html", {
@@ -3559,7 +3634,7 @@ async def chart_frontera_eficiente(session: Optional[str] = Cookie(default=None)
         raise HTTPException(status_code=401)
 
     df = _read_csv()
-    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
     if df is None or not positions:
         raise HTTPException(status_code=400, detail="Sin datos")
 
@@ -3887,7 +3962,7 @@ async def montecarlo_page(request: Request, session: Optional[str] = Cookie(defa
         import warnings
         warnings.filterwarnings("ignore")
         df        = _read_csv()
-        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
         if df is None or not positions:
             return None, None
 
@@ -3987,7 +4062,7 @@ async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
         import warnings
         warnings.filterwarnings("ignore")
         df        = _read_csv()
-        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
         if df is None or not positions:
             return None
 
@@ -4076,7 +4151,7 @@ async def stress_test_page(request: Request, session: Optional[str] = Cookie(def
         return RedirectResponse("/login", status_code=302)
 
     df        = _read_csv()
-    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
 
     portfolio_data = []
     total_current = 0.0
@@ -4174,6 +4249,7 @@ async def move_to_portfolio(
     tickers["portfolio"] = portfolio
     _save_tickers(tickers)
     upsert_position(t, shares, avg_price)
+    _invalidate_positions_cache()
     return RedirectResponse("/tickers?tab=tickers&saved=1", status_code=303)
 
 
@@ -4234,7 +4310,7 @@ async def chart_treemap(session: Optional[str] = Cookie(default=None)):
 
     def _make():
         df        = _read_csv()
-        positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+        positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
         if df is None or not positions:
             return None
 
@@ -4313,7 +4389,7 @@ async def export_pdf(request: Request, session: Optional[str] = Cookie(default=N
         return RedirectResponse("/login", status_code=302)
 
     df        = _read_csv()
-    positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
     rows_data = []
     total_value = 0.0
     total_cost  = 0.0
@@ -4413,7 +4489,7 @@ async def rebalanceo_sugerencia(session: Optional[str] = Cookie(default=None)):
         return JSONResponse({"error": "No autenticado"}, status_code=401)
 
     df        = _read_csv()
-    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+    positions = {row[0]: (row[1], row[2]) for row in _get_positions()}
     rows_data = []
 
     if df is not None:
@@ -4546,7 +4622,7 @@ async def export_portfolio(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     df = _read_csv()
-    positions = {row[0]: (row[1], row[2]) for row in get_all_positions()}
+    positions = {row[0]: (row[1], row[2]) for row in _get_positions()}
     rows = []
     if df is not None:
         for d in df[df["category"] == "portfolio"].to_dict("records"):

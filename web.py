@@ -1457,7 +1457,7 @@ async def rebalanceo_page(request: Request, session: Optional[str] = Cookie(defa
 
     for r in rows_data:
         r["current_w"] = r["value"] / total * 100 if total else 0.0
-        if r["target_w"]:
+        if r["target_w"] is not None:
             diff = r["current_w"] - r["target_w"]
             r["diff"] = diff
             if abs(diff) < 2:
@@ -2145,7 +2145,7 @@ async def simulador_page(
 
         for r in rows_data:
             r["current_w"] = r["value"] / total_value * 100 if total_value else 0
-            r["target_w_eff"] = r["target_w"] if r["target_w"] else (100 / len(rows_data) if rows_data else 0)
+            r["target_w_eff"] = r["target_w"] if r["target_w"] is not None else (100 / len(rows_data) if rows_data else 0)
 
         # Compute how much each position needs to reach target weight in new total
         for r in rows_data:

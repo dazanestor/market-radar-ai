@@ -486,7 +486,7 @@ async def job_check_earnings(context: ContextTypes.DEFAULT_TYPE):
             days_until = (earnings_date - today).days
             if 0 <= days_until <= 7:
                 eps_str = ""
-                eps = cal.get("EPS Estimate")
+                eps = cal.get("Earnings Average") or cal.get("EPS Estimate") or cal.get("epsAverage")
                 if eps is not None:
                     try:
                         eps_str = f" (EPS est: ${float(eps):.2f})"

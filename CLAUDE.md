@@ -395,14 +395,17 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Alerta automática desde target_price**: checkbox en `/tickers/update`; si marcado y `target_price` definido, crea `price_alert` automáticamente con dirección inferida del precio actual.
 - **Score actual en formulario de alertas**: `/alertas` pasa dict `{ticker: score}` al template; Alpine.js muestra el score actual al seleccionar tipo `score`.
 - **`tojson` Jinja2 filter**: registrado en `templates.env.filters` para serializar Python dicts/lists a JSON seguro en templates.
+- **XSS modal watchlist (dashboard.html)**: `onclick` inline con `{{ row.name }}` podía romper el HTML si el nombre contenía comillas dobles. Reemplazado con `data-ticker` y `data-name` attributes leídos via `this.dataset.*`.
+- **Import muerto `clear_fx_cache` (scheduler.py)**: función eliminada de `fetch_data.py` pero seguía importándose y llamándose en `job_check_price_alerts()`. Eliminados import y llamada.
+- **P&L realizado sin comisiones (web.py)**: `pnl_realized = total_sold - total_bought` no descontaba comisiones. Corregido: `pnl_net = total_sold - total_bought - total_commissions`.
+- **Stat card divisas sin contexto (distribucion.html)**: la tarjeta "Divisas distintas" solo mostraba el número. Añadido `stat-sub` con los códigos de divisa (ej. EUR · USD · GBP).
+- **`/api/upcoming-events` lento**: scheduler ahora guarda resultado en `settings("upcoming_exdiv_cache")` y `settings("upcoming_earnings_cache")` tras cada job; el endpoint lee de BD en lugar de llamar a yfinance en tiempo real.
 
 ## Trabajo pendiente / próximas funcionalidades
 
 - **Tests automatizados**: no hay suite de tests. Validación manual via scheduler/web.
 - **CSRF no en formularios de login/setup**: los endpoints de login no necesitan CSRF (no requieren sesión previa); el CSRF token global cubre todos los formularios de usuario autenticado.
 - **Web Push require HTTPS en producción**: los Service Workers solo se registran en orígenes seguros. En `localhost` funciona sin TLS. En producción se necesita reverse proxy con TLS (Cloudflare Tunnel, Caddy, nginx).
-- **`/api/upcoming-events` puede ser lento**: hace fetches yfinance en paralelo (5 workers) pero en carteras grandes puede tardar varios segundos. Considerar pre-carga en job scheduler y caché en BD.
-
 ## CI/CD
 
 GitHub Actions en `.github/workflows/docker-publish.yml`:

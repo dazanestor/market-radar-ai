@@ -684,7 +684,7 @@ def _safe_pct(v) -> Optional[float]:
 def _tr_status() -> str:
     """
     Retorna el estado del módulo Trade Republic:
-      not_configured — faltan TR_PHONE / TR_PIN en el entorno
+      not_configured — faltan TR_PHONE / TR_PIN (BD o env)
       needs_setup    — credenciales OK pero keyfile no existe
       setup_pending  — setup iniciado, esperando código SMS
       ready          — keyfile presente, listo para sincronizar

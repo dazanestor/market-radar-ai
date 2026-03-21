@@ -22,22 +22,44 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
-TR_PHONE        = os.getenv("TR_PHONE", "")
-TR_PIN          = os.getenv("TR_PIN", "")
-TR_COOKIES_FILE = os.getenv("TR_COOKIES_FILE", "data/tr_cookies.txt")
-
 _SETUP_STATE_FILE = pathlib.Path("data/tr_setup.json")
+
+
+# ── Lectores BD-first (BD > env > default) ────────────────────────────────────
+
+def _tr_phone() -> str:
+    try:
+        from database import get_setting
+        return get_setting("TR_PHONE") or os.getenv("TR_PHONE", "")
+    except Exception:
+        return os.getenv("TR_PHONE", "")
+
+
+def _tr_pin() -> str:
+    try:
+        from database import get_setting
+        return get_setting("TR_PIN") or os.getenv("TR_PIN", "")
+    except Exception:
+        return os.getenv("TR_PIN", "")
+
+
+def _tr_cookies_file() -> str:
+    try:
+        from database import get_setting
+        return get_setting("TR_COOKIES_FILE") or os.getenv("TR_COOKIES_FILE", "data/tr_cookies.txt")
+    except Exception:
+        return os.getenv("TR_COOKIES_FILE", "data/tr_cookies.txt")
 
 
 # ── Estado del módulo ──────────────────────────────────────────────────────────
 
 def is_configured() -> bool:
-    return bool(TR_PHONE and TR_PIN)
+    return bool(_tr_phone() and _tr_pin())
 
 
 def is_setup() -> bool:
     """True si el fichero de cookies existe (sesión web activa)."""
-    return pathlib.Path(TR_COOKIES_FILE).exists()
+    return pathlib.Path(_tr_cookies_file()).exists()
 
 
 def has_pending_setup() -> bool:
@@ -102,10 +124,10 @@ def _build_isin_map() -> dict:
 def _make_tr():
     from pytr.api import TradeRepublicApi
     return TradeRepublicApi(
-        phone_no=TR_PHONE,
-        pin=TR_PIN,
+        phone_no=_tr_phone(),
+        pin=_tr_pin(),
         save_cookies=True,
-        cookies_file=TR_COOKIES_FILE,
+        cookies_file=_tr_cookies_file(),
     )
 
 
@@ -370,7 +392,7 @@ def sync_positions() -> tuple:
     Retorna (positions, cash_eur, transactions).
     """
     if not is_configured():
-        raise ValueError("TR_PHONE y TR_PIN no están configurados en .env")
+        raise ValueError("TR_PHONE y TR_PIN no están configurados. Añádelos en Ajustes → Trade Republic.")
     if not is_setup():
         raise ValueError(
             "Dispositivo no vinculado. Usa la sección Trade Republic en Posiciones."
@@ -384,7 +406,7 @@ def get_portfolio_history(timeframe: str = "1y") -> list:
     timeframe: "1d" | "1w" | "1m" | "3m" | "6m" | "1y" | "max"
     """
     if not is_configured():
-        raise ValueError("TR_PHONE y TR_PIN no están configurados.")
+        raise ValueError("TR_PHONE y TR_PIN no están configurados. Añádelos en Ajustes → Trade Republic.")
     if not is_setup():
         raise ValueError("Dispositivo no vinculado.")
     return asyncio.run(_async_portfolio_history(timeframe))
@@ -398,7 +420,7 @@ def setup_device() -> str:
     El usuario verá un código de 4 dígitos en su móvil.
     """
     if not is_configured():
-        raise ValueError("TR_PHONE y TR_PIN no están configurados en .env")
+        raise ValueError("TR_PHONE y TR_PIN no están configurados. Añádelos en Ajustes → Trade Republic.")
 
     tr = _make_tr()
     try:
@@ -427,7 +449,7 @@ def complete_setup(code: str) -> str:
 
     state = json.loads(_SETUP_STATE_FILE.read_text())
 
-    pathlib.Path(TR_COOKIES_FILE).parent.mkdir(parents=True, exist_ok=True)
+    pathlib.Path(_tr_cookies_file()).parent.mkdir(parents=True, exist_ok=True)
     tr = _make_tr()
     tr._process_id = state["process_id"]
 
@@ -438,7 +460,7 @@ def complete_setup(code: str) -> str:
 
     _SETUP_STATE_FILE.unlink(missing_ok=True)
 
-    if not pathlib.Path(TR_COOKIES_FILE).exists():
+    if not pathlib.Path(_tr_cookies_file()).exists():
         raise ValueError("No se pudo guardar la sesión. Reinicia el proceso.")
 
     return "Trade Republic vinculado correctamente. Sesión guardada."

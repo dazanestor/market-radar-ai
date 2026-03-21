@@ -373,6 +373,10 @@ Cada ticker admite los siguientes campos en su metadata:
 - **`_get_ticker_hist(ticker)` con caché de 1 h**: los históricos yfinance para gráficos se cachean en memoria; `/chart/precio/{ticker}` no descarga de nuevo hasta que expire.
 - **`/tickers/enrich` paralelo**: los fetches de yfinance para enriquecer tickers se ejecutan con hasta 5 workers concurrentes (antes secuencial, 10 tickers ≈ 30 s → ≈ 6 s).
 - **`get_latest_snapshot_as_df()` usa `ROW_NUMBER() OVER`**: reemplaza el `GROUP BY + INNER JOIN` por window function, más eficiente en tablas grandes.
+- **`_invalidate_csv_cache()` limpia todos los cachés dependientes**: al generar nuevo reporte también invalida `_scored_cache` e `_hist_cache` para garantizar coherencia.
+- **`_get_ticker_hist()` en todos los endpoints**: correlación, riesgo, optimización y benchmark usan el caché de 1 h; segunda carga es instantánea.
+- **Backtesting pre-fetch paralelo**: los históricos de 2 años de todos los tickers únicos se descargan en paralelo antes de iterar los rows del scoring histórico.
+- **Prompt caching Claude**: `_call_claude(use_cache=True)` activa `cache_control: ephemeral` en el informe diario; ahorra tokens en reintentos y llamadas repetidas.
 
 ## Trabajo pendiente / próximas funcionalidades
 

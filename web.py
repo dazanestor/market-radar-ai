@@ -4107,7 +4107,7 @@ async def backtesting_page(request: Request, session: Optional[str] = Cookie(def
                 ORDER BY date ASC
             """).fetchall()
         if not rows:
-            return []
+            return [], {}, []
 
         # Pre-fetch históricos en paralelo para todos los tickers únicos
         unique_tickers = list({r[0] for r in rows})
@@ -4349,7 +4349,7 @@ async def montecarlo_page(request: Request, session: Optional[str] = Cookie(defa
         df        = _read_csv()
         positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
         if df is None or not positions:
-            return None, None
+            return None
 
         values = {}
         vols   = {}
@@ -4374,7 +4374,7 @@ async def montecarlo_page(request: Request, session: Optional[str] = Cookie(defa
                 rets[ticker] = 0.07
 
         if not values:
-            return None, None
+            return None
 
         total    = sum(values.values())
         weights  = {t: v / total for t, v in values.items()}
@@ -4417,20 +4417,9 @@ async def montecarlo_page(request: Request, session: Optional[str] = Cookie(defa
             "port_mu": round(port_mu * 100, 2),
             "port_sig": round(port_sig * 100, 2),
         }
-        # Store paths for chart (sample 100 paths to reduce data)
-        sample_idx = rng.choice(N_PATHS, size=min(100, N_PATHS), replace=False)
-        paths_sample_3y = paths_3y[sample_idx, :]
-        # Compute percentile curves
-        pct_curves = {
-            "p10": list(np.percentile(paths_3y, 10, axis=0).round(2)),
-            "p25": list(np.percentile(paths_3y, 25, axis=0).round(2)),
-            "p50": list(np.percentile(paths_3y, 50, axis=0).round(2)),
-            "p75": list(np.percentile(paths_3y, 75, axis=0).round(2)),
-            "p90": list(np.percentile(paths_3y, 90, axis=0).round(2)),
-        }
-        return stats, pct_curves
+        return stats
 
-    stats, pct_curves = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
+    stats = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
     return templates.TemplateResponse("montecarlo.html", {
         "request": request,
         "stats":   stats,

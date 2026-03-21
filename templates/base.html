@@ -167,6 +167,12 @@
     ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #444c56; }
 
+    /* Sidebar group headers */
+    .sg-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 7px 12px; background: none; border: none; color: #484f58; cursor: pointer; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 6px; border-radius: 6px; transition: color 0.12s, background 0.12s; }
+    .sg-btn:hover { color: #8b949e; background: rgba(255,255,255,0.03); }
+    .sg-btn.sg-active { color: #8b949e; }
+    .sg-chevron { flex-shrink: 0; transition: transform 0.18s; }
+
     /* Help tooltip icon */
     .help-btn { background: none; border: none; cursor: pointer; padding: 0 0 0 4px; line-height: 1; color: #484f58; vertical-align: middle; display: inline-flex; align-items: center; transition: color 0.12s; font-size: 11px; }
     .help-btn:hover { color: #8b949e; }
@@ -221,110 +227,149 @@
       </form>
     </div>
 
-    <nav class="sidebar-nav" onclick="closeSidebar()">
+    <nav class="sidebar-nav">
       {% set path = request.url.path %}
-      <div class="sidebar-section">Análisis</div>
-      <a href="/"          class="nav-link {% if path == '/' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-        Dashboard
-      </a>
-      <a href="/oportunidades" class="nav-link {% if path == '/oportunidades' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-        Oportunidades
-      </a>
-      <a href="/screener" class="nav-link {% if path == '/screener' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
-        Screener
-      </a>
-      <a href="/rebalanceo" class="nav-link {% if path == '/rebalanceo' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/></svg>
-        Rebalanceo
-      </a>
-      <a href="/simulador" class="nav-link {% if path == '/simulador' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/><path d="M16 15l2 2 4-4"/></svg>
-        Simulador
-      </a>
-      <a href="/distribucion" class="nav-link {% if path == '/distribucion' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg>
-        Distribución
-      </a>
-      <a href="/benchmark" class="nav-link {% if path == '/benchmark' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
-        Benchmark
-      </a>
-      <a href="/dividendos" class="nav-link {% if path == '/dividendos' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-        Dividendos
-      </a>
-      <a href="/noticias"  class="nav-link {% if path == '/noticias' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
-        Noticias
-      </a>
-      <a href="/reportes"  class="nav-link {% if path == '/reportes' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-        Reportes
-      </a>
+      {% set in_cartera  = path in ['/', '/oportunidades', '/rebalanceo', '/simulador', '/distribucion'] %}
+      {% set in_analisis = path in ['/screener', '/riesgo', '/correlacion', '/montecarlo', '/stress-test', '/backtesting', '/optimizacion', '/treemap'] %}
+      {% set in_mercado  = path in ['/noticias', '/analistas', '/dividendos', '/earnings', '/benchmark', '/reportes'] %}
+      {% set in_gestion  = path in ['/tickers', '/posiciones', '/alertas', '/operaciones', '/fiscalidad'] or path.startswith('/tr/') %}
 
-      <div class="sidebar-section" style="margin-top:10px">Análisis avanzado</div>
-      <a href="/analistas" class="nav-link {% if path == '/analistas' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-        Consenso analistas
-      </a>
-      <a href="/earnings" class="nav-link {% if path == '/earnings' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        Earnings
-      </a>
-      <a href="/correlacion" class="nav-link {% if path == '/correlacion' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Correlación
-      </a>
-      <a href="/riesgo" class="nav-link {% if path == '/riesgo' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        Riesgo (VaR + MC)
-      </a>
-      <a href="/montecarlo" class="nav-link {% if path == '/montecarlo' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Monte Carlo
-      </a>
-      <a href="/stress-test" class="nav-link {% if path == '/stress-test' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/></svg>
-        Stress Testing
-      </a>
-      <a href="/treemap" class="nav-link {% if path == '/treemap' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-        Treemap cartera
-      </a>
-      <a href="/optimizacion" class="nav-link {% if path == '/optimizacion' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07M8.46 8.46a5 5 0 000 7.07"/></svg>
-        Optimización
-      </a>
-      <a href="/backtesting" class="nav-link {% if path == '/backtesting' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Backtesting score
-      </a>
-      <div class="sidebar-section" style="margin-top:10px">Gestión</div>
-      <a href="/tickers"   class="nav-link {% if path == '/tickers' or path == '/posiciones' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
-        Tickers y posiciones
-      </a>
-      <a href="/alertas"   class="nav-link {% if path == '/alertas' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-        Alertas
-      </a>
-      <a href="/operaciones" class="nav-link {% if path == '/operaciones' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/><path d="M15 3v4a1 1 0 001 1h4"/></svg>
-        Operaciones
-      </a>
-      <a href="/fiscalidad" class="nav-link {% if path == '/fiscalidad' %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
-        Fiscalidad FIFO
-      </a>
+      <!-- ── Cartera ── -->
+      <div x-data="{ open: false }" x-init="open = initGroup('cartera', {{ 'true' if in_cartera else 'false' }}, true); $watch('open', v => localStorage.setItem('sg_cartera', v?'1':'0'))">
+        <button @click.stop="open = !open" class="sg-btn {% if in_cartera %}sg-active{% endif %}">
+          <span>Cartera</span>
+          <svg class="sg-chevron" width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round" :style="open?'transform:rotate(90deg)':''"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div x-show="open" x-cloak>
+          <a href="/" class="nav-link {% if path == '/' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            Dashboard
+          </a>
+          <a href="/oportunidades" class="nav-link {% if path == '/oportunidades' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Oportunidades
+          </a>
+          <a href="/rebalanceo" class="nav-link {% if path == '/rebalanceo' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/></svg>
+            Rebalanceo
+          </a>
+          <a href="/simulador" class="nav-link {% if path == '/simulador' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/><path d="M16 15l2 2 4-4"/></svg>
+            Simulador
+          </a>
+          <a href="/distribucion" class="nav-link {% if path == '/distribucion' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg>
+            Distribución
+          </a>
+        </div>
+      </div>
 
-      <div class="sidebar-section" style="margin-top:10px">Trade Republic</div>
-      <a href="/tr/historial" class="nav-link {% if path.startswith('/tr/') %}active{% endif %}">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
-        Depósito &amp; Historial
-      </a>
+      <!-- ── Análisis avanzado ── -->
+      <div x-data="{ open: false }" x-init="open = initGroup('analisis', {{ 'true' if in_analisis else 'false' }}, false); $watch('open', v => localStorage.setItem('sg_analisis', v?'1':'0'))">
+        <button @click.stop="open = !open" class="sg-btn {% if in_analisis %}sg-active{% endif %}">
+          <span>Análisis</span>
+          <svg class="sg-chevron" width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round" :style="open?'transform:rotate(90deg)':''"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div x-show="open" x-cloak>
+          <a href="/screener" class="nav-link {% if path == '/screener' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+            Screener
+          </a>
+          <a href="/riesgo" class="nav-link {% if path == '/riesgo' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Riesgo (VaR)
+          </a>
+          <a href="/correlacion" class="nav-link {% if path == '/correlacion' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Correlación
+          </a>
+          <a href="/montecarlo" class="nav-link {% if path == '/montecarlo' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Monte Carlo
+          </a>
+          <a href="/stress-test" class="nav-link {% if path == '/stress-test' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/></svg>
+            Stress Testing
+          </a>
+          <a href="/backtesting" class="nav-link {% if path == '/backtesting' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Backtesting
+          </a>
+          <a href="/optimizacion" class="nav-link {% if path == '/optimizacion' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07M8.46 8.46a5 5 0 000 7.07"/></svg>
+            Optimización
+          </a>
+          <a href="/treemap" class="nav-link {% if path == '/treemap' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+            Treemap
+          </a>
+        </div>
+      </div>
+
+      <!-- ── Mercado ── -->
+      <div x-data="{ open: false }" x-init="open = initGroup('mercado', {{ 'true' if in_mercado else 'false' }}, false); $watch('open', v => localStorage.setItem('sg_mercado', v?'1':'0'))">
+        <button @click.stop="open = !open" class="sg-btn {% if in_mercado %}sg-active{% endif %}">
+          <span>Mercado</span>
+          <svg class="sg-chevron" width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round" :style="open?'transform:rotate(90deg)':''"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div x-show="open" x-cloak>
+          <a href="/noticias" class="nav-link {% if path == '/noticias' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+            Noticias
+          </a>
+          <a href="/analistas" class="nav-link {% if path == '/analistas' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+            Analistas
+          </a>
+          <a href="/dividendos" class="nav-link {% if path == '/dividendos' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            Dividendos
+          </a>
+          <a href="/earnings" class="nav-link {% if path == '/earnings' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Earnings
+          </a>
+          <a href="/benchmark" class="nav-link {% if path == '/benchmark' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+            Benchmark
+          </a>
+          <a href="/reportes" class="nav-link {% if path == '/reportes' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Informes IA
+          </a>
+        </div>
+      </div>
+
+      <!-- ── Gestión ── -->
+      <div x-data="{ open: false }" x-init="open = initGroup('gestion', {{ 'true' if in_gestion else 'false' }}, false); $watch('open', v => localStorage.setItem('sg_gestion', v?'1':'0'))">
+        <button @click.stop="open = !open" class="sg-btn {% if in_gestion %}sg-active{% endif %}">
+          <span>Gestión</span>
+          <svg class="sg-chevron" width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round" :style="open?'transform:rotate(90deg)':''"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div x-show="open" x-cloak>
+          <a href="/tickers" class="nav-link {% if path in ['/tickers', '/posiciones'] %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+            Tickers y posiciones
+          </a>
+          <a href="/alertas" class="nav-link {% if path == '/alertas' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+            Alertas
+          </a>
+          <a href="/operaciones" class="nav-link {% if path == '/operaciones' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/><path d="M15 3v4a1 1 0 001 1h4"/></svg>
+            Operaciones
+          </a>
+          <a href="/fiscalidad" class="nav-link {% if path == '/fiscalidad' %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg>
+            Fiscalidad FIFO
+          </a>
+          <a href="/tr/historial" class="nav-link {% if path.startswith('/tr/') %}active{% endif %}" onclick="closeSidebar()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+            Trade Republic
+          </a>
+        </div>
+      </div>
+
     </nav>
 
     <div class="sidebar-footer">
@@ -408,6 +453,11 @@
       }, 10);
     };
   })();
+  function initGroup(key, forceOpen, defaultOpen) {
+    if (forceOpen) return true;
+    var saved = localStorage.getItem('sg_' + key);
+    return saved !== null ? saved === '1' : defaultOpen;
+  }
   var DESKTOP = 769;
   function _sidebarSetState(open) {
     document.getElementById('sidebar').classList.toggle('open', open);

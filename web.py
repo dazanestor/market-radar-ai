@@ -184,15 +184,26 @@ def _get_scored_df(df):
 
 
 def _get_ticker_hist(ticker: str, period: str = "1y"):
-    """yf.Ticker().history() con caché en memoria de 1 h por ticker."""
+    """yf.Ticker().history() con caché en memoria de 1 h por ticker.
+
+    Double-checked locking: evita descargas duplicadas cuando dos threads
+    piden el mismo ticker con caché expirado simultáneamente.
+    """
     import time as _t
+    key = f"{ticker}:{period}"
     with _hist_cache_lock:
-        entry = _hist_cache.get(ticker)
+        entry = _hist_cache.get(key)
         if entry is not None and _t.monotonic() - entry[1] < _HIST_CACHE_TTL:
             return entry[0]
+    # Fetch fuera del lock para no bloquear otros tickers,
+    # pero re-verificamos dentro antes de escribir (double-check).
     hist = yf.Ticker(ticker).history(period=period)
     with _hist_cache_lock:
-        _hist_cache[ticker] = (hist, _t.monotonic())
+        entry = _hist_cache.get(key)
+        if entry is None or _t.monotonic() - entry[1] >= _HIST_CACHE_TTL:
+            _hist_cache[key] = (hist, _t.monotonic())
+        else:
+            hist = entry[0]  # otro thread ya lo actualizó, usar el suyo
     return hist
 
 

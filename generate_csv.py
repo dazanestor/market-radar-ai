@@ -7,8 +7,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-from fetch_data import fetch_stock_data, to_eur, clear_fx_cache
-from database import get_trend, get_all_positions, get_ticker_history, get_tickers_as_yaml_dict
+from fetch_data import fetch_stock_data, to_eur
+from database import get_all_positions, get_tickers_as_yaml_dict, get_all_trends, get_all_recent_tickers
 
 _MAX_WORKERS = int(os.environ.get("FETCH_WORKERS", "10"))
 
@@ -76,8 +76,8 @@ def _rsi(close, period=14):
     return round(float(last.iloc[-1]), 1) if not last.empty else None
 
 
-def _detect_trend(ticker):
-    history = get_trend(ticker, days=5)
+def _detect_trend(ticker, trends_cache: dict):
+    history = trends_cache.get(ticker, [])
     if len(history) < 2:
         return None
     newest_dd = history[0][1]
@@ -87,13 +87,14 @@ def _detect_trend(ticker):
     return "empeorando" if newest_dd < oldest_dd else "mejorando"
 
 
-def _process_ticker(ticker, category, meta, today, portfolio_positions):
+def _process_ticker(ticker, category, meta, today, portfolio_positions,
+                    trends_cache: dict, recent_tickers: set):
     """Descarga y calcula métricas para un ticker. Retorna (row_dict | None, error_str | None)."""
     try:
         hist, dividends, info = fetch_stock_data(ticker)
         if hist.empty:
             # Distinguish delisted/suspended from never-seen tickers
-            if get_ticker_history(ticker, days=1):
+            if ticker in recent_tickers:
                 return None, f"{ticker}: ⚠️ sin datos recientes (posible baja o suspensión)"
             else:
                 return None, f"{ticker}: sin datos"
@@ -123,7 +124,7 @@ def _process_ticker(ticker, category, meta, today, portfolio_positions):
         rsi_val = _rsi(close)
         div_yield = _dividend_yield(dividends, price_orig)
         fundamentals = _extract_fundamentals(info)
-        trend = _detect_trend(ticker)
+        trend = _detect_trend(ticker, trends_cache)
 
         pnl = None
         if category == "portfolio":
@@ -161,8 +162,6 @@ def _process_ticker(ticker, category, meta, today, portfolio_positions):
 
 
 def generate():
-    clear_fx_cache()
-
     try:
         tickers = get_tickers_as_yaml_dict()
     except Exception as e:
@@ -170,8 +169,10 @@ def generate():
 
     today = date.today().isoformat()
 
-    # Pre-fetch all portfolio positions in a single DB query
+    # Pre-fetch en una sola query cada fuente de datos de BD (evita N conexiones en paralelo)
     portfolio_positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
+    trends_cache        = get_all_trends(days=5)
+    recent_tickers      = get_all_recent_tickers(days=1)
 
     # Build flat task list
     tasks = []
@@ -189,7 +190,8 @@ def generate():
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
         futures = {
-            pool.submit(_process_ticker, ticker, cat, meta, today, portfolio_positions): ticker
+            pool.submit(_process_ticker, ticker, cat, meta, today,
+                        portfolio_positions, trends_cache, recent_tickers): ticker
             for ticker, cat, meta in tasks
         }
         for fut in as_completed(futures):

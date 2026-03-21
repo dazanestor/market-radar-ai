@@ -183,6 +183,8 @@ CREATE TABLE IF NOT EXISTS tr_isin_map (
         c.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_value_date ON portfolio_value(date DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON push_subscriptions(endpoint)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_tickers_category ON tickers(category)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tr_cache_key ON tr_cache(key)")
 
         _migrate_tickers_from_yaml_if_needed(conn)
 
@@ -238,6 +240,36 @@ def get_trend(ticker, days=5):
             LIMIT ?
         """, (ticker, days))
         return c.fetchall()
+
+def get_all_trends(days=5) -> dict:
+    """Devuelve {ticker: [(date, drawdown_52w), ...]} para todos los tickers en una sola query."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(f"""
+            SELECT ticker, date, drawdown_52w FROM (
+                SELECT ticker, date, drawdown_52w,
+                       ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS rn
+                FROM price_history
+                WHERE drawdown_52w IS NOT NULL
+            ) WHERE rn <= ?
+            ORDER BY ticker, date DESC
+        """, (days,))
+        result: dict = {}
+        for ticker, dt, dd in c.fetchall():
+            result.setdefault(ticker, []).append((dt, dd))
+        return result
+
+
+def get_all_recent_tickers(days=1) -> set:
+    """Devuelve el conjunto de tickers que tienen al menos 1 snapshot en los últimos N días."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT DISTINCT ticker FROM price_history
+            WHERE date >= date('now', ?)
+        """, (f"-{days} days",))
+        return {row[0] for row in c.fetchall()}
+
 
 def get_ticker_history(ticker, days=30):
     with _db() as conn:

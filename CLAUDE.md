@@ -377,6 +377,10 @@ Cada ticker admite los siguientes campos en su metadata:
 - **`_get_ticker_hist()` en todos los endpoints**: correlación, riesgo, optimización y benchmark usan el caché de 1 h; segunda carga es instantánea.
 - **Backtesting pre-fetch paralelo**: los históricos de 2 años de todos los tickers únicos se descargan en paralelo antes de iterar los rows del scoring histórico.
 - **Prompt caching Claude**: `_call_claude(use_cache=True)` activa `cache_control: ephemeral` en el informe diario; ahorra tokens en reintentos y llamadas repetidas.
+- **Double-checked locking en `_get_ticker_hist()`**: evita thundering herd cuando dos requests piden el mismo ticker con caché expirado; la clave incluye `period` para evitar colisiones entre `1y` y `2y`.
+- **Bulk prefetch en `generate_csv.py`**: `get_all_trends()` y `get_all_recent_tickers()` reemplazan las N conexiones SQLite paralelas (una por ticker); 2 queries totales antes del ThreadPoolExecutor.
+- **`generate_csv.py` sin `clear_fx_cache()`**: eliminada llamada redundante (el caché ya tiene TTL de 1h).
+- **Índices en `settings(key)` y `tr_cache(key)`**: aceleran `get_setting()` y operaciones Trade Republic.
 
 ## Trabajo pendiente / próximas funcionalidades
 

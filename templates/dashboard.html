@@ -290,7 +290,8 @@
               {% else %}<span class="text-muted">—</span>{% endif %}
             </td>
             <td>
-              <button onclick="window._openAddPositionModal('{{ row.ticker }}', '{{ row.name|replace("'","") }}')"
+              <button data-ticker="{{ row.ticker | e }}" data-name="{{ row.name | e }}"
+                      onclick="window._openAddPositionModal(this.dataset.ticker, this.dataset.name)"
                       title="Añadir posición"
                       style="background:none;border:1px solid #30363d;border-radius:4px;cursor:pointer;color:#8b949e;padding:2px 7px;font-size:13px;transition:all 0.12s"
                       onmouseover="this.style.background='#21262d';this.style.color='#58a6ff'"

@@ -24,8 +24,9 @@
     <div class="stat-value">{{ by_region | length }}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-label">Divisas</div>
+    <div class="stat-label">Divisas distintas</div>
     <div class="stat-value">{{ currency_dist | length }}</div>
+    <div class="stat-sub">{% for item in currency_dist %}{{ item.currency }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
   </div>
 </div>
 

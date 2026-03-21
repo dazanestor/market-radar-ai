@@ -2275,7 +2275,8 @@ async def operaciones_page(
             all_tickers.append({"ticker": t, "name": name})
     all_tickers.sort(key=lambda x: x["ticker"])
 
-    # P&L summary
+    # P&L summary — P&L realizado = total ingresado por ventas menos total pagado en compras
+    # (simplificación FIFO global: no identifica qué lotes concretos se vendieron)
     total_bought = 0.0
     total_sold = 0.0
     total_commissions = 0.0
@@ -2287,10 +2288,12 @@ async def operaciones_page(
             total_bought += amount
         else:
             total_sold += amount
+    # P&L neto realizado: lo cobrado en ventas menos lo pagado en compras menos comisiones
+    pnl_net = total_sold - total_bought - total_commissions
     ops_summary = {
         "total_bought": round(total_bought, 2),
         "total_sold": round(total_sold, 2),
-        "pnl_realized": round(total_sold - total_bought, 2),
+        "pnl_realized": round(pnl_net, 2),
         "total_commissions": round(total_commissions, 2),
     }
 

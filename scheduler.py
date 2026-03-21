@@ -18,7 +18,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from generate_csv import generate
 from scoring import score_by_horizon
 from ai_analysis import analyze, check_api_health, summarize_alerts, summarize_report
-from fetch_data import get_macro_context, get_news, to_eur, clear_fx_cache
+from fetch_data import get_macro_context, get_news, to_eur
 from database import (
     init_db, save_snapshot, save_report,
     get_active_alerts, deactivate_alert, log_alert_triggered,
@@ -162,7 +162,6 @@ def job_check_price_alerts():
     triggered_msgs = []
     triggered_history = []
     portfolio_positions = {r[0]: (r[1], r[2]) for r in get_all_positions()}
-    clear_fx_cache()
 
     csv_data = {}
     has_advanced = any((len(a) > 5 and a[5] in ("drawdown", "score", "price_pct")) for a in alerts)

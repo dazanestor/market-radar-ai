@@ -186,20 +186,20 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 
 | Ruta | Método | Descripción |
 |------|--------|-------------|
-| `/` | GET | Dashboard principal: cartera con PnL, watchlist por score, último informe, gráfico de evolución |
+| `/` | GET | Dashboard principal: KPIs (valor cartera, alertas activas, último informe, nº tickers), eventos próximos (ex-div/earnings via Alpine.js), cartera con PnL, watchlist por score, modal "añadir posición desde watchlist", gráfico evolución |
 | `/oportunidades` | GET | Top activos por horizonte con oportunidad ALTA o MEDIA, columnas adaptadas al plazo |
 | `/rebalanceo` | GET | Pesos actuales vs. objetivo + distribución de cartera por horizonte |
 | `/screener` | GET | Screener completo con filtros Alpine.js (sector, región, score, drawdown, oportunidad) |
-| `/distribucion` | GET | Distribución de cartera por sector y región con barras de porcentaje |
+| `/distribucion` | GET | Distribución de cartera por sector, región y **divisa** (USD/EUR/GBP/CHF/JPY) con barras de porcentaje |
 | `/simulador` | GET | Simulador de aportación: dado un importe, calcula cuánto comprar de cada posición |
-| `/benchmark` | GET | Comparativa cartera vs SPY (S&P500) y EWQ (Euro Stoxx) base 100 |
+| `/benchmark` | GET | Comparativa cartera vs SPY (S&P500), EWQ (Euro Stoxx) y ticker personalizado (configurable) base 100 |
 | `/optimizacion` | GET | Optimización de cartera: Mínima Varianza, Máximo Sharpe (score-aware), Paridad de Riesgo + frontera eficiente |
-| `/operaciones` | GET | Historial de operaciones buy/sell por ticker |
+| `/operaciones` | GET | Historial de operaciones buy/sell por ticker; panel resumen P&L realizado (total invertido, recuperado, comisiones, P&L neto) |
 | `/noticias` | GET | Titulares recientes por ticker, traducidos con Claude |
 | `/ticker/{ticker}` | GET | Detalle de un ticker: fundamentales, noticias, historial drawdown |
 | `/tickers` | GET | Gestión de cartera y watchlist (con precio objetivo, notas/tesis, horizonte) |
 | `/posiciones` | GET | Lista de posiciones con PnL calculado |
-| `/alertas` | GET | Alertas activas; dropdown con tickers del CSV |
+| `/alertas` | GET | Alertas activas; columna `Stop abs.` para stoploss_pct; score actual del ticker al crear alerta tipo score; campo `expires_at` opcional |
 | `/reportes` | GET | Últimos 10 informes Claude |
 | `/generar-reporte` | POST | Lanza pipeline completo en thread pool, redirige a `/` |
 | `/tickers/add` | POST | Añade ticker a tickers.yaml |
@@ -259,6 +259,8 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 | `/2fa/setup` | GET/POST | Gestión 2FA para usuario autenticado |
 | `/2fa/disable` | POST | Desactiva 2FA |
 | `/settings/credentials` | GET/POST | Cambiar usuario/contraseña |
+| `/settings/benchmark-ticker` | POST | Guarda ticker personalizado para comparación en benchmark |
+| `/api/upcoming-events` | GET | JSON con ex-dividends y earnings próximos (≤7 días) del portfolio |
 
 **Tooltips de ayuda en tablas:**
 - Icono ⓘ clickable en cada cabecera de tabla (cartera, watchlist, posiciones)
@@ -381,12 +383,25 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Bulk prefetch en `generate_csv.py`**: `get_all_trends()` y `get_all_recent_tickers()` reemplazan las N conexiones SQLite paralelas (una por ticker); 2 queries totales antes del ThreadPoolExecutor.
 - **`generate_csv.py` sin `clear_fx_cache()`**: eliminada llamada redundante (el caché ya tiene TTL de 1h).
 - **Índices en `settings(key)` y `tr_cache(key)`**: aceleran `get_setting()` y operaciones Trade Republic.
+- **`clear_fx_cache()` eliminada**: función dead code retirada de `fetch_data.py`; el caché FX tiene TTL de 1h y se renueva automáticamente.
+- **KPIs en dashboard**: 4 tarjetas en `/` (valor total cartera, alertas activas, fecha último informe, nº tickers); se calculan en el servidor sin requests adicionales.
+- **Widget eventos próximos**: `/api/upcoming-events` devuelve JSON con ex-dividends y earnings ≤7 días; el dashboard los carga con Alpine.js `x-init` en background.
+- **Modal "añadir posición desde watchlist"**: botón "+" en cada fila de watchlist del dashboard abre modal Alpine.js que envía al endpoint `/posiciones/add` existente.
+- **P&L realizado en operaciones**: panel resumen en `/operaciones` con total invertido, recuperado, comisiones y P&L neto calculados en el servidor.
+- **Exposición por divisa**: `/distribucion` añade tercer panel con distribución por divisa (USD/EUR/GBP/CHF/JPY) derivada del campo `region` del snapshot.
+- **Stop abs. en alertas**: columna calculada en alertas activas de tipo `stoploss_pct`; muestra `avg_price × (1 - pct/100)`.
+- **Alertas con expiración**: campo `expires_at TEXT` en `price_alerts`; `get_active_alerts()` filtra las expiradas; formulario con input date opcional.
+- **Benchmark configurable**: form en `/benchmark` para guardar ticker personalizado en `settings("benchmark_ticker")`; `/chart/benchmark` incluye 3ª línea si está configurado.
+- **Alerta automática desde target_price**: checkbox en `/tickers/update`; si marcado y `target_price` definido, crea `price_alert` automáticamente con dirección inferida del precio actual.
+- **Score actual en formulario de alertas**: `/alertas` pasa dict `{ticker: score}` al template; Alpine.js muestra el score actual al seleccionar tipo `score`.
+- **`tojson` Jinja2 filter**: registrado en `templates.env.filters` para serializar Python dicts/lists a JSON seguro en templates.
 
 ## Trabajo pendiente / próximas funcionalidades
 
 - **Tests automatizados**: no hay suite de tests. Validación manual via scheduler/web.
 - **CSRF no en formularios de login/setup**: los endpoints de login no necesitan CSRF (no requieren sesión previa); el CSRF token global cubre todos los formularios de usuario autenticado.
 - **Web Push require HTTPS en producción**: los Service Workers solo se registran en orígenes seguros. En `localhost` funciona sin TLS. En producción se necesita reverse proxy con TLS (Cloudflare Tunnel, Caddy, nginx).
+- **`/api/upcoming-events` puede ser lento**: hace fetches yfinance en paralelo (5 workers) pero en carteras grandes puede tardar varios segundos. Considerar pre-carga en job scheduler y caché en BD.
 
 ## CI/CD
 

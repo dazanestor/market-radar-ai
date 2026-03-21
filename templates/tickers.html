@@ -529,12 +529,11 @@
     <div class="section">
       <div class="form-section">
         {% if tr_status == 'not_configured' %}
-          <p style="font-size:13px;color:#8b949e;margin:0">
-            Para habilitar la sincronización automática con Trade Republic, añade a tu <code>.env</code>:
+          <p style="font-size:13px;color:#8b949e;margin:0 0 10px">
+            Para habilitar la sincronización con Trade Republic, introduce tus credenciales en
+            <a href="/settings/app" class="text-accent">Ajustes → Trade Republic</a>:
+            número de teléfono (con prefijo, ej. <code>+34600000000</code>) y PIN de 4 dígitos.
           </p>
-          <pre style="background:#21262d;border-radius:6px;padding:12px;font-size:12px;color:#e6edf3;margin:12px 0 0;overflow-x:auto">TR_PHONE=+34600000000
-TR_PIN=1234
-TR_COOKIES_FILE=data/tr_cookies.txt</pre>
 
         {% elif tr_status == 'needs_setup' %}
           <p style="font-size:13px;color:#8b949e;margin:0 0 14px">

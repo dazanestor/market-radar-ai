@@ -19,57 +19,58 @@
             <th>Ticker</th>
             <th>Tipo</th>
             <th>Condición</th>
+            <th class="hide-mobile">Stop abs.</th>
+            <th class="hide-mobile">Expira</th>
             <th class="hide-mobile">Creada</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {% for row in alerts %}
-          {% set alert_id = row[0] %}
-          {% set ticker = row[1] %}
-          {% set target = row[2] %}
-          {% set direction = row[3] %}
-          {% set created = row[4] %}
-          {% set ctype = row[5] if row|length > 5 else 'price' %}
-          {% set cvalue = row[6] if row|length > 6 else none %}
           <tr>
-            <td class="hide-mobile text-muted">{{ alert_id }}</td>
-            <td class="ticker-cell">{{ ticker }}</td>
+            <td class="hide-mobile text-muted">{{ row.id }}</td>
+            <td class="ticker-cell">{{ row.ticker }}</td>
             <td>
-              {% if ctype == 'drawdown' %}
+              {% if row.ctype == 'drawdown' %}
                 <span class="badge badge-red">Drawdown</span>
-              {% elif ctype == 'score' %}
+              {% elif row.ctype == 'score' %}
                 <span class="badge badge-blue">Score</span>
-              {% elif ctype == 'stoploss_pct' %}
+              {% elif row.ctype == 'stoploss_pct' %}
                 <span class="badge badge-red">🛑 Stop-loss</span>
-              {% elif ctype == 'price_pct' %}
+              {% elif row.ctype == 'price_pct' %}
                 <span class="badge badge-yellow">% desde ahora</span>
               {% else %}
                 <span class="badge badge-gray">Precio</span>
               {% endif %}
             </td>
             <td>
-              {% if ctype == 'drawdown' %}
-                Drawdown &lt; {{ target | num }}%
-              {% elif ctype == 'score' %}
-                Score &gt; {{ target | num }}
-              {% elif ctype == 'stoploss_pct' %}
-                <span class="text-negative">Pérdida vs coste &gt; {{ target | num }}%</span>
-              {% elif ctype == 'price_pct' %}
-                <span class="{{ 'text-negative' if target < 0 else 'text-positive' }}">
-                  {% if target < 0 %}↓{% else %}↑{% endif %} {{ target | num }}% desde {{ cvalue | eur if cvalue else '—' }}
+              {% if row.ctype == 'drawdown' %}
+                Drawdown &lt; {{ row.target | num }}%
+              {% elif row.ctype == 'score' %}
+                Score &gt; {{ row.target | num }}
+              {% elif row.ctype == 'stoploss_pct' %}
+                <span class="text-negative">Pérdida vs coste &gt; {{ row.target | num }}%</span>
+              {% elif row.ctype == 'price_pct' %}
+                <span class="{{ 'text-negative' if row.target < 0 else 'text-positive' }}">
+                  {% if row.target < 0 %}↓{% else %}↑{% endif %} {{ row.target | num }}% desde {{ row.cvalue | eur if row.cvalue else '—' }}
                 </span>
-              {% elif direction == 'below' %}
-                <span class="text-negative">↓ baja a {{ target | eur }}</span>
+              {% elif row.direction == 'below' %}
+                <span class="text-negative">↓ baja a {{ row.target | eur }}</span>
               {% else %}
-                <span class="text-positive">↑ sube a {{ target | eur }}</span>
+                <span class="text-positive">↑ sube a {{ row.target | eur }}</span>
               {% endif %}
             </td>
-            <td class="hide-mobile text-muted">{{ created }}</td>
+            <td class="hide-mobile text-muted">
+              {% if row.stop_abs is not none %}
+                <span class="text-negative" title="Precio absoluto de stop-loss">{{ row.stop_abs | eur }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="hide-mobile text-muted">{{ row.expires_at or '—' }}</td>
+            <td class="hide-mobile text-muted">{{ row.created }}</td>
             <td style="text-align:right">
               <form method="post" action="/alertas/delete" style="display:inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="alert_id" value="{{ alert_id }}">
+                <input type="hidden" name="alert_id" value="{{ row.id }}">
                 <button type="submit" class="btn btn-danger">Borrar</button>
               </form>
             </td>
@@ -92,21 +93,23 @@
   <div class="section-header">
     <h2 class="section-title">Crear alerta</h2>
   </div>
-  <div class="form-section">
-    <form method="post" action="/alertas/add" x-data="{ ctype: 'price' }">
+  <div class="form-section"
+       x-data="{ ctype: 'price', selectedTicker: '', scores: {{ scores | tojson }} }">
+    <form method="post" action="/alertas/add">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr auto">
         <div>
           <label class="form-label">Ticker *</label>
           {% if tickers_disponibles %}
-          <select name="ticker" class="form-input" required>
+          <select name="ticker" class="form-input" required x-model="selectedTicker">
             <option value="">Selecciona un activo</option>
             {% for t in tickers_disponibles %}
             <option value="{{ t.ticker }}">{{ t.ticker }} — {{ t.name }}</option>
             {% endfor %}
           </select>
           {% else %}
-          <input type="text" name="ticker" class="form-input" placeholder="AAPL" required style="text-transform:uppercase">
+          <input type="text" name="ticker" class="form-input" placeholder="AAPL" required
+                 style="text-transform:uppercase" x-model="selectedTicker">
           {% endif %}
         </div>
         <div>
@@ -125,10 +128,21 @@
           <input type="number" name="target_price" class="form-input"
                  :placeholder="ctype === 'price' ? '150.00' : ctype === 'price_pct' ? '-8' : ctype === 'stoploss_pct' ? '15' : ctype === 'drawdown' ? '-20' : '15'"
                  step="any" required>
+          <!-- Score hint: muestra el score actual cuando el tipo es score y hay ticker seleccionado -->
+          <div x-show="ctype === 'score' && selectedTicker && scores[selectedTicker] !== undefined"
+               style="margin-top:4px;font-size:11px;color:#8b949e" x-cloak>
+            Score actual: <strong style="color:#58a6ff" x-text="scores[selectedTicker]"></strong>
+          </div>
         </div>
         <div style="display:flex;align-items:flex-end">
           <button type="submit" class="btn btn-primary btn-sm">Crear alerta</button>
         </div>
+      </div>
+      <!-- Fecha de expiración (opcional) -->
+      <div style="margin-top:10px">
+        <label class="form-label">Expira el (opcional)</label>
+        <input type="date" name="expires_at" class="form-input" style="max-width:200px"
+               placeholder="YYYY-MM-DD">
       </div>
       <p style="font-size:11px;color:#8b949e;margin-top:8px">
         <strong style="color:#c9d1d9">Precio:</strong> avisa cuando el precio cruza el umbral. ·

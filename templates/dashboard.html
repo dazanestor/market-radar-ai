@@ -66,6 +66,46 @@
 </div>
 {% endif %}
 
+<!-- ── Próximos eventos ── -->
+<div class="section" x-data="{ events: null }"
+     x-init="fetch('/api/upcoming-events').then(r=>r.json()).then(d=>{ events=d }).catch(()=>{ events={exdiv:[],earnings:[]} })">
+  <template x-if="events && (events.exdiv.length > 0 || events.earnings.length > 0)">
+    <div>
+      <div class="section-header">
+        <h2 class="section-title">📅 Próximos eventos (7 días)</h2>
+      </div>
+      <div class="card">
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#8b949e;margin-bottom:8px">Ex-dividendo</div>
+            <template x-if="events.exdiv.length === 0">
+              <p style="font-size:12px;color:#484f58">Sin ex-dividendos próximos</p>
+            </template>
+            <template x-for="ev in events.exdiv" :key="ev.ticker">
+              <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #21262d;font-size:13px">
+                <span style="color:#58a6ff;font-weight:600" x-text="ev.ticker"></span>
+                <span style="color:#8b949e" x-text="ev.date"></span>
+              </div>
+            </template>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#8b949e;margin-bottom:8px">Resultados (Earnings)</div>
+            <template x-if="events.earnings.length === 0">
+              <p style="font-size:12px;color:#484f58">Sin earnings próximos</p>
+            </template>
+            <template x-for="ev in events.earnings" :key="ev.ticker + ev.date">
+              <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #21262d;font-size:13px">
+                <span style="color:#58a6ff;font-weight:600" x-text="ev.ticker"></span>
+                <span style="color:#8b949e" x-text="ev.date"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
 <!-- ── Portfolio ── -->
 <div class="section">
   <div class="section-header">
@@ -155,6 +195,45 @@
   </div>
 </div>
 
+<!-- ── Modal: añadir posición desde watchlist ── -->
+<div x-data="{ open: false, ticker: '', tname: '' }" id="modal-add-position"
+     x-show="open" x-cloak
+     style="position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)"
+     @keydown.escape.window="open=false">
+  <div class="card" style="min-width:320px;max-width:440px;width:100%;padding:20px;position:relative"
+       @click.stop>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="font-size:14px;font-weight:600;color:#e6edf3">Añadir posición — <span style="color:#58a6ff" x-text="ticker"></span></span>
+      <button @click="open=false" style="background:none;border:none;cursor:pointer;color:#8b949e;font-size:18px;line-height:1">✕</button>
+    </div>
+    <form method="post" action="/posiciones/add">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="ticker" :value="ticker">
+      <div style="margin-bottom:10px">
+        <label class="form-label">Acciones</label>
+        <input type="number" name="shares" class="form-input" step="0.0001" min="0.0001" placeholder="Ej: 10" required>
+      </div>
+      <div style="margin-bottom:16px">
+        <label class="form-label">Precio medio (€/acc)</label>
+        <input type="number" name="avg_price" class="form-input" step="0.01" min="0.01" placeholder="Ej: 150.00" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Registrar posición</button>
+    </form>
+  </div>
+  <script>
+    // Expone la función para abrir el modal desde fuera de Alpine
+    window._openAddPositionModal = function(ticker, name) {
+      // Alpine.js: buscar el componente y cambiar su estado
+      var el = document.getElementById('modal-add-position');
+      if (el && el._x_dataStack) {
+        el._x_dataStack[0].ticker = ticker;
+        el._x_dataStack[0].tname = name;
+        el._x_dataStack[0].open = true;
+      }
+    };
+  </script>
+</div>
+
 <!-- ── Watchlist ── -->
 <div class="section">
   <div class="section-header">
@@ -176,6 +255,7 @@
             <th class="hide-mobile">Div Yield<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Retribución anual al accionista expresada como porcentaje de la cotización actual. Un 3% significa que percibes 3€ al año por cada 100€ invertidos en el activo.')">ⓘ</button></th>
             <th class="hide-mobile">PER<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Ratio entre la capitalización bursátil y el beneficio neto anual. Un número bajo puede indicar que el mercado la valora por debajo de lo que gana; uno muy alto, que descuenta fuerte crecimiento futuro.')">ⓘ</button></th>
             <th class="hide-mobile">Tend.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Evolución reciente de la caída desde el máximo anual: ↑ la caída se está recuperando (señal positiva), ↓ la caída sigue aumentando (señal negativa).')">ⓘ</button></th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -199,10 +279,17 @@
               {% elif row.trend == 'empeorando' %}<span class="text-negative">↓</span>
               {% else %}<span class="text-muted">—</span>{% endif %}
             </td>
+            <td>
+              <button onclick="window._openAddPositionModal('{{ row.ticker }}', '{{ row.name|replace("'","") }}')"
+                      title="Añadir posición"
+                      style="background:none;border:1px solid #30363d;border-radius:4px;cursor:pointer;color:#8b949e;padding:2px 7px;font-size:13px;transition:all 0.12s"
+                      onmouseover="this.style.background='#21262d';this.style.color='#58a6ff'"
+                      onmouseout="this.style.background='none';this.style.color='#8b949e'">+</button>
+            </td>
           </tr>
           <!-- Chart row (expandable) -->
           <tr x-data="{ chartOpen: false }">
-            <td colspan="10" style="padding:0;border-top:none">
+            <td colspan="11" style="padding:0;border-top:none">
               <div>
                 <button @click="chartOpen = !chartOpen"
                         style="background:none;border:none;cursor:pointer;font-size:11px;color:#8b949e;padding:4px 14px;width:100%;text-align:left;transition:color 0.12s"

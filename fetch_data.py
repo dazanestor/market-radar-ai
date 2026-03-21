@@ -58,7 +58,8 @@ def to_eur(price, currency):
     return price * _fx_cache[currency][0]
 
 def clear_fx_cache():
-    _fx_cache.clear()
+    """No-op: _fx_cache now has a 1-hour TTL and auto-refreshes. Kept for backward compatibility."""
+    pass
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=20),
        reraise=True)

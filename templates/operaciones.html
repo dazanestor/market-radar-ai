@@ -138,6 +138,32 @@
       </table>
     </div>
   </div>
+
+  {% if ops_summary %}
+  <!-- P&L resumen -->
+  <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-top:16px">
+    <div class="stat-card">
+      <div class="stat-label">Total invertido</div>
+      <div class="stat-value text-negative">{{ ops_summary.total_bought | eur }}</div>
+      <div class="stat-sub">compras acumuladas</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total recuperado</div>
+      <div class="stat-value text-positive">{{ ops_summary.total_sold | eur }}</div>
+      <div class="stat-sub">ventas acumuladas</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">P&L realizado</div>
+      <div class="stat-value {{ ops_summary.pnl_realized | pnl_class }}">{{ ops_summary.pnl_realized | eur }}</div>
+      <div class="stat-sub">ventas − compras</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Comisiones totales</div>
+      <div class="stat-value text-muted">{{ ops_summary.total_commissions | eur }}</div>
+      <div class="stat-sub">coste total operativo</div>
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 </div>
 

@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS tr_isin_map (
         _add_column_if_missing(conn, "price_alerts",  "condition_type",  "TEXT DEFAULT 'price'")
         _add_column_if_missing(conn, "price_alerts",  "condition_value", "REAL")
         _add_column_if_missing(conn, "price_alerts",  "condition_value2", "REAL")
+        _add_column_if_missing(conn, "price_alerts",  "expires_at",      "TEXT")
         _add_column_if_missing(conn, "alert_history", "notified",        "INTEGER DEFAULT 0")
         _add_column_if_missing(conn, "price_history", "rsi",             "REAL")
         _add_column_if_missing(conn, "operations",    "commission_eur",  "REAL DEFAULT 1.0")
@@ -314,22 +315,24 @@ def get_all_positions():
 # ── price alerts ──────────────────────────────────────────────────────────────
 
 def add_price_alert(ticker, target_price, direction,
-                    condition_type: str = "price", condition_value: Optional[float] = None):
+                    condition_type: str = "price", condition_value: Optional[float] = None,
+                    expires_at: Optional[str] = None):
     with _db() as conn:
         conn.cursor().execute("""
             INSERT INTO price_alerts
-                (ticker, target_price, direction, condition_type, condition_value, active, created)
-            VALUES (?, ?, ?, ?, ?, 1, ?)
+                (ticker, target_price, direction, condition_type, condition_value, active, created, expires_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
         """, (ticker, target_price, direction, condition_type, condition_value,
-              date.today().isoformat()))
+              date.today().isoformat(), expires_at))
 
 def get_active_alerts():
     with _db() as conn:
         c = conn.cursor()
         c.execute("""
             SELECT id, ticker, target_price, direction, created,
-                   condition_type, condition_value
+                   condition_type, condition_value, expires_at
             FROM price_alerts WHERE active = 1
+            AND (expires_at IS NULL OR expires_at >= date('now'))
         """)
         return c.fetchall()
 

@@ -2,6 +2,35 @@
 {% block page_title %}Benchmark{% endblock %}
 {% block content %}
 
+<!-- Configurar ticker personalizado -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">Comparativo personalizado</h2>
+  </div>
+  <div class="form-section">
+    {% if saved %}
+    <div style="background:#1a3a2a;border:1px solid #3fb950;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#3fb950">
+      ✅ Ticker guardado correctamente.
+    </div>
+    {% endif %}
+    <form method="post" action="/settings/benchmark-ticker" style="display:flex;gap:10px;align-items:flex-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div style="flex:1;max-width:200px">
+        <label class="form-label">Ticker adicional (opcional)</label>
+        <input type="text" name="ticker" class="form-input" placeholder="ej: QQQ, IWM…"
+               value="{{ custom_ticker or '' }}" style="text-transform:uppercase" maxlength="12">
+      </div>
+      <button type="submit" class="btn btn-ghost btn-sm">Guardar</button>
+      {% if custom_ticker %}
+      <span style="font-size:12px;color:#8b949e;align-self:center">Actual: <strong style="color:#da7adf">{{ custom_ticker }}</strong></span>
+      {% endif %}
+    </form>
+    <p style="font-size:11px;color:#8b949e;margin-top:6px">
+      Añade un ticker (ETF, índice, acción) para incluirlo como 3ª línea en la gráfica de benchmark. Deja vacío para quitar.
+    </p>
+  </div>
+</div>
+
 {% if not has_positions %}
 <div class="card"><div class="empty-state">Sin posiciones registradas. Ve a <a href="/posiciones" class="text-accent">Posiciones</a> para añadirlas.</div></div>
 {% elif not has_history %}
@@ -14,7 +43,7 @@
 </div>
 {% else %}
 <div style="padding:10px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px;margin-bottom:16px;font-size:12px;color:#8b949e">
-  ℹ️ Comparativa normalizada a base 100 desde el primer dato disponible. SPY = S&amp;P 500 (USD), EWQ = Euro Stoxx 50 ETF.
+  ℹ️ Comparativa normalizada a base 100 desde el primer dato disponible. SPY = S&amp;P 500 (USD), EWQ = Euro Stoxx 50 ETF{% if custom_ticker %}, <span style="color:#da7adf">{{ custom_ticker }}</span>{% endif %}.
 </div>
 <div class="card" style="padding:0;overflow:hidden">
   <img src="/chart/benchmark" alt="Comparativa vs benchmark" style="width:100%;display:block" loading="lazy">

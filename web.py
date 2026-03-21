@@ -418,6 +418,10 @@ def tg_to_html(text) -> Markup:
     return Markup(text)
 
 
+def _tojson_filter(v) -> str:
+    """Serializa un valor Python a JSON seguro para uso en atributos HTML."""
+    return json.dumps(v, ensure_ascii=False)
+
 templates.env.filters.update({
     "eur":       fmt_eur,
     "pct":       fmt_pct,
@@ -426,6 +430,7 @@ templates.env.filters.update({
     "pnl_class": pnl_class,
     "opp_class": opp_class,
     "tg":        tg_to_html,
+    "tojson":    _tojson_filter,
 })
 # CSRF token disponible en todos los templates como {{ csrf_token }}
 templates.env.globals["csrf_token"] = _csrf_state["current"]
@@ -814,6 +819,91 @@ def _make_history_chart(ticker: str, rows: list) -> Optional[plt.Figure]:
     return fig
 
 
+# ── Upcoming events (ex-div + earnings) ────────────────────────────────────────
+
+@app.get("/api/upcoming-events")
+async def upcoming_events(session: Optional[str] = Cookie(default=None)):
+    """Devuelve ex-dividendos y earnings próximos en los próximos 7 días."""
+    if not _is_auth(session):
+        raise HTTPException(401)
+
+    tickers_data = _load_tickers()
+    portfolio_tickers = list((tickers_data.get("portfolio") or {}).keys())
+
+    def _fetch_events():
+        import datetime as _dt
+        today = _dt.date.today()
+        horizon_days = _dt.timedelta(days=7)
+        exdiv_list = []
+        earnings_list = []
+
+        def _check_ticker(t):
+            exdiv = None
+            earnings_dates = []
+            try:
+                info = yf.Ticker(t).fast_info
+                ex_ts = getattr(info, "last_exdividend_date", None)
+                if ex_ts is not None:
+                    import pandas as pd
+                    if hasattr(ex_ts, "date"):
+                        ex_date = ex_ts.date()
+                    else:
+                        try:
+                            ex_date = pd.Timestamp(ex_ts).date()
+                        except Exception:
+                            ex_date = None
+                    if ex_date and today <= ex_date <= today + horizon_days:
+                        exdiv = ex_date.isoformat()
+            except Exception:
+                pass
+            try:
+                stock = yf.Ticker(t)
+                cal = stock.calendar
+                if cal is not None and not (hasattr(cal, "empty") and cal.empty):
+                    # calendar may be a dict or DataFrame
+                    if hasattr(cal, "to_dict"):
+                        cal_dict = cal.to_dict()
+                    elif isinstance(cal, dict):
+                        cal_dict = cal
+                    else:
+                        cal_dict = {}
+                    ed = cal_dict.get("Earnings Date") or cal_dict.get("earningsDate")
+                    if ed:
+                        import pandas as pd
+                        if not isinstance(ed, list):
+                            ed = [ed]
+                        for e in ed:
+                            try:
+                                e_date = pd.Timestamp(e).date()
+                                if today <= e_date <= today + horizon_days:
+                                    earnings_dates.append(e_date.isoformat())
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+            return t, exdiv, earnings_dates
+
+        from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
+        with _TPE(max_workers=5) as pool:
+            futs = {pool.submit(_check_ticker, t): t for t in portfolio_tickers}
+            for fut in _ac(futs, timeout=30):
+                try:
+                    t, exdiv, earn_dates = fut.result()
+                    if exdiv:
+                        exdiv_list.append({"ticker": t, "date": exdiv})
+                    for d in earn_dates:
+                        earnings_list.append({"ticker": t, "date": d})
+                except Exception:
+                    pass
+
+        exdiv_list.sort(key=lambda x: x["date"])
+        earnings_list.sort(key=lambda x: x["date"])
+        return {"exdiv": exdiv_list, "earnings": earnings_list}
+
+    result = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_events)
+    return JSONResponse(result)
+
+
 # ── Chart endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/chart/precio/{ticker}")
@@ -900,6 +990,8 @@ async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
 
     start_date = rows[0][0]
 
+    custom_ticker = (get_setting("benchmark_ticker") or "").strip().upper() or None
+
     def _make():
         try:
             spy_full = _get_ticker_hist("SPY", period="2y")["Close"]
@@ -911,6 +1003,14 @@ async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
             ewq = ewq_full[ewq_full.index >= pd.Timestamp(start_date, tz="UTC")]
         except Exception:
             ewq = pd.Series(dtype=float)
+
+        custom_series = pd.Series(dtype=float)
+        if custom_ticker:
+            try:
+                ct_full = _get_ticker_hist(custom_ticker, period="2y")["Close"]
+                custom_series = ct_full[ct_full.index >= pd.Timestamp(start_date, tz="UTC")]
+            except Exception:
+                custom_series = pd.Series(dtype=float)
 
         dates_pf = pd.to_datetime([r[0] for r in rows])
         values_pf = [r[1] for r in rows]
@@ -932,6 +1032,10 @@ async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
             if not ewq.empty:
                 ewq_norm = ewq / ewq.iloc[0] * 100
                 ax.plot(ewq.index, ewq_norm.values, color="#d29922", linewidth=1.2, linestyle="--", label="EWQ (Euro Stoxx)", alpha=0.8)
+
+            if not custom_series.empty and custom_ticker:
+                ct_norm = custom_series / custom_series.iloc[0] * 100
+                ax.plot(custom_series.index, ct_norm.values, color="#da7adf", linewidth=1.2, linestyle="--", label=custom_ticker, alpha=0.8)
 
             ax.axhline(100, color=_C_TEXT, linewidth=0.6, linestyle=":")
             ax.set_title(f"Comparativa vs benchmark (base 100 desde {start_date})", fontsize=11, pad=8)
@@ -1440,6 +1544,28 @@ async def settings_app_update(
     return RedirectResponse("/settings/app?ok=1", status_code=303)
 
 
+@app.post("/settings/benchmark-ticker")
+async def settings_benchmark_ticker(
+    request:    Request,
+    session:    Optional[str] = Cookie(default=None),
+    csrf_token: Optional[str] = Form(default=None),
+    ticker:     str = Form(""),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    _require_csrf(request, csrf_token)
+    t = ticker.strip().upper()
+    if t and _TICKER_RE.match(t):
+        set_setting("benchmark_ticker", t)
+    elif not t:
+        from database import delete_setting as _del_setting
+        _del_setting("benchmark_ticker")
+    # Invalidate hist cache so new ticker is fetched fresh
+    with _hist_cache_lock:
+        _hist_cache.clear()
+    return RedirectResponse("/benchmark?saved=1", status_code=303)
+
+
 @app.get("/logout")
 async def logout(session: Optional[str] = Cookie(default=None)):
     _invalidate_session(session)
@@ -1930,6 +2056,7 @@ async def tickers_add(
     horizon:       str = Form(""),
     target_price:  str = Form(""),
     notes:         str = Form(""),
+    auto_alert:    str = Form(""),
     csrf_token:    Optional[str] = Form(default=None),
 ):
     if not _is_auth(session):
@@ -1950,15 +2077,34 @@ async def tickers_add(
             pass
     if horizon in ("largo", "medio", "corto"):
         entry["horizon"] = horizon
+    tp_float = None
     if target_price:
         try:
-            entry["target_price"] = float(target_price)
+            tp_float = float(target_price)
+            entry["target_price"] = tp_float
         except ValueError:
             pass
     if notes:
         entry["notes"] = notes.strip()[:500]
     tickers[categoria][t] = entry
     _save_tickers(tickers)
+
+    # Auto-create price alert if requested and target_price is set
+    if auto_alert and tp_float is not None and tp_float > 0:
+        try:
+            df = _read_csv()
+            current_price = None
+            if df is not None:
+                row_df = df[df["ticker"] == t]
+                if not row_df.empty:
+                    p = row_df.iloc[0].get("price")
+                    if p and not _is_nan(p):
+                        current_price = float(p)
+            direction = "below" if (current_price and tp_float < current_price) else "above"
+            add_price_alert(t, tp_float, direction, condition_type="price")
+        except Exception:
+            logger.exception("Error creando alerta automática para %s", t)
+
     return RedirectResponse("/tickers", status_code=303)
 
 
@@ -1975,6 +2121,7 @@ async def tickers_update(
     horizon:       str = Form(""),
     target_price:  str = Form(""),
     notes:         str = Form(""),
+    auto_alert:    str = Form(""),
     csrf_token:    Optional[str] = Form(default=None),
 ):
     if not _is_auth(session):
@@ -1996,15 +2143,34 @@ async def tickers_update(
             pass
     if horizon in ("largo", "medio", "corto"):
         meta["horizon"] = horizon
+    tp_float = None
     if target_price:
         try:
-            meta["target_price"] = float(target_price)
+            tp_float = float(target_price)
+            meta["target_price"] = tp_float
         except ValueError:
             pass
     if notes is not None:
         meta["notes"] = notes.strip()[:500]
     tickers.setdefault(categoria, {})[ticker] = meta
     _save_tickers(tickers)
+
+    # Auto-create price alert if requested and target_price is set
+    if auto_alert and tp_float is not None and tp_float > 0:
+        try:
+            df = _read_csv()
+            current_price = None
+            if df is not None:
+                row_df = df[df["ticker"] == ticker.strip().upper()]
+                if not row_df.empty:
+                    p = row_df.iloc[0].get("price")
+                    if p and not _is_nan(p):
+                        current_price = float(p)
+            direction = "below" if (current_price and tp_float < current_price) else "above"
+            add_price_alert(ticker.strip().upper(), tp_float, direction, condition_type="price")
+        except Exception:
+            logger.exception("Error creando alerta automática para %s", ticker)
+
     return RedirectResponse("/tickers", status_code=303)
 
 
@@ -2146,6 +2312,25 @@ async def operaciones_page(
             all_tickers.append({"ticker": t, "name": name})
     all_tickers.sort(key=lambda x: x["ticker"])
 
+    # P&L summary
+    total_bought = 0.0
+    total_sold = 0.0
+    total_commissions = 0.0
+    for op in ops:
+        op_id, op_ticker, op_date, op_type, op_shares, op_price, op_notes, op_commission = op
+        amount = op_shares * op_price
+        total_commissions += op_commission or 0.0
+        if op_type == "buy":
+            total_bought += amount
+        else:
+            total_sold += amount
+    ops_summary = {
+        "total_bought": round(total_bought, 2),
+        "total_sold": round(total_sold, 2),
+        "pnl_realized": round(total_sold - total_bought, 2),
+        "total_commissions": round(total_commissions, 2),
+    }
+
     return templates.TemplateResponse("operaciones.html", {
         "request": request,
         "ops": ops,
@@ -2154,6 +2339,7 @@ async def operaciones_page(
         "saved": saved,
         "count": count_operations(),
         "commission_eur": _commission_eur(),
+        "ops_summary": ops_summary,
     })
 
 
@@ -2209,7 +2395,20 @@ async def distribucion_page(request: Request, session: Optional[str] = Cookie(de
 
     by_sector = {}
     by_region = {}
+    by_currency: dict = {}
     total = 0.0
+
+    # Region → currency mapping
+    _REGION_TO_CURRENCY = {
+        "USA":          "USD",
+        "Europa":       "EUR",
+        "Europe":       "EUR",
+        "Reino Unido":  "GBP",
+        "UK":           "GBP",
+        "Suiza":        "CHF",
+        "Japón":        "JPY",
+        "Japan":        "JPY",
+    }
 
     if df is not None:
         for row in df.to_dict("records"):
@@ -2227,18 +2426,29 @@ async def distribucion_page(request: Request, session: Optional[str] = Cookie(de
             total += value
             sector = row.get("block") or "Sin sector"
             region = row.get("region") or "Sin región"
+            currency = _REGION_TO_CURRENCY.get(region, "OTHER")
 
             by_sector[sector] = by_sector.get(sector, 0.0) + value
             by_region[region] = by_region.get(region, 0.0) + value
+            by_currency[currency] = by_currency.get(currency, 0.0) + value
 
     def _to_pct_list(d, total):
         items = sorted(d.items(), key=lambda x: -x[1])
         return [{"label": k, "value": v, "pct": round(v / total * 100, 1) if total else 0} for k, v in items]
 
+    currency_dist = []
+    for item in _to_pct_list(by_currency, total):
+        currency_dist.append({
+            "currency": item["label"],
+            "pct": item["pct"],
+            "value_eur": item["value"],
+        })
+
     return templates.TemplateResponse("distribucion.html", {
         "request": request,
         "by_sector": _to_pct_list(by_sector, total),
         "by_region": _to_pct_list(by_region, total),
+        "currency_dist": currency_dist,
         "total": total,
         "has_data": df is not None,
         "has_positions": bool(positions),
@@ -2333,12 +2543,15 @@ async def benchmark_page(request: Request, session: Optional[str] = Cookie(defau
     has_positions = bool(positions)
     value_history = get_portfolio_value_history(days=365)
     has_history = len(value_history) >= 5
+    custom_ticker = (get_setting("benchmark_ticker") or "").strip().upper() or None
 
     return templates.TemplateResponse("benchmark.html", {
         "request": request,
         "has_positions": has_positions,
         "has_history": has_history,
         "value_history": value_history,
+        "custom_ticker": custom_ticker,
+        "saved": request.query_params.get("saved"),
     })
 
 
@@ -2385,14 +2598,47 @@ async def alertas_page(request: Request, session: Optional[str] = Cookie(default
         return RedirectResponse("/login", status_code=302)
     df = _read_csv()
     tickers_disponibles = []
+    scores: dict = {}
     if df is not None:
         for r in df.sort_values("ticker").to_dict("records"):
             tickers_disponibles.append({"ticker": r["ticker"], "name": r.get("name", r["ticker"])})
+            sc = r.get("score")
+            if sc is not None and not _is_nan(sc):
+                scores[r["ticker"]] = round(float(sc), 2)
+
+    # Enrich stoploss_pct alerts with absolute stop price from avg_price
+    positions_map = {row[0]: (row[1], row[2]) for row in _get_positions()}
+    raw_alerts = get_active_alerts()
+    alerts_enriched = []
+    for row in raw_alerts:
+        # row: id, ticker, target_price, direction, created, ctype, cvalue, expires_at
+        row = list(row)
+        ctype = row[5] if len(row) > 5 else "price"
+        ticker_a = row[1]
+        stop_abs = None
+        if ctype == "stoploss_pct":
+            target_pct = row[2]  # % loss vs cost
+            pos = positions_map.get(ticker_a)
+            if pos:
+                avg_p = pos[1]
+                if avg_p and avg_p > 0 and target_pct is not None:
+                    stop_abs = round(avg_p * (1 - float(target_pct) / 100), 2)
+        row_dict = {
+            "id": row[0], "ticker": row[1], "target": row[2], "direction": row[3],
+            "created": row[4], "ctype": ctype,
+            "cvalue": row[6] if len(row) > 6 else None,
+            "expires_at": row[7] if len(row) > 7 else None,
+            "stop_abs": stop_abs,
+        }
+        alerts_enriched.append(row_dict)
+
     return templates.TemplateResponse("alertas.html", {
         "request":             request,
-        "alerts":              get_active_alerts(),
+        "alerts":              alerts_enriched,
         "alert_history":       get_alert_history(limit=30),
         "tickers_disponibles": tickers_disponibles,
+        "scores":              scores,
+        "alerts_raw":          raw_alerts,
     })
 
 
@@ -2403,12 +2649,22 @@ async def alertas_add(
     ticker:         str   = Form(...),
     condition_type: str   = Form("price"),
     target_price:   float = Form(...),
+    expires_at:     Optional[str] = Form(default=None),
     csrf_token:     Optional[str] = Form(default=None),
 ):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     t = ticker.strip().upper()
+
+    # Validate and sanitize expires_at
+    _expires_at = None
+    if expires_at and expires_at.strip():
+        try:
+            datetime.date.fromisoformat(expires_at.strip())
+            _expires_at = expires_at.strip()
+        except ValueError:
+            pass
 
     if condition_type == "price_pct":
         # Alerta por % desde precio actual
@@ -2427,7 +2683,7 @@ async def alertas_add(
             return RedirectResponse("/alertas?error=no_price", status_code=303)
         direction = "below" if pct < 0 else "above"
         add_price_alert(t, pct, direction, condition_type="price_pct",
-                        condition_value=current_price)
+                        condition_value=current_price, expires_at=_expires_at)
         return RedirectResponse("/alertas", status_code=303)
     elif condition_type == "stoploss_pct":
         # Stop-loss dinámico: % de pérdida desde precio de compra
@@ -2435,7 +2691,7 @@ async def alertas_add(
         if not (0 < pct <= 100):
             return RedirectResponse("/alertas?error=rango", status_code=303)
         add_price_alert(t, pct, "below", condition_type="stoploss_pct",
-                        condition_value=pct)
+                        condition_value=pct, expires_at=_expires_at)
         return RedirectResponse("/alertas", status_code=303)
     elif condition_type == "drawdown":
         # Los drawdowns son porcentajes negativos (-100 a 0)
@@ -2444,14 +2700,14 @@ async def alertas_add(
         if not (-100 <= target_price < 0):
             return RedirectResponse("/alertas?error=rango", status_code=303)
         add_price_alert(t, target_price, "below", condition_type=condition_type,
-                        condition_value=target_price)
+                        condition_value=target_price, expires_at=_expires_at)
         return RedirectResponse("/alertas", status_code=303)
     elif condition_type == "score":
         # El score debe estar entre 0 y 100
         if not (0 <= target_price <= 100):
             return RedirectResponse("/alertas?error=rango", status_code=303)
         add_price_alert(t, target_price, "above", condition_type=condition_type,
-                        condition_value=target_price)
+                        condition_value=target_price, expires_at=_expires_at)
         return RedirectResponse("/alertas", status_code=303)
 
     if not (0 < target_price < 1_000_000):
@@ -2465,7 +2721,7 @@ async def alertas_add(
             current = row.iloc[0].get("price")
             if current and not _is_nan(current):
                 direction = "below" if target_price < current else "above"
-    add_price_alert(t, target_price, direction, condition_type="price")
+    add_price_alert(t, target_price, direction, condition_type="price", expires_at=_expires_at)
     return RedirectResponse("/alertas", status_code=303)
 
 

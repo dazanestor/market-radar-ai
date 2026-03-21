@@ -646,6 +646,11 @@ def _invalidate_csv_cache() -> None:
     with _opt_cache_lock:
         _opt_cache["data"] = None
         _opt_cache["ts"]   = 0.0
+    with _scored_cache_lock:
+        _scored_cache["df"]     = None
+        _scored_cache["csv_ts"] = 0.0
+    with _hist_cache_lock:
+        _hist_cache.clear()
 
 
 def _safe_pct(v) -> Optional[float]:
@@ -886,10 +891,14 @@ async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
 
     def _make():
         try:
-            spy = yf.Ticker("SPY").history(start=start_date)["Close"]
-            ewq = yf.Ticker("EWQ").history(start=start_date)["Close"]
+            spy_full = _get_ticker_hist("SPY", period="2y")["Close"]
+            spy = spy_full[spy_full.index >= pd.Timestamp(start_date, tz="UTC")]
         except Exception:
             spy = pd.Series(dtype=float)
+        try:
+            ewq_full = _get_ticker_hist("EWQ", period="2y")["Close"]
+            ewq = ewq_full[ewq_full.index >= pd.Timestamp(start_date, tz="UTC")]
+        except Exception:
             ewq = pd.Series(dtype=float)
 
         dates_pf = pd.to_datetime([r[0] for r in rows])
@@ -3102,7 +3111,7 @@ async def chart_correlacion(session: Optional[str] = Cookie(default=None)):
         frames = {}
         for t in tickers:
             try:
-                hist = yf.Ticker(t).history(period="1y")["Close"]
+                hist = _get_ticker_hist(t, period="1y")["Close"]
                 if not hist.empty:
                     # Normalize to plain date so all tickers align regardless of exchange timezone
                     hist.index = pd.to_datetime(hist.index.date)
@@ -3184,7 +3193,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
         price_data = {}
         for t in values:
             try:
-                hist = yf.Ticker(t).history(period="1y")["Close"]
+                hist = _get_ticker_hist(t, period="1y")["Close"]
                 if len(hist) > 30:
                     hist.index = pd.to_datetime(hist.index.date)
                     price_data[t] = hist
@@ -3194,7 +3203,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
         macro_tickers = {"SPY": "S&P 500", "^VIX": "VIX", "^TNX": "Bono 10Y EE.UU."}
         for mt in macro_tickers:
             try:
-                hist = yf.Ticker(mt).history(period="1y")["Close"]
+                hist = _get_ticker_hist(mt, period="1y")["Close"]
                 if not hist.empty:
                     hist.index = pd.to_datetime(hist.index.date)
                     price_data[mt] = hist
@@ -3310,7 +3319,7 @@ async def chart_riesgo_returns(session: Optional[str] = Cookie(default=None)):
         frames = {}
         for t in values:
             try:
-                h = yf.Ticker(t).history(period="1y")["Close"]
+                h = _get_ticker_hist(t, period="1y")["Close"]
                 if len(h) > 30:
                     h.index = pd.to_datetime(h.index.date)
                     frames[t] = h
@@ -3397,7 +3406,7 @@ def _compute_optimization(df_portfolio, positions_map: dict) -> Optional[dict]:
     price_data = {}
     for t in valid:
         try:
-            hist = yf.Ticker(t).history(period="1y")["Close"]
+            hist = _get_ticker_hist(t, period="1y")["Close"]
             if len(hist) > 30:
                 hist.index = pd.to_datetime(hist.index.date)
                 price_data[t] = hist
@@ -3730,9 +3739,21 @@ async def backtesting_page(request: Request, session: Optional[str] = Cookie(def
         if not rows:
             return []
 
+        # Pre-fetch históricos en paralelo para todos los tickers únicos
+        unique_tickers = list({r[0] for r in rows})
+        from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
+        price_cache = {}
+        def _fetch_hist(t):
+            try:
+                return t, _get_ticker_hist(t, period="2y")["Close"]
+            except Exception:
+                return t, None
+        with _TPE(max_workers=min(len(unique_tickers), 8)) as pool:
+            for t, hist in pool.map(_fetch_hist, unique_tickers):
+                price_cache[t] = hist
+
         # Agrupar por bucket
         results_raw = []
-        price_cache = {}
         for ticker, date_str, score in rows:
             if score is None:
                 continue
@@ -3742,12 +3763,6 @@ async def backtesting_page(request: Request, session: Optional[str] = Cookie(def
                 bucket = "MEDIA"
             else:
                 bucket = "BAJA"
-            if ticker not in price_cache:
-                try:
-                    hist = yf.Ticker(ticker).history(period="2y")["Close"]
-                    price_cache[ticker] = hist
-                except Exception:
-                    price_cache[ticker] = None
             hist = price_cache.get(ticker)
             if hist is None or hist.empty:
                 continue

@@ -38,12 +38,15 @@ def _get_client() -> anthropic.Anthropic:
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _call_claude(prompt: str):
+def _call_claude(prompt: str, use_cache: bool = False):
+    content = [{"type": "text", "text": prompt}]
+    if use_cache:
+        content[-1]["cache_control"] = {"type": "ephemeral"}
     return _get_client().messages.create(
         model=_effective_model(),
         max_tokens=4096,
         temperature=0,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": content}],
     )
 
 
@@ -247,7 +250,7 @@ Los 3 activos con mejor relación calidad/precio considerando su horizonte espec
 Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, drawdown acelerado, RSI sobrecomprado en corto plazo, consenso negativo) o "Sin alertas." si no hay ninguna.
 """
 
-    response = _call_claude(prompt)
+    response = _call_claude(prompt, use_cache=True)
 
     for block in response.content:
         if block.type == "text":

@@ -2,6 +2,7 @@
 Servicio scheduler standalone — reemplaza al bot de Telegram.
 Ejecuta todos los jobs periódicos y envía notificaciones via Web Push.
 """
+import json
 import logging
 import math
 import datetime
@@ -26,6 +27,8 @@ from database import (
     get_all_positions,
     get_tickers_as_yaml_dict,
     get_latest_snapshot_as_df,
+    get_setting, set_setting,
+    get_previous_opportunities,
 )
 from config import REPORT_HOUR, TIMEZONE, DRAWDOWN_ALERT_THRESHOLD
 
@@ -72,7 +75,36 @@ def job_daily_report():
             return
 
         df = score_by_horizon(df)
+
+        # Detectar cambios de oportunidad antes de guardar el snapshot de hoy
+        _notify_opp = effective("notify_opportunity_change", "", "1") == "1"
+        _prev_opps: dict = {}
+        if _notify_opp:
+            try:
+                _prev_opps = get_previous_opportunities(df["ticker"].tolist())
+            except Exception:
+                logging.debug("Error obteniendo oportunidades previas")
+
         save_snapshot(df.to_dict("records"))
+
+        # Notificar mejoras de oportunidad (p.ej. BAJA→ALTA o MEDIA→ALTA)
+        if _notify_opp and _prev_opps:
+            _opp_rank = {"BAJA": 0, "MEDIA": 1, "ALTA": 2}
+            _improved = []
+            for d in df.to_dict("records"):
+                t = d["ticker"]
+                prev = _prev_opps.get(t)
+                curr = d.get("opportunity")
+                if prev and curr and prev != curr:
+                    prev_r = _opp_rank.get(prev, -1)
+                    curr_r = _opp_rank.get(curr, -1)
+                    if curr_r > prev_r:
+                        _improved.append(f"{t}: {prev}→{curr}")
+            if _improved:
+                body = "; ".join(_improved[:5])
+                if len(_improved) > 5:
+                    body += f" (+{len(_improved)-5} más)"
+                _send_push("Mejora de oportunidad detectada", body[:200], "/oportunidades")
 
         portfolio_df = df[df["category"] == "portfolio"].copy()
         watchlist_df = df[df["category"] == "watchlist"].copy()
@@ -277,7 +309,7 @@ def job_replay_unnotified_alerts():
 
 
 def job_check_exdividend():
-    """Verifica si algún ticker tiene fecha ex-dividendo en los próximos 3 días."""
+    """Verifica si algún ticker tiene fecha ex-dividendo en los próximos 7 días y guarda caché."""
     tickers = get_tickers_as_yaml_dict()
     all_tickers = []
     for cat in ("portfolio", "watchlist"):
@@ -289,7 +321,8 @@ def job_check_exdividend():
         return
 
     today = datetime.date.today()
-    alerts = []
+    alerts_3d = []
+    cache_7d = []
 
     def _check_exdiv(ticker_name):
         ticker, name = ticker_name
@@ -300,27 +333,39 @@ def job_check_exdividend():
                 return None
             ex_date = datetime.date.fromtimestamp(ex_date_ts)
             days_until = (ex_date - today).days
-            if 0 <= days_until <= 3:
+            if 0 <= days_until <= 7:
                 div = info.get("dividendRate") or info.get("lastDividendValue")
-                div_str = f" (${div:.2f}/acción)" if div else ""
-                return f"{name} ({ticker}): {ex_date.strftime('%d/%m/%Y')} en {days_until}d{div_str}"
+                return {"ticker": ticker, "name": name, "date": ex_date.isoformat(),
+                        "days_until": days_until, "div": div}
         except Exception:
             logging.debug("Error obteniendo ex-dividend de %s", ticker)
         return None
 
     with ThreadPoolExecutor(max_workers=min(len(all_tickers), 10)) as pool:
-        alerts = [r for r in pool.map(_check_exdiv, all_tickers) if r]
+        results = [r for r in pool.map(_check_exdiv, all_tickers) if r]
 
-    if alerts:
-        body = "; ".join(alerts[:3])
-        if len(alerts) > 3:
-            body += f" (+{len(alerts)-3} más)"
+    for r in results:
+        cache_7d.append({"ticker": r["ticker"], "date": r["date"]})
+        if r["days_until"] <= 3:
+            div_str = f" (${r['div']:.2f}/acción)" if r.get("div") else ""
+            alerts_3d.append(f"{r['name']} ({r['ticker']}): {r['date']} en {r['days_until']}d{div_str}")
+
+    # Guardar caché de 7 días en BD para /api/upcoming-events
+    try:
+        set_setting("upcoming_exdiv_cache", json.dumps(cache_7d))
+    except Exception:
+        logging.debug("Error guardando caché ex-div")
+
+    if alerts_3d:
+        body = "; ".join(alerts_3d[:3])
+        if len(alerts_3d) > 3:
+            body += f" (+{len(alerts_3d)-3} más)"
         _send_push("Próximas fechas ex-dividendo 💰", body[:200], "/")
-        logging.info("Ex-dividend alert: %d ticker(s)", len(alerts))
+        logging.info("Ex-dividend alert: %d ticker(s)", len(alerts_3d))
 
 
 def job_check_earnings():
-    """Avisa si algún ticker tiene earnings en los próximos 7 días."""
+    """Avisa si algún ticker tiene earnings en los próximos 7 días y guarda caché."""
     tickers = get_tickers_as_yaml_dict()
     all_tickers = []
     for cat in ("portfolio", "watchlist"):
@@ -332,6 +377,7 @@ def job_check_earnings():
         return
 
     today = datetime.date.today()
+    cache_7d = []
 
     def _check_earnings(ticker_name):
         ticker, name = ticker_name
@@ -365,13 +411,26 @@ def job_check_earnings():
                         eps_str = f" EPS est: ${float(eps):.2f}"
                     except Exception:
                         pass
-                return f"{name} ({ticker}): {earnings_date.strftime('%d/%m/%Y')} en {days_until}d{eps_str}"
+                return {"ticker": ticker, "name": name,
+                        "date": earnings_date.isoformat(),
+                        "days_until": days_until, "eps_str": eps_str}
         except Exception:
             logging.debug("Error obteniendo earnings de %s", ticker)
         return None
 
     with ThreadPoolExecutor(max_workers=min(len(all_tickers), 10)) as pool:
-        alerts = [r for r in pool.map(_check_earnings, all_tickers) if r]
+        results = [r for r in pool.map(_check_earnings, all_tickers) if r]
+
+    alerts = []
+    for r in results:
+        cache_7d.append({"ticker": r["ticker"], "date": r["date"]})
+        alerts.append(f"{r['name']} ({r['ticker']}): {r['date']} en {r['days_until']}d{r['eps_str']}")
+
+    # Guardar caché de 7 días en BD para /api/upcoming-events
+    try:
+        set_setting("upcoming_earnings_cache", json.dumps(cache_7d))
+    except Exception:
+        logging.debug("Error guardando caché earnings")
 
     if alerts:
         body = "; ".join(alerts[:3])
@@ -448,6 +507,62 @@ def job_check_claude_health():
         )
 
 
+def job_yearly_fiscal_summary():
+    """Genera y envía por push un resumen fiscal FIFO del año anterior (1 de enero)."""
+    prev_year = datetime.date.today().year - 1
+    logging.info("Generando resumen fiscal FIFO del año %d", prev_year)
+    try:
+        from database import get_operations
+        ops = get_operations(order_asc=True, limit=10000)
+        if not ops:
+            logging.info("Sin operaciones para resumen fiscal %d.", prev_year)
+            return
+
+        # Calcular P&L FIFO para el año anterior
+        fifo: dict = {}  # ticker → [(shares, cost_eur)]
+        gains = []
+        for op_id, ticker, date_str, op_type, shares, price_eur, notes, commission in ops:
+            try:
+                op_year = int(date_str[:4])
+            except Exception:
+                continue
+            if op_type == "buy":
+                fifo.setdefault(ticker, []).append((shares, price_eur))
+            elif op_type == "sell" and op_year == prev_year:
+                queue = fifo.get(ticker, [])
+                remaining = shares
+                cost = 0.0
+                new_queue = []
+                for q_shares, q_price in queue:
+                    if remaining <= 0:
+                        new_queue.append((q_shares, q_price))
+                    elif q_shares <= remaining:
+                        cost += q_shares * q_price
+                        remaining -= q_shares
+                    else:
+                        cost += remaining * q_price
+                        new_queue.append((q_shares - remaining, q_price))
+                        remaining = 0
+                fifo[ticker] = new_queue
+                proceeds = shares * price_eur - commission
+                gain = proceeds - cost
+                gains.append({"ticker": ticker, "gain": gain, "shares": shares, "price": price_eur})
+
+        if not gains:
+            _send_push(f"Resumen fiscal {prev_year}", f"Sin ventas registradas en {prev_year}.", "/fiscalidad")
+            return
+
+        total_gain = sum(g["gain"] for g in gains)
+        positive = sum(g["gain"] for g in gains if g["gain"] > 0)
+        negative = sum(g["gain"] for g in gains if g["gain"] < 0)
+        body = (f"P&L realizado {prev_year}: €{total_gain:.2f} "
+                f"(+€{positive:.2f} / -€{abs(negative):.2f}) en {len(gains)} ventas.")
+        _send_push(f"Resumen fiscal FIFO {prev_year}", body[:200], "/fiscalidad")
+        logging.info("Resumen fiscal %d enviado: %s", prev_year, body)
+    except Exception:
+        logging.exception("Error en resumen fiscal anual")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -496,6 +611,12 @@ def main():
     scheduler.add_job(
         job_check_claude_health, CronTrigger(day_of_week="mon", hour=9, minute=0, timezone=tz),
         id="claude_health", name="Claude health check",
+    )
+
+    scheduler.add_job(
+        job_yearly_fiscal_summary,
+        CronTrigger(month=1, day=1, hour=9, minute=0, timezone=tz),
+        id="yearly_fiscal", name="Resumen fiscal anual",
     )
 
     # Alertas pendientes al arrancar (30s delay para que la BD esté estable)

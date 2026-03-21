@@ -172,6 +172,7 @@
             <th>Condición</th>
             <th>Precio al dispararse</th>
             <th class="hide-mobile">Cuando</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -180,6 +181,7 @@
           {% set h_target = row[2] %}
           {% set h_dir = row[3] %}
           {% set h_ctype = row[4] if row|length > 4 else 'price' %}
+          {% set h_cvalue = row[5] if row|length > 5 else none %}
           {% set h_triggered_at = row[6] if row|length > 6 else '' %}
           {% set h_price = row[7] if row|length > 7 else none %}
           <tr>
@@ -201,6 +203,17 @@
             </td>
             <td>{{ h_price | eur }}</td>
             <td class="hide-mobile text-muted">{{ h_triggered_at }}</td>
+            <td>
+              <form method="post" action="/alertas/reactivar" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="ticker" value="{{ h_ticker }}">
+                <input type="hidden" name="target_price" value="{{ h_target }}">
+                <input type="hidden" name="direction" value="{{ h_dir }}">
+                <input type="hidden" name="condition_type" value="{{ h_ctype }}">
+                <input type="hidden" name="condition_value" value="{{ h_cvalue if h_cvalue is not none else '' }}">
+                <button type="submit" class="btn btn-sm" style="font-size:11px" title="Reactivar esta alerta">Reactivar</button>
+              </form>
+            </td>
           </tr>
           {% endfor %}
         </tbody>

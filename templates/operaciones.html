@@ -14,12 +14,14 @@
   </div>
   <div class="card">
     <div class="card-body">
-      <form method="post" action="/operaciones/add" class="form-grid">
+      <form method="post" action="/operaciones/add" class="form-grid"
+            x-data="{ ticker: '', op_type: 'buy', price_eur: '', date: '', notes: '', suggesting: false, suggest_err: '' }"
+            @submit="notes = $el.querySelector('[name=notes]').value">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px">
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Ticker</label>
-            <select name="ticker" class="form-input" required>
+            <select name="ticker" x-model="ticker" class="form-input" required>
               <option value="">Selecciona</option>
               {% for t in all_tickers %}
               <option value="{{ t.ticker }}">{{ t.ticker }} — {{ t.name }}</option>
@@ -28,11 +30,11 @@
           </div>
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Fecha</label>
-            <input type="date" name="date" class="form-input" required value="{{ ''|truncate(0) }}">
+            <input type="date" name="date" x-model="date" class="form-input" required value="{{ ''|truncate(0) }}">
           </div>
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Tipo</label>
-            <select name="op_type" class="form-input" required>
+            <select name="op_type" x-model="op_type" class="form-input" required>
               <option value="buy">🟢 Compra</option>
               <option value="sell">🔴 Venta</option>
             </select>
@@ -43,12 +45,25 @@
           </div>
           <div>
             <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Precio (€/acc)</label>
-            <input type="number" name="price_eur" class="form-input" step="0.01" min="0.01" placeholder="Ej: 150.00" required>
+            <input type="number" name="price_eur" x-model="price_eur" class="form-input" step="0.01" min="0.01" placeholder="Ej: 150.00" required>
           </div>
         </div>
         <div style="margin-bottom:10px">
-          <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:4px">Notas (opcional)</label>
-          <input type="text" name="notes" class="form-input" maxlength="500" placeholder="Motivo de la operación...">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <label style="font-size:12px;color:#8b949e">Notas (opcional)</label>
+            <button type="button" class="btn btn-sm"
+                    :disabled="suggesting || !ticker || !price_eur"
+                    @click="if(ticker && price_eur){ suggesting=true; suggest_err='';
+                      const params = new URLSearchParams({ticker, op_type, price_eur, date: date || new Date().toISOString().slice(0,10)});
+                      fetch('/operaciones/sugerir-nota?' + params)
+                        .then(r=>r.json()).then(d=>{ if(d.note) notes=d.note; else suggest_err=d.error||'Error'; suggesting=false })
+                        .catch(()=>{ suggest_err='Error de conexión'; suggesting=false }) }">
+              <span x-show="!suggesting">Sugerir con IA</span>
+              <span x-show="suggesting" style="color:#8b949e">Generando…</span>
+            </button>
+            <span x-show="suggest_err" x-text="suggest_err" style="font-size:11px;color:#f85149"></span>
+          </div>
+          <input type="text" name="notes" x-model="notes" class="form-input" maxlength="500" placeholder="Motivo de la operación...">
         </div>
         <button type="submit" class="btn btn-primary">Registrar operación</button>
       </form>

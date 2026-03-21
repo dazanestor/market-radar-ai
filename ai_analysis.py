@@ -497,3 +497,16 @@ def suggest_ticker_meta(ticker: str, info: dict) -> dict:
     except Exception:
         logger.exception("Error en suggest_ticker_meta")
     return {"horizon": "medio", "notes": ""}
+
+
+def suggest_operation_note(ticker: str, op_type: str, price_eur: float, date: str) -> str:
+    """Sugiere una nota breve para registrar en una operación de compra/venta."""
+    action = "compra" if op_type == "buy" else "venta"
+    prompt = (
+        f"Eres un asistente de inversión. Sugiere una nota concisa (máx. 80 caracteres) para "
+        f"registrar en el historial de operaciones una {action} de {ticker} a €{price_eur:.2f} "
+        f"el {date}. La nota debe resumir el motivo habitual de esta operación de forma neutra "
+        f"y profesional. Responde solo con la nota, sin comillas ni explicaciones adicionales."
+    )
+    result = _call_claude_short(prompt, max_tokens=100)
+    return result[:500] if result else ""

@@ -548,6 +548,25 @@ def save_portfolio_value(total_eur: float, positions_count: int = 0) -> None:
         """, (today, total_eur, positions_count))
 
 
+def get_previous_opportunities(tickers: list) -> dict:
+    """Devuelve {ticker: opportunity} del snapshot más reciente ANTERIOR a hoy para cada ticker."""
+    if not tickers:
+        return {}
+    placeholders = ",".join("?" * len(tickers))
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(f"""
+            SELECT ticker, opportunity FROM (
+                SELECT ticker, opportunity,
+                       ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS rn
+                FROM price_history
+                WHERE ticker IN ({placeholders})
+                  AND date < date('now')
+            ) WHERE rn = 1
+        """, tickers)
+        return {row[0]: row[1] for row in c.fetchall()}
+
+
 def get_portfolio_value_history(days: int = 365) -> list:
     """Devuelve historial de valor total ordenado por fecha ASC (últimos `days` días)."""
     with _db() as conn:

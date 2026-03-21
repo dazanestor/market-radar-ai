@@ -78,6 +78,7 @@
           <th>Anual est.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Suma de los cuatro trimestres estimados, en euros, para tus acciones.')">ⓘ</button></th>
           <th class="hide-mobile">Yield s/coste<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Dividendo anual estimado dividido entre el valor actual de la posición a precio de mercado.')">ⓘ</button></th>
           <th class="hide-mobile">Próx. ex-div.<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Fecha ex-dividendo próxima según yfinance. Debes tener las acciones antes de esta fecha para cobrar el dividendo.')">ⓘ</button></th>
+          <th class="hide-mobile">Fecha pago<button class="help-btn" onclick="event.stopPropagation();showHelp(this,'Fecha en que el dividendo es abonado efectivamente por la empresa según yfinance.')">ⓘ</button></th>
         </tr>
       </thead>
       <tbody>
@@ -127,6 +128,13 @@
               <span class="text-muted">—</span>
             {% endif %}
           </td>
+          <td class="hide-mobile">
+            {% if r.dividend_date %}
+              <span style="font-size:12px;color:#3fb950">{{ r.dividend_date }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
 
@@ -138,6 +146,7 @@
           <td class="text-accent">{{ totals.q3_eur | eur }}</td>
           <td class="text-accent">{{ totals.q4_eur | eur }}</td>
           <td style="color:#e6edf3;font-size:14px">{{ totals.annual_eur | eur }}</td>
+          <td class="hide-mobile"></td>
           <td class="hide-mobile"></td>
           <td class="hide-mobile"></td>
         </tr>

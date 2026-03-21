@@ -3,10 +3,20 @@
 
 {% block content %}
 
-{% if data_age %}
-<div style="font-size:11px;color:#484f58;margin-bottom:12px;text-align:right">
-  ⏱ Datos actualizados {{ data_age }}
-</div>
+{% if data_age is not none %}
+  {% if data_age > 2 %}
+  <div style="background:rgba(210,153,34,0.12);border:1px solid rgba(210,153,34,0.4);border-radius:6px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span style="font-size:13px;color:#d29922">⚠️ Los datos tienen <strong>{{ data_age }} día{{ 's' if data_age != 1 else '' }}</strong> de antigüedad. Actualiza el reporte para obtener métricas recientes.</span>
+    <form method="post" action="/generar-reporte" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-sm" style="background:#d29922;color:#0d1117;border:none;font-weight:600">Generar reporte</button>
+    </form>
+  </div>
+  {% else %}
+  <div style="font-size:11px;color:#484f58;margin-bottom:12px;text-align:right">
+    ⏱ Datos actualizados hace {{ data_age }} día{{ 's' if data_age != 1 else '' }}
+  </div>
+  {% endif %}
 {% endif %}
 
 {% if error == "reporte_fallido" %}

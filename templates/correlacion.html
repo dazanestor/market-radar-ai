@@ -7,9 +7,21 @@
   Verde = correlación positiva, rojo = negativa. Activos con correlación >0.8 se mueven casi igual (riesgo de concentración oculto).
 </p>
 
+<div style="margin-bottom:14px;display:flex;align-items:center;gap:10px">
+  <a href="/correlacion{% if include_watchlist %}{% else %}?include_watchlist=true{% endif %}"
+     class="btn btn-sm {% if include_watchlist %}btn-primary{% else %}btn-ghost{% endif %}">
+    {% if include_watchlist %}Ocultar watchlist{% else %}Incluir watchlist{% endif %}
+  </a>
+  {% if include_watchlist %}
+  <span class="badge badge-blue">Cartera + Watchlist</span>
+  {% else %}
+  <span class="badge badge-gray">Solo cartera</span>
+  {% endif %}
+</div>
+
 {% if n < 2 %}
 <div class="empty-state">
-  Se necesitan al menos 2 posiciones registradas para calcular correlaciones.
+  Se necesitan al menos 2 activos para calcular correlaciones.
   <a href="/posiciones" class="text-accent" style="margin-left:6px">Añadir posiciones →</a>
 </div>
 {% else %}
@@ -19,13 +31,14 @@
   <div class="stat-card"><div class="stat-label">Período</div><div class="stat-value" style="font-size:16px">1 año</div></div>
 </div>
 
+{% set chart_url = '/chart/correlacion' + ('?include_watchlist=true' if include_watchlist else '') %}
 <div class="card" style="padding:16px">
   <div class="card-header" style="padding:0 0 12px">
     <span class="card-title">Matriz de correlación (retornos diarios)</span>
     <span style="font-size:11px;color:#8b949e">Actualización: 5 min</span>
   </div>
   <div class="chart-loading" id="shimmer-corr" style="min-height:320px;background:linear-gradient(90deg,#21262d 25%,#2d333b 50%,#21262d 75%);background-size:200% 100%;animation:chart-shimmer 1.4s infinite;border-radius:6px"></div>
-  <img src="/chart/correlacion" id="img-corr" style="display:none;max-width:100%;border-radius:6px"
+  <img src="{{ chart_url }}" id="img-corr" style="display:none;max-width:100%;border-radius:6px"
        onload="this.style.display='block';document.getElementById('shimmer-corr').style.display='none'"
        onerror="document.getElementById('shimmer-corr').style.display='none';document.getElementById('err-corr').style.display='block'">
   <div id="err-corr" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">

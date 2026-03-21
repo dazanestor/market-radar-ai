@@ -45,6 +45,7 @@ from ai_analysis import (
     detect_news_patterns,
     analyze_operations,
     suggest_ticker_meta,
+    suggest_operation_note,
 )
 from database import (
     add_operation,
@@ -57,6 +58,7 @@ from database import (
     get_active_alerts,
     get_alert_history,
     get_all_positions,
+    get_portfolio_position,
     get_operations,
     get_portfolio_value_history,
     get_recent_reports,
@@ -823,85 +825,28 @@ def _make_history_chart(ticker: str, rows: list) -> Optional[plt.Figure]:
 
 @app.get("/api/upcoming-events")
 async def upcoming_events(session: Optional[str] = Cookie(default=None)):
-    """Devuelve ex-dividendos y earnings próximos en los próximos 7 días."""
+    """Devuelve ex-dividendos y earnings próximos en los próximos 7 días (desde caché BD)."""
     if not _is_auth(session):
         raise HTTPException(401)
 
-    tickers_data = _load_tickers()
-    portfolio_tickers = list((tickers_data.get("portfolio") or {}).keys())
+    exdiv_list = []
+    earnings_list = []
+    try:
+        cached_exdiv = get_setting("upcoming_exdiv_cache")
+        if cached_exdiv:
+            exdiv_list = json.loads(cached_exdiv)
+    except Exception:
+        pass
+    try:
+        cached_earnings = get_setting("upcoming_earnings_cache")
+        if cached_earnings:
+            earnings_list = json.loads(cached_earnings)
+    except Exception:
+        pass
 
-    def _fetch_events():
-        import datetime as _dt
-        today = _dt.date.today()
-        horizon_days = _dt.timedelta(days=7)
-        exdiv_list = []
-        earnings_list = []
-
-        def _check_ticker(t):
-            exdiv = None
-            earnings_dates = []
-            try:
-                info = yf.Ticker(t).fast_info
-                ex_ts = getattr(info, "last_exdividend_date", None)
-                if ex_ts is not None:
-                    import pandas as pd
-                    if hasattr(ex_ts, "date"):
-                        ex_date = ex_ts.date()
-                    else:
-                        try:
-                            ex_date = pd.Timestamp(ex_ts).date()
-                        except Exception:
-                            ex_date = None
-                    if ex_date and today <= ex_date <= today + horizon_days:
-                        exdiv = ex_date.isoformat()
-            except Exception:
-                pass
-            try:
-                stock = yf.Ticker(t)
-                cal = stock.calendar
-                if cal is not None and not (hasattr(cal, "empty") and cal.empty):
-                    # calendar may be a dict or DataFrame
-                    if hasattr(cal, "to_dict"):
-                        cal_dict = cal.to_dict()
-                    elif isinstance(cal, dict):
-                        cal_dict = cal
-                    else:
-                        cal_dict = {}
-                    ed = cal_dict.get("Earnings Date") or cal_dict.get("earningsDate")
-                    if ed:
-                        import pandas as pd
-                        if not isinstance(ed, list):
-                            ed = [ed]
-                        for e in ed:
-                            try:
-                                e_date = pd.Timestamp(e).date()
-                                if today <= e_date <= today + horizon_days:
-                                    earnings_dates.append(e_date.isoformat())
-                            except Exception:
-                                pass
-            except Exception:
-                pass
-            return t, exdiv, earnings_dates
-
-        from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
-        with _TPE(max_workers=5) as pool:
-            futs = {pool.submit(_check_ticker, t): t for t in portfolio_tickers}
-            for fut in _ac(futs, timeout=30):
-                try:
-                    t, exdiv, earn_dates = fut.result()
-                    if exdiv:
-                        exdiv_list.append({"ticker": t, "date": exdiv})
-                    for d in earn_dates:
-                        earnings_list.append({"ticker": t, "date": d})
-                except Exception:
-                    pass
-
-        exdiv_list.sort(key=lambda x: x["date"])
-        earnings_list.sort(key=lambda x: x["date"])
-        return {"exdiv": exdiv_list, "earnings": earnings_list}
-
-    result = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_events)
-    return JSONResponse(result)
+    exdiv_list.sort(key=lambda x: x.get("date", ""))
+    earnings_list.sort(key=lambda x: x.get("date", ""))
+    return JSONResponse({"exdiv": exdiv_list, "earnings": earnings_list})
 
 
 # ── Chart endpoints ───────────────────────────────────────────────────────────
@@ -1430,6 +1375,23 @@ _APP_SETTINGS = [
     {"key": "SCORE_CORTO_ROE",       "label": "Corto · ROE",             "section": "Scoring — Pesos", "type": "number", "default": "0.00", "hint": "Peso 0.0–1.0.", "restart": False},
     {"key": "SCORE_CORTO_PE",        "label": "Corto · PER",             "section": "Scoring — Pesos", "type": "number", "default": "0.00", "hint": "Peso 0.0–1.0.", "restart": False},
     {"key": "SCORE_CORTO_RSI",       "label": "Corto · RSI",             "section": "Scoring — Pesos", "type": "number", "default": "0.50", "hint": "Peso 0.0–1.0.", "restart": False},
+    # Escenario de stress personalizado
+    {
+        "key": "custom_stress_name",
+        "label": "Escenario personalizado — Nombre",
+        "hint": "Nombre del escenario de stress personalizado (ej. 'Recesión Europa'). Déjalo vacío para desactivar.",
+        "type": "text",
+        "restart": False,
+        "section": "Stress Testing",
+    },
+    {
+        "key": "custom_stress_pct",
+        "label": "Escenario personalizado — Shock (%)",
+        "hint": "Porcentaje de variación a aplicar a toda la cartera. Usa valores negativos para caídas (ej. -20) o positivos para subidas (ej. +15).",
+        "type": "number",
+        "restart": False,
+        "section": "Stress Testing",
+    },
 ]
 
 
@@ -1631,14 +1593,15 @@ async def dashboard(
     if tr_cash is not None and total_value is not None:
         total_value += tr_cash
 
-    # Antigüedad de datos: fecha del snapshot más reciente en BD
+    # Antigüedad de datos: días desde el snapshot más reciente en BD
     data_age = None
     try:
         with _db() as _conn:
             _row = _conn.execute("SELECT MAX(date) FROM price_history").fetchone()
             last_update = _row[0] if _row and _row[0] else None
         if last_update:
-            data_age = last_update
+            _last_date = datetime.date.fromisoformat(last_update)
+            data_age = (datetime.date.today() - _last_date).days
     except Exception:
         pass
 
@@ -2366,6 +2329,30 @@ async def operaciones_add(
     except ValueError:
         return RedirectResponse("/operaciones", status_code=303)
     add_operation(t, date, op_type, shares, price_eur, notes.strip()[:500], commission_eur=_commission_eur())
+
+    # Auto-sincronizar posición en cartera tras la operación
+    try:
+        pos = get_portfolio_position(t)
+        if op_type == "buy":
+            if pos:
+                old_shares, old_avg = pos
+                new_shares = old_shares + shares
+                new_avg = (old_shares * old_avg + shares * price_eur) / new_shares
+                upsert_position(t, new_shares, new_avg)
+            else:
+                upsert_position(t, shares, price_eur)
+        elif op_type == "sell":
+            if pos:
+                old_shares, old_avg = pos
+                new_shares = old_shares - shares
+                if new_shares <= 0:
+                    delete_position(t)
+                else:
+                    upsert_position(t, new_shares, old_avg)
+        _invalidate_positions_cache()
+    except Exception:
+        logger.exception("Error sincronizando posición tras operación de %s", t)
+
     return RedirectResponse(f"/operaciones?saved={t}", status_code=303)
 
 
@@ -2381,6 +2368,31 @@ async def operaciones_delete(
     _require_csrf(request, csrf_token)
     delete_operation(op_id)
     return RedirectResponse("/operaciones", status_code=303)
+
+
+@app.get("/operaciones/sugerir-nota")
+async def operaciones_sugerir_nota(
+    session:   Optional[str] = Cookie(default=None),
+    ticker:    str = "",
+    op_type:   str = "buy",
+    price_eur: float = 0.0,
+    date:      str = "",
+):
+    if not _is_auth(session):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    t = ticker.strip().upper()
+    if not t or not _TICKER_RE.match(t):
+        return JSONResponse({"error": "Ticker inválido"}, status_code=400)
+    if op_type not in ("buy", "sell") or price_eur <= 0:
+        return JSONResponse({"error": "Parámetros inválidos"}, status_code=400)
+    if not date:
+        date = datetime.date.today().isoformat()
+    note = await asyncio.get_running_loop().run_in_executor(
+        _executor, suggest_operation_note, t, op_type, price_eur, date
+    )
+    if not note:
+        return JSONResponse({"error": "No se pudo generar la sugerencia"}, status_code=500)
+    return JSONResponse({"note": note})
 
 
 # ── Distribución ───────────────────────────────────────────────────────────────
@@ -2523,12 +2535,46 @@ async def simulador_page(
         suggestions = [r for r in rows_data if r["alloc"] > 0.01]
         suggestions.sort(key=lambda x: -x["alloc"])
 
+    # Modo inverso: cuánto hay que invertir en cada ticker para alcanzar su peso objetivo
+    inverse_allocation = []
+    if df is not None and positions:
+        inv_rows = []
+        total_val = 0.0
+        for row in df[df["category"] == "portfolio"].to_dict("records"):
+            ticker = row["ticker"]
+            if ticker not in positions:
+                continue
+            price = row.get("price")
+            if not price or _is_nan(price):
+                continue
+            shares, _ = positions[ticker]
+            value = shares * float(price)
+            total_val += value
+            try:
+                _tw_raw = row.get("target_weight")
+                tw = float(_tw_raw) if _tw_raw is not None and not _is_nan(_tw_raw) else None
+            except (TypeError, ValueError):
+                tw = None
+            inv_rows.append({"ticker": ticker, "name": row["name"],
+                             "price": float(price), "value": value, "target_w": tw})
+        if total_val > 0 and inv_rows:
+            n = len(inv_rows)
+            for r in inv_rows:
+                r["current_w"] = r["value"] / total_val * 100
+                r["target_w_eff"] = r["target_w"] if r["target_w"] is not None else (100 / n)
+                target_value = total_val * r["target_w_eff"] / 100
+                deficit = target_value - r["value"]
+                r["needed_eur"] = round(max(0, deficit), 2)
+                r["needed_shares"] = round(r["needed_eur"] / r["price"], 4) if r["price"] > 0 and r["needed_eur"] > 0 else 0
+            inverse_allocation = sorted(inv_rows, key=lambda x: -x["needed_eur"])
+
     return templates.TemplateResponse("simulador.html", {
         "request": request,
         "importe": importe,
         "suggestions": suggestions,
         "has_data": df is not None,
         "has_positions": bool(positions),
+        "inverse_allocation": inverse_allocation,
     })
 
 
@@ -2736,6 +2782,35 @@ async def alertas_delete(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     deactivate_alert(alert_id)
+    return RedirectResponse("/alertas", status_code=303)
+
+
+@app.post("/alertas/reactivar")
+async def alertas_reactivar(
+    request:         Request,
+    session:         Optional[str] = Cookie(default=None),
+    ticker:          str   = Form(...),
+    target_price:    float = Form(...),
+    direction:       str   = Form(...),
+    condition_type:  str   = Form("price"),
+    condition_value: str   = Form(""),
+    csrf_token:      Optional[str] = Form(default=None),
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    _require_csrf(request, csrf_token)
+    t = ticker.strip().upper()
+    if not _TICKER_RE.match(t):
+        return RedirectResponse("/alertas", status_code=303)
+    if direction not in ("above", "below"):
+        return RedirectResponse("/alertas", status_code=303)
+    _cvalue = None
+    if condition_value.strip():
+        try:
+            _cvalue = float(condition_value.strip())
+        except (TypeError, ValueError):
+            _cvalue = None
+    add_price_alert(t, target_price, direction, condition_type=condition_type, condition_value=_cvalue)
     return RedirectResponse("/alertas", status_code=303)
 
 
@@ -3107,12 +3182,20 @@ async def dividendos_page(request: Request, session: Optional[str] = Cookie(defa
                 current_value = shares * price_eur if price_eur else None
                 yield_pct = round(annual_eur / current_value * 100, 2) if current_value and current_value > 0 else None
 
-                # Próxima fecha ex-dividendo
+                # Próxima fecha ex-dividendo y fecha de pago
                 next_exdate = None
                 ex_ts = info.get("exDividendDate")
                 if ex_ts:
                     try:
                         next_exdate = datetime.date.fromtimestamp(ex_ts).isoformat()
+                    except (OSError, OverflowError, ValueError):
+                        pass
+
+                dividend_date = None
+                div_ts = info.get("dividendDate")
+                if div_ts:
+                    try:
+                        dividend_date = datetime.date.fromtimestamp(div_ts).isoformat()
                     except (OSError, OverflowError, ValueError):
                         pass
 
@@ -3146,6 +3229,7 @@ async def dividendos_page(request: Request, session: Optional[str] = Cookie(defa
                     "yield_pct":        yield_pct,
                     "frequency":        frequency,
                     "next_exdate":      next_exdate,
+                    "dividend_date":    dividend_date,
                     "monthly_calendar": monthly_calendar,
                 })
             except Exception:
@@ -3354,23 +3438,39 @@ async def earnings_page(request: Request, session: Optional[str] = Cookie(defaul
 # ── Correlación entre activos ──────────────────────────────────────────────────
 
 @app.get("/correlacion", response_class=HTMLResponse)
-async def correlacion_page(request: Request, session: Optional[str] = Cookie(default=None)):
+async def correlacion_page(
+    request:          Request,
+    include_watchlist: bool = False,
+    session:          Optional[str] = Cookie(default=None),
+):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     positions = _get_positions()
     tickers   = [r[0] for r in positions]
+    if include_watchlist:
+        tickers_data = _load_tickers()
+        watchlist_tickers = list((tickers_data.get("watchlist") or {}).keys())
+        tickers = list(dict.fromkeys(tickers + watchlist_tickers))  # deduplicate, preserve order
     return templates.TemplateResponse("correlacion.html", {
         "request": request, "tickers": tickers, "n": len(tickers),
+        "include_watchlist": include_watchlist,
     })
 
 
 @app.get("/chart/correlacion")
-async def chart_correlacion(session: Optional[str] = Cookie(default=None)):
+async def chart_correlacion(
+    include_watchlist: bool = False,
+    session: Optional[str] = Cookie(default=None),
+):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
 
     positions = _get_positions()
     tickers   = [r[0] for r in positions]
+    if include_watchlist:
+        tickers_data = _load_tickers()
+        watchlist_tickers = list((tickers_data.get("watchlist") or {}).keys())
+        tickers = list(dict.fromkeys(tickers + watchlist_tickers))
     if len(tickers) < 2:
         raise HTTPException(status_code=400, detail="Se necesitan al menos 2 posiciones")
 
@@ -4458,8 +4558,24 @@ async def stress_test_page(request: Request, session: Optional[str] = Cookie(def
                 "sector": sector,
             })
 
+    # Añadir escenario personalizado si está configurado
+    active_scenarios = list(STRESS_SCENARIOS)
+    try:
+        _custom_name = get_setting("custom_stress_name") or ""
+        _custom_pct_str = get_setting("custom_stress_pct") or ""
+        if _custom_name.strip() and _custom_pct_str.strip():
+            _custom_shock = float(_custom_pct_str) / 100
+            active_scenarios.append({
+                "name": _custom_name.strip(),
+                "desc": "Escenario personalizado",
+                "shock": _custom_shock,
+                "sectors_shock": {},
+            })
+    except Exception:
+        pass
+
     scenarios_results = []
-    for scenario in STRESS_SCENARIOS:
+    for scenario in active_scenarios:
         shock        = scenario["shock"]
         sec_shock    = scenario["sectors_shock"]
         total_new    = 0.0
@@ -4661,56 +4777,6 @@ async def chart_treemap(session: Optional[str] = Cookie(default=None)):
     if fig is None:
         raise HTTPException(404, "Sin posiciones")
     return _fig_to_response(fig)
-
-
-# ── Exportación PDF (HTML optimizado para impresión) ──────────────────────────
-
-@app.get("/export/pdf", response_class=HTMLResponse)
-async def export_pdf(request: Request, session: Optional[str] = Cookie(default=None)):
-    if not _is_auth(session):
-        return RedirectResponse("/login", status_code=302)
-
-    df        = _read_csv()
-    positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
-    rows_data = []
-    total_value = 0.0
-    total_cost  = 0.0
-
-    if df is not None:
-        for row in df[df["category"] == "portfolio"].to_dict("records"):
-            t = row["ticker"]
-            if t not in positions:
-                continue
-            shares, avg = positions[t]
-            price = row.get("price")
-            if not price or _is_nan(price):
-                continue
-            value   = shares * float(price)
-            cost    = shares * float(avg)
-            pnl_pct = (float(price) - float(avg)) / float(avg) * 100 if avg else 0
-            total_value += value
-            total_cost  += cost
-            rows_data.append({
-                "ticker": t, "name": row["name"],
-                "shares": shares, "price": float(price), "avg": float(avg),
-                "value": value, "pnl_pct": pnl_pct,
-                "drawdown": row.get("drawdown_52w"),
-                "score": row.get("score"),
-            })
-    rows_data.sort(key=lambda x: -x["value"])
-    total_pnl = (total_value - total_cost) / total_cost * 100 if total_cost > 0 else 0
-
-    reports = get_recent_reports(n=1)
-    last_report = reports[0][2] if reports else ""
-
-    return templates.TemplateResponse("export_pdf.html", {
-        "request":     request,
-        "rows":        rows_data,
-        "total_value": total_value,
-        "total_pnl":   total_pnl,
-        "last_report": last_report,
-        "generated":   datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-    })
 
 
 # ── Endpoints de análisis IA on-demand ────────────────────────────────────────

@@ -59,4 +59,50 @@
 </div>
 {% endif %}
 
+{% if inverse_allocation %}
+<div class="section" style="margin-top:28px">
+  <div class="section-header">
+    <h2 class="section-title">Modo inverso — cuánto invertir para alcanzar el peso objetivo</h2>
+  </div>
+  <div style="padding:10px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px;margin-bottom:14px;font-size:12px;color:#8b949e">
+    ℹ️ Inversión mínima necesaria por activo para que cada posición alcance exactamente su peso objetivo, asumiendo que el resto de la cartera no cambia.
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Activo</th>
+            <th>Peso actual</th>
+            <th>Peso objetivo</th>
+            <th>Necesitas invertir</th>
+            <th>Acciones a comprar</th>
+            <th class="hide-mobile">Precio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in inverse_allocation %}
+          <tr>
+            <td>
+              <a href="/ticker/{{ r.ticker }}" class="ticker-cell">{{ r.ticker }}</a>
+              <div style="font-size:11px;color:#8b949e">{{ r.name }}</div>
+            </td>
+            <td style="font-size:13px">{{ "%.1f" % r.current_w }}%</td>
+            <td style="font-size:13px;color:#8b949e">{{ "%.1f" % r.target_w_eff }}%</td>
+            <td style="font-weight:600;color:{% if r.needed_eur > 0 %}#58a6ff{% else %}#3fb950{% endif %}">
+              {% if r.needed_eur > 0 %}{{ r.needed_eur | eur }}{% else %}<span class="text-positive">En objetivo</span>{% endif %}
+            </td>
+            <td style="font-weight:600;color:#3fb950">
+              {% if r.needed_shares > 0 %}{{ "%.4g" % r.needed_shares }}{% else %}—{% endif %}
+            </td>
+            <td class="hide-mobile text-muted">{{ r.price | eur }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}

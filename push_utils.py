@@ -149,11 +149,13 @@ def _encrypt_payload(plaintext: bytes, sub_p256dh: str, sub_auth: str):
 # ── Envío de notificación ──────────────────────────────────────────────────────
 
 def send_push_notification(endpoint: str, p256dh: str, auth: str,
-                           title: str, body: str, url: str = "/alertas") -> bool:
+                           title: str, body: str, url: str = "/alertas"):
     """
     Envía una Web Push notification a una suscripción concreta.
-    Devuelve True si el servidor de push aceptó la entrega (2xx).
-    Devuelve False si la suscripción ha expirado (410) o hay error.
+    Devuelve:
+      True  — servidor de push aceptó la entrega (2xx).
+      False — suscripción expirada/inválida (410 Gone); debe eliminarse.
+      None  — error temporal (red, timeout, 5xx); la suscripción sigue válida.
     """
     try:
         priv_pem, pub_b64 = get_or_create_vapid_keys()
@@ -189,16 +191,17 @@ def send_push_notification(endpoint: str, p256dh: str, auth: str,
             logger.warning("Suscripción expirada (410 Gone): %s", endpoint[:60])
             return False
         logger.warning("Push rechazado: %s %s", resp.status_code, resp.text[:100])
-        return False
+        return None
     except Exception as e:
         logger.error("Error enviando push: %s", e)
-        return False
+        return None
 
 
 def send_push_to_all(title: str, body: str, url: str = "/alertas") -> int:
     """
     Envía la notificación a todas las suscripciones activas en paralelo.
-    Elimina automáticamente las suscripciones expiradas (410 o error).
+    Elimina solo las suscripciones confirmadas como expiradas (410 Gone).
+    Los errores temporales (red, timeout, 5xx) conservan la suscripción.
     Devuelve el número de envíos exitosos.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -215,14 +218,16 @@ def send_push_to_all(title: str, body: str, url: str = "/alertas") -> int:
         futures = [pool.submit(_send, s) for s in subs]
         for fut in as_completed(futures):
             try:
-                endpoint, success = fut.result()
-                if success:
+                endpoint, result = fut.result()
+                if result is True:
                     ok += 1
-                else:
+                elif result is False:
+                    # Solo eliminar en 410 Gone (suscripción confirmada como inválida)
                     try:
                         delete_push_subscription(endpoint)
                     except Exception:
                         pass
+                # result is None → error temporal, conservar suscripción
             except Exception:
                 pass
     return ok

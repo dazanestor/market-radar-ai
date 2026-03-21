@@ -363,6 +363,7 @@ Cada ticker admite los siguientes campos en su metadata:
 - **`iterrows()` eliminado de web.py y scheduler.py**: todos los bucles sobre DataFrames usan `.to_dict("records")` para evitar la sobrecarga de crear una `pd.Series` por fila.
 - **Caché TTL de traducciones**: `_translate_cache` en `fetch_data.py` usa helpers `_translate_cache_get/set` con TTL de 24h para evitar memory leak en sesiones largas.
 - **Push paralelo**: `send_push_to_all()` en `push_utils.py` usa `ThreadPoolExecutor` (máx. 8 workers) para enviar notificaciones en paralelo.
+- **Push tri-state**: `send_push_notification()` devuelve `True` (éxito), `False` (410 Gone, suscripción expirada → eliminar) o `None` (error temporal de red/5xx → conservar suscripción). `send_push_to_all()` solo elimina la suscripción cuando el resultado es `False`, no en errores temporales.
 - **`_currency_cache` en scheduler.py**: `fast_info.get("currency")` se cachea por ticker para evitar llamadas extra a yfinance en el job de alertas.
 - **Rate limit en `/tickers/search`**: `@limiter.limit("10/minute")` añadido para prevenir abuso del endpoint de búsqueda.
 - **Paralelismo en generate_csv.py**: `_process_ticker()` se ejecuta en `ThreadPoolExecutor` (hasta 10 workers, configurable con env `FETCH_WORKERS`). Las posiciones se pre-fetchen en una sola query en lugar de N llamadas individuales.

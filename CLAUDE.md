@@ -395,6 +395,9 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Alerta automática desde target_price**: checkbox en `/tickers/update`; si marcado y `target_price` definido, crea `price_alert` automáticamente con dirección inferida del precio actual.
 - **Score actual en formulario de alertas**: `/alertas` pasa dict `{ticker: score}` al template; Alpine.js muestra el score actual al seleccionar tipo `score`.
 - **`tojson` Jinja2 filter**: registrado en `templates.env.filters` para serializar Python dicts/lists a JSON seguro en templates.
+- **`fiscalidad_page` crash sin operaciones**: `_compute()` retornaba `[]` cuando no había operaciones registradas; la línea de desempaque `fifo_ops, annual_summary, unrealized = await ...` lanzaba `ValueError`. Corregido a `return [], {}, []`.
+- **Dead code en `montecarlo_page`**: `pct_curves` y `paths_sample_3y` se calculaban pero nunca se usaban ni pasaban al template. Eliminados; el gráfico se genera independientemente en `/chart/montecarlo`.
+- **Template huérfano `export_pdf.html`**: fichero eliminado del disco; la ruta `/export/pdf` ya no existe en el backend.
 - **XSS modal watchlist (dashboard.html)**: `onclick` inline con `{{ row.name }}` podía romper el HTML si el nombre contenía comillas dobles. Reemplazado con `data-ticker` y `data-name` attributes leídos via `this.dataset.*`.
 - **Import muerto `clear_fx_cache` (scheduler.py)**: función eliminada de `fetch_data.py` pero seguía importándose y llamándose en `job_check_price_alerts()`. Eliminados import y llamada.
 - **P&L realizado sin comisiones (web.py)**: `pnl_realized = total_sold - total_bought` no descontaba comisiones. Corregido: `pnl_net = total_sold - total_bought - total_commissions`.

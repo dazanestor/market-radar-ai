@@ -45,6 +45,7 @@ Herramienta de monitoreo de cartera e inversiones. Descarga datos de mercado, ca
 - **Optimización de cartera**: Mínima Varianza, Máximo Sharpe y Paridad de Riesgo con frontera eficiente
 - **Precio objetivo y notas por ticker**: `target_price` y `notes` gestionados desde el dashboard
 - **Alertas ex-dividend**: aviso automático 3 días antes de la fecha de ex-dividendo
+- **Recomendaciones de mercado global**: descubrimiento automático de oportunidades en ~300 acciones (S&P100, DAX, CAC40, FTSE100, IBEX35, EuroStoxx50, mineras de metales preciosos) con análisis cualitativo por Claude, clasificadas por horizonte (largo/medio/corto)
 - Despliegue con Docker usando imagen pre-compilada de GitHub Container Registry (GHCR)
 - CI/CD con GitHub Actions: build automático multi-arquitectura (amd64 + arm64) en cada push a `main`
 
@@ -195,6 +196,7 @@ market-radar-ai/
 ├── generate_csv.py     # descarga y calcula métricas por ticker → guarda en BD
 ├── fetch_data.py       # wrappers de yfinance (datos, noticias, macro)
 ├── scoring.py          # score multi-factor de oportunidad
+├── discovery.py        # recomendaciones de mercado global (Wikipedia + yfinance + Claude)
 ├── ai_analysis.py      # integración con Claude (Anthropic)
 ├── push_utils.py       # Web Push VAPID (notificaciones al navegador)
 ├── database.py         # acceso a SQLite
@@ -362,6 +364,7 @@ Accede desde el navegador a `http://<IP-servidor>:8589`.
 - **Posiciones** — registrar y eliminar posiciones con P&L en euros; sincronización con Trade Republic; feedback visual al guardar; icono ⓘ en cada columna con explicación del concepto
 - **Alertas** — crear alertas de precio, drawdown, score y stop-loss dinámico; historial de alertas disparadas
 - **Optimización de cartera** — tres carteras óptimas (Mínima Varianza, Máximo Sharpe, Paridad de Riesgo) con frontera eficiente y Capital Market Line; retornos multi-factor ajustados por horizonte
+- **Recomendaciones** — oportunidades de mercado global detectadas automáticamente fuera de la cartera/watchlist; cards por horizonte con métricas y análisis Claude; botón para añadir directamente a watchlist; se actualiza semanalmente o bajo demanda
 - **Reportes** — historial paginado de análisis Claude (10 por página)
 - **Generar reporte** — lanza el pipeline completo desde el navegador (máx. 2 por minuto); muestra error si el pipeline falla
 - **`/health`** — endpoint JSON con estado de la base de datos, existencia del CSV y timestamp UTC; útil para healthchecks externos

@@ -323,7 +323,7 @@ def _load_credentials() -> dict:
         with open(INITIAL_PASSWORD_FILE, "w") as f:
             f.write(initial_content)
         os.chmod(INITIAL_PASSWORD_FILE, 0o600)
-        logger.warning("Ver data/initial-password.txt para las credenciales iniciales")
+        logger.warning("Credenciales iniciales escritas. Accede al dashboard para completar la configuración.")
         return creds
 
 
@@ -1398,7 +1398,8 @@ async def login(
 
     _reset_lockout(ip)
     _reset_account_lockout(username)
-    log_audit_event("login_success", ip_address=ip, details=f"username={creds['username']}")
+    _uname_hash_ok = hashlib.sha256(creds['username'].encode()).hexdigest()[:16]
+    log_audit_event("login_success", ip_address=ip, details=f"uname_hash={_uname_hash_ok}")
 
     # Primer login: forzar configuración
     if creds.get("first_login"):
@@ -1409,7 +1410,8 @@ async def login(
 
     # Contraseña expirada → forzar cambio
     if _is_password_expired(creds):
-        log_audit_event("password_expired", ip_address=ip, details=f"username={creds['username']}")
+        _uname_hash_exp = hashlib.sha256(creds['username'].encode()).hexdigest()[:16]
+        log_audit_event("password_expired", ip_address=ip, details=f"uname_hash={_uname_hash_exp}")
         token = _create_pending_token(600)
         resp = RedirectResponse("/settings/credentials?expired=1", status_code=303)
         resp.set_cookie("pwd_expired_token", token, httponly=True, samesite="strict", max_age=600, secure=COOKIE_SECURE)
@@ -1658,9 +1660,11 @@ async def credentials_update(
     _save_credentials(username.strip(), password, first_login=False)
     ip = get_remote_address(request)
     ua = request.headers.get("user-agent", "")
-    log_audit_event("credentials_changed", ip_address=ip, details=f"new_username={username.strip()}")
-    # Regenerar sesión para prevenir session fixation tras cambio de credenciales (ISO 27001 A.9.2.6)
-    _invalidate_session(session)
+    _uname_hash_chg = hashlib.sha256(username.strip().encode()).hexdigest()[:16]
+    log_audit_event("credentials_changed", ip_address=ip, details=f"uname_hash={_uname_hash_chg}")
+    # Invalidar TODAS las sesiones activas para prevenir acceso con credenciales antiguas (ISO 27001 A.9.2.6)
+    delete_all_sessions_db()
+    _active_sessions.clear()
     new_sid = _create_session(ip=ip, user_agent=ua)
     resp = RedirectResponse("/settings/credentials?ok=1", status_code=303)
     resp.set_cookie("session", new_sid, httponly=True, samesite="strict", max_age=SESSION_EXPIRY, secure=COOKIE_SECURE)
@@ -1715,7 +1719,7 @@ _APP_SETTINGS = [
         "key": "TR_PHONE",
         "label": "Trade Republic — Teléfono",
         "hint": "Número de teléfono asociado a tu cuenta Trade Republic (con prefijo, ej. +34...).",
-        "type": "text",
+        "type": "password",
         "restart": False,
         "section": "Trade Republic",
     },
@@ -2668,6 +2672,7 @@ async def posiciones_add(
     if 0 < shares < 1_000_000 and 0 < avg_price < 1_000_000:
         upsert_position(t, shares, avg_price)
         _invalidate_positions_cache()
+        log_audit_event("position_upserted", ip_address=get_remote_address(request), details=f"ticker={t},shares={shares},avg_price={avg_price}")
         return RedirectResponse(f"/tickers?saved={t}", status_code=303)
     return RedirectResponse("/tickers?error=datos_invalidos", status_code=303)
 
@@ -2682,8 +2687,10 @@ async def posiciones_delete(
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
-    delete_position(ticker)
+    t_del = ticker.strip().upper()
+    delete_position(t_del)
     _invalidate_positions_cache()
+    log_audit_event("position_deleted", ip_address=get_remote_address(request), details=f"ticker={t_del}")
     return RedirectResponse("/tickers", status_code=303)
 
 
@@ -2761,10 +2768,14 @@ async def operaciones_add(
     if op_type not in ("buy", "sell") or shares <= 0 or price_eur <= 0:
         return RedirectResponse("/operaciones", status_code=303)
     try:
-        datetime.date.fromisoformat(date)
+        op_date = datetime.date.fromisoformat(date)
+        if op_date > datetime.date.today():
+            return RedirectResponse("/operaciones?error=fecha_futura", status_code=303)
     except ValueError:
         return RedirectResponse("/operaciones", status_code=303)
     add_operation(t, date, op_type, shares, price_eur, notes.strip()[:_MAX_NOTES_LEN], commission_eur=_commission_eur())
+    ip = get_remote_address(request)
+    log_audit_event("operation_added", ip_address=ip, details=f"ticker={t},type={op_type},shares={shares},date={date}")
 
     # Auto-sincronizar posición en cartera tras la operación
     try:

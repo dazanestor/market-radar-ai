@@ -105,7 +105,7 @@ Esta política debe revisarse cada 12 meses o tras:
 - Limpieza automática de expiradas: `job_cleanup_sessions()` (diario a las 03:00)
 - Invalidación inmediata en logout y tras borrado GDPR
 - Límite de 5 sesiones concurrentes: la más antigua se rota automáticamente
-- Cambio de credenciales requiere contraseña actual + genera nueva sesión (anti session fixation)
+- Cambio de credenciales requiere contraseña actual + invalida TODAS las sesiones activas (no solo la corriente) + crea nueva sesión (anti session fixation, ISO 27001 A.9.2.6)
 
 ### 3.3 Política de contraseñas
 
@@ -162,18 +162,24 @@ Esta política debe revisarse cada 12 meses o tras:
 
 | Evento | Descripción | Nivel |
 |--------|-------------|-------|
-| `login_success` | Login correcto (usuario + contraseña) | INFO |
-| `login_failed` | Contraseña incorrecta | WARNING |
-| `login_locked` | IP bloqueada (5 intentos) | WARNING |
+| `login_success` | Login correcto — registra `uname_hash` | INFO |
+| `login_failed` | Contraseña incorrecta — registra `uname_hash` | WARNING |
+| `login_locked` | IP o cuenta bloqueada — registra `uname_hash` | WARNING |
 | `logout` | Sesión cerrada | INFO |
 | `totp_success` | Verificación 2FA correcta | INFO |
 | `totp_failed` | Código 2FA incorrecto | WARNING |
 | `totp_enabled` | 2FA activado | INFO |
 | `totp_disabled` | 2FA desactivado | WARNING |
-| `credentials_changed` | Cambio de usuario/contraseña | INFO |
-| `password_expired` | Contraseña expirada en login | WARNING |
+| `credentials_changed` | Cambio de usuario/contraseña — registra `uname_hash` | INFO |
+| `credentials_change_rejected` | Contraseña actual incorrecta al intentar cambiar | WARNING |
+| `password_expired` | Contraseña expirada en login — registra `uname_hash` | WARNING |
+| `position_upserted` | Posición de cartera añadida o modificada | INFO |
+| `position_deleted` | Posición de cartera eliminada | WARNING |
+| `operation_added` | Operación buy/sell registrada | INFO |
 | `gdpr_export` | Exportación de datos personales | INFO |
 | `gdpr_delete` | Borrado de datos personales | WARNING |
+
+> **Privacidad en logs**: ningún evento registra el nombre de usuario en texto plano. Se usa `uname_hash` = SHA-256(username) hexdigest truncado a 16 caracteres (ISO 27701 Art. 5 — minimización de datos).
 
 ### 5.2 Retención y purga
 

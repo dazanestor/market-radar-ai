@@ -417,8 +417,8 @@ Cada ticker admite los siguientes campos en su metadata:
 - **`/api/upcoming-events` lento**: scheduler ahora guarda resultado en `settings("upcoming_exdiv_cache")` y `settings("upcoming_earnings_cache")` tras cada job; el endpoint lee de BD en lugar de llamar a yfinance en tiempo real.
 - **Rate limits endurecidos (ISO 27001 A.12.2)**: `/login`, `/login/totp`, `/setup/first-login` reducidos de 5/min a 3/min; añadidos `@limiter.limit` a `/2fa/setup` (5/min), `/2fa/disable` (3/min), `/gdpr/export` (2/min), `/api/upcoming-events` (60/min), `/cartera/valor-historico` (30/min), charts precio/historial/valor-cartera/benchmark (20/min), charts correlación/riesgo/frontera/montecarlo (10/min).
 - **Account-level lockout (ISO 27001 A.9.2.5)**: `_account_failed` dict keyed por username; `_ACCOUNT_LOCKOUT_MAX = 10`, `_ACCOUNT_LOCKOUT_DURATION = 1800s`; complementa el bloqueo por IP para defender contra ataques desde múltiples IPs o proxies.
-- **Username hash en audit_log**: eventos `login_failed` y `login_locked` registran `uname_hash` (SHA-256 truncado 16 chars) en lugar del nombre de usuario en texto plano, evitando exposición de credenciales en logs.
-- **Regeneración de sesión tras cambio de credenciales (ISO 27001 A.9.2.6)**: `/settings/credentials` POST invalida la sesión actual y crea una nueva para prevenir session fixation tras escalada de privilegios.
+- **Username hash en audit_log**: TODOS los eventos de audit_log usan `uname_hash` (SHA-256 truncado 16 chars) en lugar del nombre de usuario en texto plano: `login_failed`, `login_locked`, `login_success`, `password_expired`, `credentials_changed`. Evita exposición de credenciales en logs.
+- **Invalidación total de sesiones al cambiar credenciales (ISO 27001 A.9.2.6)**: `/settings/credentials` POST llama a `delete_all_sessions_db()` + `_active_sessions.clear()` antes de crear nueva sesión — invalida TODAS las sesiones activas del usuario (no solo la corriente) para prevenir acceso con credenciales antiguas desde otras sesiones concurrentes.
 - **Límite de sesiones concurrentes (ISO 27001 A.9.2.3)**: `_MAX_CONCURRENT_SESSIONS = 5`; `_create_session()` rota la sesión más antigua si se supera el límite; implementado con `count_active_sessions_db()` y `get_oldest_session_id_db()`.
 - **Limpieza automática de push subscriptions (ISO 27701 Art. 5)**: `purge_old_push_subscriptions(days=90)` en `database.py`; llamada desde `job_vacuum_db()` cada domingo.
 - **CSP en Service Worker (OWASP A05)**: `/sw.js` añade cabecera `Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self'`.
@@ -438,6 +438,12 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Procedimiento de notificación de brecha (Art. 33/34 RGPD)**: añadido en `SECURITY.md` sección 7.2 con plazo 72h AEPD, criterios Art. 34, template de notificación y registro de incidentes (sección 7.4).
 - **Log de pruebas de restauración de backup**: añadida tabla en `SECURITY.md` sección 8.3 con script de test y registro de resultados trimestrales.
 - **DPA Anthropic documentada**: `SECURITY.md` sección 10.2 actualizada con URL del DPA, mecanismo SCCs Module One, sub-procesadores (AWS) y contacto de privacidad.
+- **Username hash en TODOS los eventos audit_log (ISO 27001 A.12.4 / ISO 27701)**: extendido a `login_success`, `password_expired` y `credentials_changed` — todos los eventos usan `uname_hash` (SHA-256 hex 16 chars); ningún evento registra el nombre de usuario en texto plano.
+- **Invalidación total de sesiones al cambiar credenciales (ISO 27001 A.9.2.6)**: `delete_all_sessions_db()` + `_active_sessions.clear()` antes de crear la nueva sesión; previene que sesiones concurrentes antiguas sigan válidas tras cambio de contraseña.
+- **Validación de fecha futura en operaciones (ISO 27001 A.14.2)**: `/operaciones/add` rechaza fechas de operación futuras con `error=fecha_futura`; solo acepta `date <= datetime.date.today()`.
+- **Audit log de cambios en cartera (ISO 27001 A.12.4)**: `/posiciones/add`, `/posiciones/delete` y `/operaciones/add` registran eventos `position_upserted`, `position_deleted` y `operation_added` con ticker, shares y precio en audit_log.
+- **TR_PHONE tipo password (ISO 27701 Art. 5 — minimización)**: campo `TR_PHONE` en `_APP_SETTINGS` cambia de `type="text"` a `type="password"` para evitar exposición del número de teléfono en pantalla.
+- **Docker logging con rotación (ISO 27001 A.12.4.3)**: servicios `market-radar` y `market-radar-web` usan `driver: json-file` con `max-size: 10m` y `max-file: 5`; previene pérdida de logs por overflow y crecimiento ilimitado en disco.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

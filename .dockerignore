@@ -1,16 +1,32 @@
+# Secrets / entorno
 .env
 *.env
+.env.example
+
+# Control de versiones y CI
 .git/
 .gitignore
 .github/
-data/
-output/
-__pycache__/
-*.py[cod]
-*.db
+.claude/
+
+# Documentación (no necesaria en runtime)
 README.md
-.dockerignore
-tickers.yaml
+CLAUDE.md
+
+# Tests
 tests/
 pytest.ini
 .pytest_cache/
+
+# Artefactos Python
+__pycache__/
+*.py[cod]
+
+# Datos locales (se montan como volúmenes)
+data/
+output/
+*.db
+tickers.yaml
+
+# Meta
+.dockerignore

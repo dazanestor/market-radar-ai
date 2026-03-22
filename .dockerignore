@@ -11,3 +11,6 @@ __pycache__/
 README.md
 .dockerignore
 tickers.yaml
+tests/
+pytest.ini
+.pytest_cache/

@@ -405,6 +405,38 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Stat card divisas sin contexto (distribucion.html)**: la tarjeta "Divisas distintas" solo mostraba el número. Añadido `stat-sub` con los códigos de divisa (ej. EUR · USD · GBP).
 - **`/api/upcoming-events` lento**: scheduler ahora guarda resultado en `settings("upcoming_exdiv_cache")` y `settings("upcoming_earnings_cache")` tras cada job; el endpoint lee de BD en lugar de llamar a yfinance en tiempo real.
 
+## Módulo de Recomendaciones (`discovery.py`)
+
+Descubrimiento automático de oportunidades fuera de la cartera/watchlist.
+
+**Pipeline:** universo → fetch yfinance paralelo → scoring → top 6/horizonte → Claude → BD → `/recomendaciones`
+
+**Universo curado (~300 tickers):**
+- S&P 100 (USA, sin sufijo)
+- DAX 40 (`.DE`), CAC 40 (`.PA`), FTSE 100 (`.L`), IBEX 35 (`.MC`), Euro Stoxx 50
+- Asia-Pacífico: ADRs + HK directos
+- Mineras de metales preciosos: GOLD, NEM, WPM, AEM, FNV, RGLD, PAAS, AG, HL, KGC, etc.
+- Fuente: Wikipedia vía `pd.read_html()` + base hardcoded (fallback si Wikipedia falla)
+- Caché en `settings("discovery_universe")` con TTL de 30 días
+
+**Scoring:** mismos pesos que `scoring.py` (`_compute_score`, `_WEIGHTS`). Horizonte inferido automáticamente con `suggest_horizon()`.
+
+**Claude:** 1 llamada con los 18 candidatos (6×3 horizontes) → 2 frases por ticker (razonamiento + riesgo).
+
+**Caché resultados:** tabla `market_discoveries`. TTL 24h. Columnas: ticker, name, sector, region, horizon, score, opportunity, price_eur, métricas técnicas/fundamentales, claude_analysis, rank_in_horizon, generated_at.
+
+**Rutas web:**
+- `GET /recomendaciones` — página con cards por horizonte (largo/medio/corto)
+- `POST /recomendaciones/refresh` — lanza regeneración en background (ThreadPoolExecutor)
+- `POST /recomendaciones/add-to-watchlist` — añade ticker a watchlist con horizon/sector/region
+
+**Scheduler:** job `job_discovery` lunes 08:30 (semanal, solo si datos >24h).
+
+**Notas:**
+- `_discovery_lock` (threading.Lock) evita ejecuciones simultáneas
+- Tickers ya en cartera/watchlist se excluyen del análisis
+- `refresh_universe()` fuerza regeneración borrando caché de BD
+
 ## Trabajo pendiente / próximas funcionalidades
 
 - **Tests automatizados**: no hay suite de tests. Validación manual via scheduler/web.

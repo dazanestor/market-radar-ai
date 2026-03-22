@@ -506,6 +506,23 @@ def job_check_claude_health():
         )
 
 
+def job_discovery():
+    """Genera recomendaciones de mercado semanalmente (lunes 08:30)."""
+    try:
+        from discovery import generate_discoveries, is_stale
+        if not is_stale():
+            logging.info("Recomendaciones recientes, saltando generación.")
+            return
+        logging.info("Iniciando generación semanal de recomendaciones de mercado...")
+        rows = generate_discoveries()
+        if rows:
+            summary = f"{len(rows)} oportunidades detectadas en {len(set(r['horizon'] for r in rows))} horizontes."
+            _send_push("Recomendaciones actualizadas 🌐", summary, "/recomendaciones")
+            logging.info("Recomendaciones generadas: %d", len(rows))
+    except Exception:
+        logging.exception("Error en job_discovery")
+
+
 def job_yearly_fiscal_summary():
     """Genera y envía por push un resumen fiscal FIFO del año anterior (1 de enero)."""
     prev_year = datetime.date.today().year - 1
@@ -610,6 +627,10 @@ def main():
     scheduler.add_job(
         job_check_claude_health, CronTrigger(day_of_week="mon", hour=9, minute=0, timezone=tz),
         id="claude_health", name="Claude health check",
+    )
+    scheduler.add_job(
+        job_discovery, CronTrigger(day_of_week="mon", hour=8, minute=30, timezone=tz),
+        id="discovery", name="Recomendaciones de mercado",
     )
 
     scheduler.add_job(

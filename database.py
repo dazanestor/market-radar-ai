@@ -187,6 +187,37 @@ CREATE TABLE IF NOT EXISTS tr_isin_map (
         c.execute("CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_tr_cache_key ON tr_cache(key)")
 
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS market_discoveries (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker          TEXT NOT NULL,
+            name            TEXT,
+            sector          TEXT,
+            region          TEXT,
+            horizon         TEXT NOT NULL,
+            score           REAL,
+            opportunity     TEXT,
+            price_eur       REAL,
+            drawdown_52w    REAL,
+            momentum_3m     REAL,
+            volatility      REAL,
+            rsi             REAL,
+            dividend_yield  REAL,
+            roe             REAL,
+            pe_ratio        REAL,
+            analyst_target_eur REAL,
+            analyst_rec     REAL,
+            analyst_n       INTEGER,
+            upside_pct      REAL,
+            market_cap_b    REAL,
+            claude_analysis TEXT,
+            rank_in_horizon INTEGER,
+            generated_at    TEXT NOT NULL
+        )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_discoveries_horizon ON market_discoveries(horizon)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_discoveries_generated ON market_discoveries(generated_at DESC)")
+
         _migrate_tickers_from_yaml_if_needed(conn)
 
 
@@ -843,3 +874,55 @@ def get_all_push_subscriptions() -> list:
         c = conn.cursor()
         c.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions")
         return c.fetchall()
+
+
+# ── market_discoveries ────────────────────────────────────────────────────────
+
+_DISCOVERY_COLS = (
+    "ticker", "name", "sector", "region", "horizon", "score", "opportunity",
+    "price_eur", "drawdown_52w", "momentum_3m", "volatility", "rsi",
+    "dividend_yield", "roe", "pe_ratio", "analyst_target_eur", "analyst_rec",
+    "analyst_n", "upside_pct", "market_cap_b", "claude_analysis",
+    "rank_in_horizon", "generated_at",
+)
+
+
+def save_discoveries(rows: list) -> None:
+    """Reemplaza todos los descubrimientos con el nuevo lote."""
+    if not rows:
+        return
+    placeholders = ", ".join("?" * len(_DISCOVERY_COLS))
+    col_names    = ", ".join(_DISCOVERY_COLS)
+    values = [tuple(r.get(c) for c in _DISCOVERY_COLS) for r in rows]
+    with _db() as conn:
+        conn.execute("DELETE FROM market_discoveries")
+        conn.executemany(
+            f"INSERT INTO market_discoveries ({col_names}) VALUES ({placeholders})",
+            values,
+        )
+
+
+def get_discoveries() -> list:
+    """Devuelve todos los descubrimientos actuales como lista de dicts."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT ticker, name, sector, region, horizon, score, opportunity,
+                   price_eur, drawdown_52w, momentum_3m, volatility, rsi,
+                   dividend_yield, roe, pe_ratio, analyst_target_eur, analyst_rec,
+                   analyst_n, upside_pct, market_cap_b, claude_analysis,
+                   rank_in_horizon, generated_at
+            FROM market_discoveries
+            ORDER BY horizon, rank_in_horizon
+        """)
+        cols = [d[0] for d in c.description]
+        return [dict(zip(cols, row)) for row in c.fetchall()]
+
+
+def get_discoveries_generated_at() -> Optional[str]:
+    """Devuelve el timestamp de la última generación, o None si no hay datos."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT MAX(generated_at) FROM market_discoveries")
+        row = c.fetchone()
+        return row[0] if row else None

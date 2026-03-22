@@ -49,6 +49,8 @@ from ai_analysis import (
 )
 from database import (
     add_operation,
+    get_discoveries,
+    get_discoveries_generated_at,
     add_price_alert,
     count_operations,
     count_reports,
@@ -93,6 +95,16 @@ from database import (
 from fetch_data import get_macro_context, get_news, to_eur
 from generate_csv import generate
 from scoring import score_by_horizon, suggest_horizon, HORIZON_META, get_weights, _WEIGHTS
+
+try:
+    from discovery import generate_discoveries, is_stale, get_universe, refresh_universe
+    _DISCOVERY_AVAILABLE = True
+except Exception:
+    _DISCOVERY_AVAILABLE = False
+    def generate_discoveries(): return []
+    def is_stale(): return True
+    def get_universe(): return []
+    def refresh_universe(): return []
 
 logger = logging.getLogger("web")
 
@@ -5263,6 +5275,95 @@ async def push_test(
         ),
     )
     return JSONResponse({"sent": sent})
+
+
+# ── Recomendaciones de mercado ────────────────────────────────────────────────
+
+_discovery_lock = threading.Lock()
+_discovery_running = False
+
+
+@app.get("/recomendaciones", response_class=HTMLResponse)
+async def recomendaciones_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+
+    rows        = get_discoveries()
+    generated   = get_discoveries_generated_at()
+    stale       = is_stale()
+    universe_n  = len(get_universe()) if _DISCOVERY_AVAILABLE else 0
+
+    by_horizon = {"largo": [], "medio": [], "corto": []}
+    for r in rows:
+        h = r.get("horizon", "medio")
+        if h in by_horizon:
+            by_horizon[h].append(r)
+
+    return templates.TemplateResponse("recomendaciones.html", {
+        "request":    request,
+        "by_horizon": by_horizon,
+        "generated":  generated,
+        "stale":      stale,
+        "universe_n": universe_n,
+        "has_data":   bool(rows),
+        "running":    _discovery_running,
+    })
+
+
+@app.post("/recomendaciones/refresh")
+async def recomendaciones_refresh(request: Request, session: Optional[str] = Cookie(default=None)):
+    global _discovery_running
+    if not _is_auth(session):
+        raise HTTPException(403)
+    _validate_csrf(request, await request.form())
+
+    if not _DISCOVERY_AVAILABLE:
+        return RedirectResponse("/recomendaciones?error=not_available", status_code=303)
+
+    # Evitar ejecuciones simultáneas
+    if not _discovery_lock.acquire(blocking=False):
+        return RedirectResponse("/recomendaciones?info=running", status_code=303)
+
+    _discovery_running = True
+
+    def _run():
+        global _discovery_running
+        try:
+            generate_discoveries()
+        except Exception:
+            logger.exception("Error generando recomendaciones")
+        finally:
+            _discovery_running = False
+            _discovery_lock.release()
+
+    _executor.submit(_run)
+    return RedirectResponse("/recomendaciones?info=started", status_code=303)
+
+
+@app.post("/recomendaciones/add-to-watchlist")
+async def recomendaciones_add_watchlist(
+    request: Request,
+    session: Optional[str] = Cookie(default=None),
+):
+    if not _is_auth(session):
+        raise HTTPException(403)
+    form = await request.form()
+    _validate_csrf(request, form)
+
+    ticker  = str(form.get("ticker", "")).strip().upper()
+    name    = str(form.get("name", "")).strip()[:80]
+    sector  = str(form.get("sector", "")).strip()[:60]
+    horizon = str(form.get("horizon", "medio")).strip()
+    region  = str(form.get("region", "")).strip()[:40]
+
+    if not ticker:
+        raise HTTPException(400, "ticker requerido")
+    if horizon not in ("largo", "medio", "corto"):
+        horizon = "medio"
+
+    upsert_ticker(ticker, "watchlist", name=name or None, block=sector or None,
+                  region=region or None, horizon=horizon)
+    return RedirectResponse("/recomendaciones?added=" + ticker, status_code=303)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

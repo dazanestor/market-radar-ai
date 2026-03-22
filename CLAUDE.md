@@ -415,6 +415,14 @@ Cada ticker admite los siguientes campos en su metadata:
 - **P&L realizado sin comisiones (web.py)**: `pnl_realized = total_sold - total_bought` no descontaba comisiones. Corregido: `pnl_net = total_sold - total_bought - total_commissions`.
 - **Stat card divisas sin contexto (distribucion.html)**: la tarjeta "Divisas distintas" solo mostraba el número. Añadido `stat-sub` con los códigos de divisa (ej. EUR · USD · GBP).
 - **`/api/upcoming-events` lento**: scheduler ahora guarda resultado en `settings("upcoming_exdiv_cache")` y `settings("upcoming_earnings_cache")` tras cada job; el endpoint lee de BD en lugar de llamar a yfinance en tiempo real.
+- **Rate limits endurecidos (ISO 27001 A.12.2)**: `/login`, `/login/totp`, `/setup/first-login` reducidos de 5/min a 3/min; añadidos `@limiter.limit` a `/2fa/setup` (5/min), `/2fa/disable` (3/min), `/gdpr/export` (2/min), `/api/upcoming-events` (60/min), `/cartera/valor-historico` (30/min), charts precio/historial/valor-cartera/benchmark (20/min), charts correlación/riesgo/frontera/montecarlo (10/min).
+- **Account-level lockout (ISO 27001 A.9.2.5)**: `_account_failed` dict keyed por username; `_ACCOUNT_LOCKOUT_MAX = 10`, `_ACCOUNT_LOCKOUT_DURATION = 1800s`; complementa el bloqueo por IP para defender contra ataques desde múltiples IPs o proxies.
+- **Username hash en audit_log**: eventos `login_failed` y `login_locked` registran `uname_hash` (SHA-256 truncado 16 chars) en lugar del nombre de usuario en texto plano, evitando exposición de credenciales en logs.
+- **Regeneración de sesión tras cambio de credenciales (ISO 27001 A.9.2.6)**: `/settings/credentials` POST invalida la sesión actual y crea una nueva para prevenir session fixation tras escalada de privilegios.
+- **Límite de sesiones concurrentes (ISO 27001 A.9.2.3)**: `_MAX_CONCURRENT_SESSIONS = 5`; `_create_session()` rota la sesión más antigua si se supera el límite; implementado con `count_active_sessions_db()` y `get_oldest_session_id_db()`.
+- **Limpieza automática de push subscriptions (ISO 27701 Art. 5)**: `purge_old_push_subscriptions(days=90)` en `database.py`; llamada desde `job_vacuum_db()` cada domingo.
+- **CSP en Service Worker (OWASP A05)**: `/sw.js` añade cabecera `Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self'`.
+- **CSRF `None` check en `/push/unsubscribe`**: corregido `body.get("csrf_token", "")` a `body.get("csrf_token")` para evitar bypass con string vacío que pasaría la validación.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 
@@ -484,6 +492,9 @@ python -m pytest tests/ -v
 - **Sesiones persistentes en BD** (`sessions` table): sobreviven reinicios; TTL 30 días; carga al arrancar desde `get_all_active_sessions_db()`
 - **Expiración de contraseña**: 90 días (`_PASSWORD_EXPIRY_DAYS = 90`); se comprueba en cada login; aviso a 15 días; fuerza cambio al expirar
 - **Bloqueo de IP**: 5 intentos fallidos → 15 minutos (`_LOCKOUT_MAX`, `_LOCKOUT_DURATION`)
+- **Bloqueo de cuenta**: 10 intentos fallidos (cualquier IP) → 30 minutos (`_ACCOUNT_LOCKOUT_MAX`, `_ACCOUNT_LOCKOUT_DURATION`); defiende frente a ataques distribuidos con rotación de IPs
+- **Límite de sesiones concurrentes**: máximo 5 sesiones activas simultáneas; la más antigua se invalida al crear la nueva (`_MAX_CONCURRENT_SESSIONS = 5`)
+- **Regeneración de sesión**: nueva sesión creada tras cambio de credenciales para prevenir session fixation
 
 #### ISO 27001 A.10 — Criptografía
 - **Web Push**: AES-GCM + ECDH RFC 8291 con `cryptography>=42.0.0` (declarado explícito en requirements.txt)

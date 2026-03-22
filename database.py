@@ -1083,3 +1083,36 @@ def gdpr_delete_personal_data() -> dict:
             cur.execute(f"DELETE FROM {table}")
             counts[table] = cur.rowcount
     return counts
+
+
+# ── Gestión avanzada de sesiones (ISO 27001 A.9.2.3) ──────────────────────────
+
+def count_active_sessions_db() -> int:
+    """Cuenta sesiones activas no expiradas."""
+    with _db() as conn:
+        row = conn.cursor().execute(
+            "SELECT COUNT(*) FROM sessions WHERE expires_at > datetime('now')"
+        ).fetchone()
+        return row[0] if row else 0
+
+
+def get_oldest_session_id_db() -> str | None:
+    """Devuelve el session_id de la sesión más antigua activa (para rotar cuando se supera el límite)."""
+    with _db() as conn:
+        row = conn.cursor().execute(
+            "SELECT session_id FROM sessions WHERE expires_at > datetime('now') ORDER BY created_at ASC LIMIT 1"
+        ).fetchone()
+        return row[0] if row else None
+
+
+# ── Limpieza de push subscriptions (ISO 27701 Art. 5 — minimización) ──────────
+
+def purge_old_push_subscriptions(days: int = 90) -> int:
+    """Elimina suscripciones push sin actividad en los últimos `days` días."""
+    with _db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM push_subscriptions WHERE created < datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        return cur.rowcount

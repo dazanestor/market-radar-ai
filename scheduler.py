@@ -24,6 +24,7 @@ from database import (
     get_active_alerts, deactivate_alert, log_alert_triggered,
     get_unnotified_alerts, mark_alert_notified, vacuum_db,
     purge_old_price_history, purge_old_news_cache, purge_old_audit_log, effective,
+    purge_old_push_subscriptions,
     get_all_positions,
     get_tickers_as_yaml_dict,
     get_latest_snapshot_as_df,
@@ -488,7 +489,11 @@ def job_vacuum_db():
         ph = purge_old_price_history(days=365)
         nc = purge_old_news_cache(days=30)
         al = purge_old_audit_log(days=365)
-        logging.info("Purga: %d snapshots >1 año, %d traducciones >30 días, %d eventos auditoría >1 año.", ph, nc, al)
+        ps = purge_old_push_subscriptions(days=90)
+        logging.info(
+            "Purga: %d snapshots >1 año, %d traducciones >30 días, %d eventos auditoría >1 año, %d push subscriptions >90 días.",
+            ph, nc, al, ps
+        )
         vacuum_db()
         logging.info("VACUUM semanal completado.")
     except Exception:

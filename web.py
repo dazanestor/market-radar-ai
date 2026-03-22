@@ -105,6 +105,9 @@ from database import (
     delete_expired_sessions_db,
     get_all_active_sessions_db,
     delete_all_sessions_db,
+    count_active_sessions_db,
+    get_oldest_session_id_db,
+    purge_old_push_subscriptions,
     gdpr_delete_personal_data,
 )
 from fetch_data import get_macro_context, get_news, to_eur
@@ -149,10 +152,18 @@ _csrf_lock = threading.Lock()
 # Tokens temporales en memoria: token → timestamp de expiración
 _pending_tokens: dict = {}
 
-# Lockout de login: ip → lista de timestamps de fallos recientes
+# Límite de sesiones concurrentes (ISO 27001 A.9.2.3)
+_MAX_CONCURRENT_SESSIONS = 5
+
+# Lockout de login por IP: ip → lista de timestamps de fallos recientes
 _LOCKOUT_MAX      = 5
 _LOCKOUT_DURATION = 900  # 15 minutos (en segundos)
 _failed_logins: dict = {}
+
+# Lockout de login por cuenta (username): defiende contra ataques desde múltiples IPs
+_ACCOUNT_LOCKOUT_MAX      = 10
+_ACCOUNT_LOCKOUT_DURATION = 1800  # 30 minutos
+_account_failed: dict = {}  # username → lista de timestamps
 
 # Limpieza periódica de sesiones y tokens expirados
 _last_cleanup: float = 0.0
@@ -543,11 +554,22 @@ async def _refresh_csrf_global(request: Request, call_next):
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def _create_session(ip: Optional[str] = None, user_agent: Optional[str] = None) -> str:
-    """Crea sesión en memoria Y en BD (persistente entre reinicios)."""
+    """Crea sesión en memoria Y en BD (persistente entre reinicios).
+    Si se supera _MAX_CONCURRENT_SESSIONS, invalida la sesión más antigua (ISO 27001 A.9.2.3)."""
+    import datetime as _dt
+    # Rotar sesión más antigua si se supera el límite de concurrencia
+    try:
+        if count_active_sessions_db() >= _MAX_CONCURRENT_SESSIONS:
+            oldest = get_oldest_session_id_db()
+            if oldest:
+                _active_sessions.pop(oldest, None)
+                delete_session_db(oldest)
+                logger.info("Sesión más antigua rotada por límite de concurrencia (max=%d)", _MAX_CONCURRENT_SESSIONS)
+    except Exception:
+        pass
     sid = secrets.token_urlsafe(32)
     _active_sessions[sid] = _time.monotonic() + SESSION_EXPIRY
     # Persistir en BD con timestamp absoluto (ISO 8601)
-    import datetime as _dt
     expires_abs = (_dt.datetime.now() + _dt.timedelta(seconds=SESSION_EXPIRY)).isoformat(timespec="seconds")
     try:
         create_session_db(sid, expires_abs, ip_address=ip, user_agent=user_agent)
@@ -646,6 +668,19 @@ def _record_failed_login(ip: str) -> None:
 
 def _reset_lockout(ip: str) -> None:
     _failed_logins.pop(ip, None)
+
+def _check_account_lockout(username: str) -> bool:
+    """Devuelve True si la cuenta está bloqueada por exceso de intentos fallidos (multi-IP)."""
+    now = _time.monotonic()
+    attempts = [t for t in _account_failed.get(username, []) if now - t < _ACCOUNT_LOCKOUT_DURATION]
+    _account_failed[username] = attempts
+    return len(attempts) >= _ACCOUNT_LOCKOUT_MAX
+
+def _record_account_failed(username: str) -> None:
+    _account_failed.setdefault(username, []).append(_time.monotonic())
+
+def _reset_account_lockout(username: str) -> None:
+    _account_failed.pop(username, None)
 
 def _rotate_csrf_if_needed() -> None:
     """Rota el CSRF token cada 24h y actualiza el global de Jinja2."""
@@ -970,6 +1005,7 @@ def _make_history_chart(ticker: str, rows: list) -> Optional[plt.Figure]:
 # ── Upcoming events (ex-div + earnings) ────────────────────────────────────────
 
 @app.get("/api/upcoming-events")
+@limiter.limit("60/minute")
 async def upcoming_events(session: Optional[str] = Cookie(default=None)):
     """Devuelve ex-dividendos y earnings próximos en los próximos 7 días (desde caché BD)."""
     if not _is_auth(session):
@@ -998,6 +1034,7 @@ async def upcoming_events(session: Optional[str] = Cookie(default=None)):
 # ── Chart endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/chart/precio/{ticker}")
+@limiter.limit("20/minute")
 async def chart_precio(ticker: str, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
@@ -1022,6 +1059,7 @@ async def chart_precio(ticker: str, session: Optional[str] = Cookie(default=None
 
 
 @app.get("/chart/historial/{ticker}")
+@limiter.limit("20/minute")
 async def chart_historial(ticker: str, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
@@ -1038,6 +1076,7 @@ async def chart_historial(ticker: str, session: Optional[str] = Cookie(default=N
 
 
 @app.get("/chart/valor-cartera")
+@limiter.limit("20/minute")
 async def chart_valor_cartera(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
@@ -1068,6 +1107,7 @@ async def chart_valor_cartera(session: Optional[str] = Cookie(default=None)):
 
 
 @app.get("/cartera/valor-historico")
+@limiter.limit("30/minute")
 async def valor_historico(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
@@ -1076,6 +1116,7 @@ async def valor_historico(session: Optional[str] = Cookie(default=None)):
 
 
 @app.get("/chart/benchmark")
+@limiter.limit("20/minute")
 async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
@@ -1176,6 +1217,7 @@ async def gdpr_page(request: Request, session: Optional[str] = Cookie(default=No
 
 
 @app.get("/gdpr/export")
+@limiter.limit("2/minute")
 async def gdpr_export(request: Request, session: Optional[str] = Cookie(default=None)):
     """Descarga todos los datos personales como JSON (ISO 27701 Art. 9 - portabilidad)."""
     if not _is_auth(session):
@@ -1301,7 +1343,7 @@ async def login_page(request: Request, error: str = ""):
 
 
 @app.post("/login")
-@limiter.limit("5/minute")
+@limiter.limit("3/minute")
 async def login(
     request: Request,
     username: str = Form(...),
@@ -1309,8 +1351,16 @@ async def login(
 ):
     ip = get_remote_address(request)
     ua = request.headers.get("user-agent", "")
+    import hashlib as _hashlib
+    _uname_hash = _hashlib.sha256(username.encode()).hexdigest()[:16]
     if _check_lockout(ip):
-        log_audit_event("login_locked", ip_address=ip, details=f"username={username[:32]}")
+        log_audit_event("login_locked", ip_address=ip, details=f"reason=ip_lockout,uname_hash={_uname_hash}")
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": "locked",
+        }, status_code=429)
+    if _check_account_lockout(username):
+        log_audit_event("login_locked", ip_address=ip, details=f"reason=account_lockout,uname_hash={_uname_hash}")
         return templates.TemplateResponse("login.html", {
             "request": request,
             "error": "locked",
@@ -1319,10 +1369,12 @@ async def login(
     creds = _load_credentials()
     if username != creds["username"] or not _verify_password(password, creds["password_hash"]):
         _record_failed_login(ip)
-        log_audit_event("login_failed", ip_address=ip, details=f"username={username[:32]}")
+        _record_account_failed(username)
+        log_audit_event("login_failed", ip_address=ip, details=f"uname_hash={_uname_hash}")
         return RedirectResponse("/login?error=1", status_code=303)
 
     _reset_lockout(ip)
+    _reset_account_lockout(username)
     log_audit_event("login_success", ip_address=ip, details=f"username={creds['username']}")
 
     # Primer login: forzar configuración
@@ -1361,7 +1413,7 @@ async def totp_page(request: Request, totp_pending: Optional[str] = Cookie(defau
 
 
 @app.post("/login/totp")
-@limiter.limit("5/minute")
+@limiter.limit("3/minute")
 async def totp_verify(
     request: Request,
     code: str = Form(...),
@@ -1405,7 +1457,7 @@ async def first_login_page(request: Request, setup_pending: Optional[str] = Cook
 
 
 @app.post("/setup/first-login")
-@limiter.limit("5/minute")
+@limiter.limit("3/minute")
 async def first_login_submit(
     request: Request,
     username: str = Form(...),
@@ -1476,6 +1528,7 @@ async def totp_setup_page(request: Request, session: Optional[str] = Cookie(defa
 
 
 @app.post("/2fa/setup")
+@limiter.limit("5/minute")
 async def totp_setup(
     request: Request,
     code: str = Form(...),
@@ -1503,6 +1556,7 @@ async def totp_setup(
 
 
 @app.post("/2fa/disable")
+@limiter.limit("3/minute")
 async def totp_disable(
     request: Request,
     session: Optional[str] = Cookie(default=None),
@@ -1574,8 +1628,14 @@ async def credentials_update(
         })
     _save_credentials(username.strip(), password, first_login=False)
     ip = get_remote_address(request)
+    ua = request.headers.get("user-agent", "")
     log_audit_event("credentials_changed", ip_address=ip, details=f"new_username={username.strip()}")
-    return RedirectResponse("/settings/credentials?ok=1", status_code=303)
+    # Regenerar sesión para prevenir session fixation tras cambio de credenciales (ISO 27001 A.9.2.6)
+    _invalidate_session(session)
+    new_sid = _create_session(ip=ip, user_agent=ua)
+    resp = RedirectResponse("/settings/credentials?ok=1", status_code=303)
+    resp.set_cookie("session", new_sid, httponly=True, samesite="strict", max_age=SESSION_EXPIRY, secure=COOKIE_SECURE)
+    return resp
 
 
 # ── Configuración de la aplicación ────────────────────────────────────────────
@@ -3780,6 +3840,7 @@ async def correlacion_page(
 
 
 @app.get("/chart/correlacion")
+@limiter.limit("10/minute")
 async def chart_correlacion(
     include_watchlist: bool = False,
     session: Optional[str] = Cookie(default=None),
@@ -3987,6 +4048,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
 
 
 @app.get("/chart/riesgo/returns")
+@limiter.limit("10/minute")
 async def chart_riesgo_returns(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
@@ -4327,6 +4389,7 @@ async def optimizacion_page(request: Request, session: Optional[str] = Cookie(de
 
 
 @app.get("/chart/frontera-eficiente")
+@limiter.limit("10/minute")
 async def chart_frontera_eficiente(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
@@ -4747,6 +4810,7 @@ async def montecarlo_page(request: Request, session: Optional[str] = Cookie(defa
 
 
 @app.get("/chart/montecarlo")
+@limiter.limit("10/minute")
 async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(403)
@@ -5476,7 +5540,11 @@ async def service_worker():
     return Response(
         content=_SW_JS,
         media_type="application/javascript",
-        headers={"Cache-Control": "public, max-age=0", "Service-Worker-Allowed": "/"},
+        headers={
+            "Cache-Control": "public, max-age=0",
+            "Service-Worker-Allowed": "/",
+            "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'",
+        },
     )
 
 
@@ -5558,7 +5626,7 @@ async def push_unsubscribe(
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400)
-    if not _validate_csrf(body.get("csrf_token", "")):
+    if not _validate_csrf(body.get("csrf_token")):
         raise HTTPException(status_code=403, detail="CSRF inválido")
     endpoint = body.get("endpoint", "")
     if endpoint:

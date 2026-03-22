@@ -452,12 +452,19 @@ templates.env.globals["csrf_token"] = _csrf_state["current"]
 
 @app.middleware("http")
 async def _refresh_csrf_global(request: Request, call_next):
-    """Rota el CSRF token si ha expirado; añade Cache-Control en respuestas HTML."""
+    """Rota el CSRF token si ha expirado; añade cabeceras de seguridad HTTP."""
     _rotate_csrf_if_needed()
     response = await call_next(request)
-    if "text/html" in response.headers.get("content-type", ""):
+    ct = response.headers.get("content-type", "")
+    if "text/html" in ct:
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         response.headers["Pragma"] = "no-cache"
+    # Cabeceras de seguridad en todas las respuestas
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -2150,6 +2157,7 @@ async def tickers_update(
 
 
 @app.post("/tickers/enrich")
+@limiter.limit("2/minute")
 async def tickers_enrich(
     request:    Request,
     session:    Optional[str] = Cookie(default=None),
@@ -5311,11 +5319,13 @@ async def recomendaciones_page(request: Request, session: Optional[str] = Cookie
 
 
 @app.post("/recomendaciones/refresh")
+@limiter.limit("2/minute")
 async def recomendaciones_refresh(request: Request, session: Optional[str] = Cookie(default=None)):
     global _discovery_running
     if not _is_auth(session):
         raise HTTPException(403)
-    _validate_csrf(request, await request.form())
+    form = await request.form()
+    _require_csrf(request, form.get("csrf_token"))
 
     if not _DISCOVERY_AVAILABLE:
         return RedirectResponse("/recomendaciones?error=not_available", status_code=303)
@@ -5348,7 +5358,7 @@ async def recomendaciones_add_watchlist(
     if not _is_auth(session):
         raise HTTPException(403)
     form = await request.form()
-    _validate_csrf(request, form)
+    _require_csrf(request, form.get("csrf_token"))
 
     ticker  = str(form.get("ticker", "")).strip().upper()
     name    = str(form.get("name", "")).strip()[:80]

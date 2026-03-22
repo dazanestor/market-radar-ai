@@ -401,6 +401,9 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Template huérfano `export_pdf.html`**: fichero eliminado del disco; la ruta `/export/pdf` ya no existe en el backend.
 - **XSS modal watchlist (dashboard.html)**: `onclick` inline con `{{ row.name }}` podía romper el HTML si el nombre contenía comillas dobles. Reemplazado con `data-ticker` y `data-name` attributes leídos via `this.dataset.*`.
 - **Import muerto `clear_fx_cache` (scheduler.py)**: función eliminada de `fetch_data.py` pero seguía importándose y llamándose en `job_check_price_alerts()`. Eliminados import y llamada.
+- **Cabeceras de seguridad HTTP (OWASP A05)**: middleware `_refresh_csrf_global` añade `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin` y `Permissions-Policy` en todas las respuestas.
+- **CSRF bug en rutas Recomendaciones**: `/recomendaciones/refresh` y `/recomendaciones/add-to-watchlist` llamaban `_validate_csrf(request, form)` (2 args, 1 esperado → TypeError en producción). Corregido a `_require_csrf(request, form.get("csrf_token"))`.
+- **Rate limit en operaciones costosas (OWASP A04)**: `@limiter.limit("2/minute")` añadido a `/tickers/enrich` (yfinance paralelo para todos los tickers) y `/recomendaciones/refresh` (yfinance + Claude para ~300 tickers).
 - **P&L realizado sin comisiones (web.py)**: `pnl_realized = total_sold - total_bought` no descontaba comisiones. Corregido: `pnl_net = total_sold - total_bought - total_commissions`.
 - **Stat card divisas sin contexto (distribucion.html)**: la tarjeta "Divisas distintas" solo mostraba el número. Añadido `stat-sub` con los códigos de divisa (ej. EUR · USD · GBP).
 - **`/api/upcoming-events` lento**: scheduler ahora guarda resultado en `settings("upcoming_exdiv_cache")` y `settings("upcoming_earnings_cache")` tras cada job; el endpoint lee de BD en lugar de llamar a yfinance en tiempo real.

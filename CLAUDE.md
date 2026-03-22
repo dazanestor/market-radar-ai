@@ -423,6 +423,15 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Limpieza automática de push subscriptions (ISO 27701 Art. 5)**: `purge_old_push_subscriptions(days=90)` en `database.py`; llamada desde `job_vacuum_db()` cada domingo.
 - **CSP en Service Worker (OWASP A05)**: `/sw.js` añade cabecera `Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self'`.
 - **CSRF `None` check en `/push/unsubscribe`**: corregido `body.get("csrf_token", "")` a `body.get("csrf_token")` para evitar bypass con string vacío que pasaría la validación.
+- **TOTP secret con validación de integridad (ISO 27001 A.10.1.1)**: `_totp_secret()` valida formato base32 (`_TOTP_B32_RE`) al cargar el fichero; si el contenido es inválido o corrompido, logea `totp_integrity_error` en audit_log y trata 2FA como deshabilitado en lugar de fallar silenciosamente.
+- **VAPID_CONTACT_EMAIL configurable (ISO 27001 A.16.1.2)**: `push_utils.py` lee `VAPID_CONTACT_EMAIL` del entorno en lugar de usar `"admin@localhost"` hardcodeado; emite warning en startup si no está configurado; añadido a `.env.example` con documentación.
+- **Warning dashboard: API key en BD (ISO 27001 A.10)**: si `ANTHROPIC_API_KEY` está en la tabla `settings` (texto plano), se muestra aviso en el dashboard recordando asegurar `data/radar.db`.
+- **Warning dashboard: VAPID email (ISO 27001 A.16)**: si `VAPID_SUBJECT` sigue siendo `localhost`, se muestra aviso en el dashboard.
+- **Mensajes de lockout diferenciados**: `/login` pasa `error=ip_locked` (15 min) o `error=account_locked` (30 min) según el tipo de bloqueo; `login.html` muestra mensajes específicos para cada caso.
+- **Data Processing Register (Art. 30 RGPD)**: añadido en `SECURITY.md` sección 10.3 con tabla de todas las actividades de tratamiento: cartera, operaciones, alertas, push subscriptions, sesiones, audit log, Anthropic.
+- **Procedimiento de notificación de brecha (Art. 33/34 RGPD)**: añadido en `SECURITY.md` sección 7.2 con plazo 72h AEPD, criterios Art. 34, template de notificación y registro de incidentes (sección 7.4).
+- **Log de pruebas de restauración de backup**: añadida tabla en `SECURITY.md` sección 8.3 con script de test y registro de resultados trimestrales.
+- **DPA Anthropic documentada**: `SECURITY.md` sección 10.2 actualizada con URL del DPA, mecanismo SCCs Module One, sub-procesadores (AWS) y contacto de privacidad.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 
@@ -488,13 +497,14 @@ python -m pytest tests/ -v
 ### Controles implementados
 
 #### ISO 27001 A.9 — Control de acceso
-- **Autenticación 2FA**: TOTP (pyotp, RFC 6238) + bcrypt cost 12
+- **Autenticación 2FA**: TOTP (pyotp, RFC 6238) + bcrypt cost 12; TOTP secret validado como base32 al cargar
 - **Sesiones persistentes en BD** (`sessions` table): sobreviven reinicios; TTL 30 días; carga al arrancar desde `get_all_active_sessions_db()`
 - **Expiración de contraseña**: 90 días (`_PASSWORD_EXPIRY_DAYS = 90`); se comprueba en cada login; aviso a 15 días; fuerza cambio al expirar
 - **Bloqueo de IP**: 5 intentos fallidos → 15 minutos (`_LOCKOUT_MAX`, `_LOCKOUT_DURATION`)
 - **Bloqueo de cuenta**: 10 intentos fallidos (cualquier IP) → 30 minutos (`_ACCOUNT_LOCKOUT_MAX`, `_ACCOUNT_LOCKOUT_DURATION`); defiende frente a ataques distribuidos con rotación de IPs
 - **Límite de sesiones concurrentes**: máximo 5 sesiones activas simultáneas; la más antigua se invalida al crear la nueva (`_MAX_CONCURRENT_SESSIONS = 5`)
 - **Regeneración de sesión**: nueva sesión creada tras cambio de credenciales para prevenir session fixation
+- **Mensajes de lockout diferenciados**: login muestra mensaje específico para bloqueo por IP (15 min) vs. bloqueo de cuenta (30 min)
 
 #### ISO 27001 A.10 — Criptografía
 - **Web Push**: AES-GCM + ECDH RFC 8291 con `cryptography>=42.0.0` (declarado explícito en requirements.txt)

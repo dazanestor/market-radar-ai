@@ -381,10 +381,23 @@ def _consume_pending_token(token: Optional[str]) -> bool:
 
 # ── TOTP helpers ──────────────────────────────────────────────────────────────
 
+_TOTP_B32_RE = re.compile(r'^[A-Z2-7]{16,64}$')
+
 def _totp_secret() -> Optional[str]:
+    """Carga y valida el TOTP secret (ISO 27001 A.10.1.1 — integridad de material criptográfico)."""
     try:
-        s = open(TOTP_SECRET_FILE).read().strip()
-        return s or None
+        s = open(TOTP_SECRET_FILE).read().strip().upper()
+        if not s:
+            return None
+        if not _TOTP_B32_RE.match(s):
+            # Fichero corrompido o manipulado — logar y tratar como 2FA deshabilitado
+            logger.critical("TOTP secret inválido o corrompido en %s — 2FA tratado como deshabilitado", TOTP_SECRET_FILE)
+            try:
+                log_audit_event("totp_integrity_error", details=f"file={TOTP_SECRET_FILE},len={len(s)}")
+            except Exception:
+                pass
+            return None
+        return s
     except FileNotFoundError:
         return None
 
@@ -1357,13 +1370,13 @@ async def login(
         log_audit_event("login_locked", ip_address=ip, details=f"reason=ip_lockout,uname_hash={_uname_hash}")
         return templates.TemplateResponse("login.html", {
             "request": request,
-            "error": "locked",
+            "error": "ip_locked",
         }, status_code=429)
     if _check_account_lockout(username):
         log_audit_event("login_locked", ip_address=ip, details=f"reason=account_lockout,uname_hash={_uname_hash}")
         return templates.TemplateResponse("login.html", {
             "request": request,
-            "error": "locked",
+            "error": "account_locked",
         }, status_code=429)
 
     creds = _load_credentials()
@@ -1981,6 +1994,27 @@ async def dashboard(
             "msg": f"Contraseña {'expirará en ' + str(days_left) + ' días' if days_left > 0 else 'expirada'} (política ISO 27001 A.9.2.1 — 90 días).",
             "link": "/settings/credentials",
         })
+    # Advertir si la API key está almacenada en la BD (texto plano) — ISO 27001 A.10
+    try:
+        if get_setting("ANTHROPIC_API_KEY"):
+            security_warnings.append({
+                "level": "warning",
+                "msg": "La API key de Claude está guardada en la base de datos sin cifrar. Asegúrate de que data/radar.db tiene permisos restrictivos y activa BACKUP_PASSPHRASE.",
+                "link": "/settings/app",
+            })
+    except Exception:
+        pass
+    # Advertir si VAPID_CONTACT_EMAIL no está configurado — ISO 27001 A.16
+    try:
+        from push_utils import VAPID_SUBJECT
+        if "localhost" in VAPID_SUBJECT:
+            security_warnings.append({
+                "level": "warning",
+                "msg": "VAPID_CONTACT_EMAIL no configurado. Añade tu email en .env para identificar el servicio push (RFC 8292 / ISO 27001 A.16).",
+                "link": "/settings/app",
+            })
+    except Exception:
+        pass
 
     return templates.TemplateResponse("dashboard.html", {
         "request":            request,

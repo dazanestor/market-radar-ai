@@ -28,7 +28,18 @@ from database import (
 
 logger = logging.getLogger("push_utils")
 
-VAPID_SUBJECT = "mailto:admin@localhost"
+# ISO 27001 A.16.1.2: el VAPID subject debe ser una URL de contacto real para que
+# el servicio de push pueda identificar al operador ante incidentes o abuso.
+# Configurar VAPID_CONTACT_EMAIL en .env con el email del administrador.
+_vapid_contact = os.environ.get("VAPID_CONTACT_EMAIL", "")
+if _vapid_contact and not _vapid_contact.startswith("mailto:"):
+    _vapid_contact = f"mailto:{_vapid_contact}"
+VAPID_SUBJECT = _vapid_contact or "mailto:admin@localhost"
+if VAPID_SUBJECT == "mailto:admin@localhost":
+    logger.warning(
+        "VAPID_CONTACT_EMAIL no configurado — usando placeholder 'admin@localhost'. "
+        "Establece VAPID_CONTACT_EMAIL en .env para cumplimiento RFC 8292 e ISO 27001 A.16."
+    )
 
 # ── Utilidades base64url ───────────────────────────────────────────────────────
 

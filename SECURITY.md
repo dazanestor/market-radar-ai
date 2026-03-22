@@ -219,7 +219,35 @@ Cada push a `main` ejecuta:
 - Exposición de `.env` o `credentials.json`
 - Brecha en Anthropic que afecte datos enviados
 
-### 7.2 Procedimiento de respuesta
+### 7.2 Notificación de brecha de datos (Art. 33/34 RGPD — ISO 27001 A.16.1.5)
+
+Si se confirma una brecha que afecta datos personales:
+
+```
+PLAZO MÁXIMO: 72 horas desde detección para notificar a la autoridad de control (AEPD).
+
+PASO A: Evaluar gravedad (< 2h)
+  ├── ¿Qué datos fueron expuestos? (portfolio, push endpoints, sesiones, audit_log)
+  ├── ¿Cuántos registros? ¿Hay datos de identidad?
+  ├── ¿Es acceso confirmado o solo potencial?
+  └── ¿El acceso fue externo o interno?
+
+PASO B: Notificar a la AEPD si hay alto riesgo (< 72h desde detección)
+  └── Portal: https://sedeagpd.gob.es/sede-electronica-web/vistas/infoNotificacionViolacion/notificacionViolacion.jsf
+  └── Datos a incluir: naturaleza, categorías, n.º de afectados, consecuencias, medidas adoptadas
+
+PASO C: Notificar al usuario si hay alto riesgo individual (Art. 34)
+  └── Template de notificación:
+      "Estimado usuario: se ha detectado un acceso no autorizado a [descripción].
+       Los datos potencialmente expuestos son: [lista].
+       Acciones tomadas: [descripción].
+       Recomendamos: cambiar contraseña, revisar alertas activas.
+       Contacto: [email responsable]"
+
+PASO D: Registrar en este fichero (sección 7.4)
+```
+
+### 7.3 Procedimiento de respuesta técnica
 
 ```
 1. DETECCIÓN (< 1h)
@@ -247,6 +275,12 @@ Cada push a `main` ejecuta:
    ├── Actualizar matriz de riesgos si aplica
    └── Revisar controles afectados
 ```
+
+### 7.4 Registro de incidentes / brechas
+
+| Fecha | Tipo | Descripción | Datos afectados | AEPD notificada | Resolución |
+|-------|------|-------------|-----------------|-----------------|------------|
+| — | — | Sin incidentes registrados | — | — | — |
 
 ---
 
@@ -302,13 +336,20 @@ Se recomienda realizar una prueba de restauración **al menos una vez al año**:
 ```bash
 # Test de restauración (no destructivo):
 # 1. Seleccionar el backup más reciente
+BACKUP=$(ls -t data/backups/radar_*.db.enc 2>/dev/null | head -1)
 # 2. Restaurar en un directorio temporal
-# 3. Verificar integridad y datos clave
-# 4. Documentar resultado y fecha en este fichero
-
-# Última prueba: [FECHA PENDIENTE]
-# Resultado: [PENDIENTE]
+openssl enc -d -aes-256-cbc -pbkdf2 -in "$BACKUP" -out /tmp/radar_test.db -pass env:BACKUP_PASSPHRASE
+# 3. Verificar integridad
+python3 -c "import sqlite3; c=sqlite3.connect('/tmp/radar_test.db'); print(c.execute('PRAGMA integrity_check').fetchone()); print('Tickers:', c.execute('SELECT COUNT(*) FROM tickers').fetchone())"
+# 4. Limpiar
+rm /tmp/radar_test.db
 ```
+
+**Registro de pruebas de restauración:**
+
+| Fecha | Backup probado | Resultado | Duración | Observaciones |
+|-------|----------------|-----------|----------|---------------|
+| Pendiente | — | — | — | Programar prueba trimestral |
 
 ---
 
@@ -373,9 +414,26 @@ git push origin v1.2.0
 - Identificación de la persona a través de tickers requiere contexto adicional del que Anthropic no dispone.
 - Riesgo de re-identificación: **Bajo**.
 
-**Acción pendiente:** Verificar que Anthropic dispone de DPA compatible con RGPD para clientes europeos. Referencia: [privacy.anthropic.com](https://www.anthropic.com/legal/privacy).
+**Acuerdo de procesamiento de datos:**
+- DPA disponible en: [https://www.anthropic.com/legal/privacy](https://www.anthropic.com/legal/privacy)
+- Mecanismo de transferencia: Cláusulas Contractuales Tipo (SCCs) — Module One (responsable → encargado)
+- Sub-encargados de Anthropic: AWS (infraestructura de modelos)
+- Retención en Anthropic: los datos de API no se usan para entrenar modelos (ver Privacy Policy)
+- **Estado DPA:** Verificar y firmar DPA con Anthropic si se requiere compliance formal (contacto: privacy@anthropic.com).
 
-### 10.3 Retención de datos (ISO 27701 Art. 5)
+### 10.3 Registro de actividades de tratamiento (Art. 30 RGPD)
+
+| Actividad | Finalidad | Categorías de datos | Base jurídica | Retención | Destinatarios | Transferencias |
+|-----------|-----------|---------------------|---------------|-----------|---------------|----------------|
+| Gestión de cartera | Seguimiento de inversiones, alertas, rebalanceo | Tickers, participaciones, precios medios (no identificadores personales) | Interés legítimo | Hasta `/gdpr/delete` | Ninguno | No |
+| Historial de operaciones | Registro buy/sell, cálculo P&L | Tickers, fechas, importes, notas | Interés legítimo | Hasta `/gdpr/delete` | Ninguno | No |
+| Alertas de precio | Notificación de eventos de mercado | Tickers, precios objetivo | Interés legítimo | Hasta `/gdpr/delete` | Ninguno | No |
+| Suscripciones push | Envío de notificaciones al navegador | Browser push endpoint, claves p256dh/auth | Interés legítimo | 90 días | Servicio push del navegador (Firefox/Chrome) — procesador | No |
+| Sesiones de usuario | Autenticación y control de acceso | IP address, user-agent, session ID (hash) | Interés legítimo | 30 días | Ninguno | No |
+| Registro de auditoría | Seguridad, detección de incidentes | IP address, tipo de evento, timestamp | Obligación legal (ISO 27001 A.12.4) | 365 días | Ninguno | No |
+| Análisis de cartera con IA | Generación de informes de inversión | Tickers, métricas de mercado públicas (sin datos personales) | Interés legítimo | No retenido por Anthropic | Anthropic, Inc. (San Francisco, CA) — procesador | Sí — SCCs |
+
+### 10.4 Retención de datos (ISO 27701 Art. 5)
 
 | Datos | Retención | Mecanismo |
 |-------|-----------|-----------|
@@ -383,10 +441,11 @@ git push origin v1.2.0
 | Caché de noticias | 30 días | `purge_old_news_cache()` — domingos |
 | Registro de auditoría | 365 días | `purge_old_audit_log()` — domingos |
 | Sesiones | 30 días | `job_cleanup_sessions()` — diario 03:00 |
+| Suscripciones push | 90 días | `purge_old_push_subscriptions()` — domingos |
 | Backups | 7 copias rotantes | Servicio `backup` — diario |
 | Datos de cartera | Hasta borrado manual / GDPR | `/gdpr/delete` |
 
-### 10.4 Derechos del interesado
+### 10.5 Derechos del interesado
 
 | Derecho | Implementación | Ruta |
 |---------|----------------|------|

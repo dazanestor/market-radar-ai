@@ -37,8 +37,12 @@
     <div class="success">✅ Cuenta configurada. Ya puedes iniciar sesión.</div>
     {% endif %}
 
-    {% if error == 'locked' %}
-    <div class="error">⛔ Demasiados intentos fallidos. Espera 15 minutos e inténtalo de nuevo.</div>
+    {% if error == 'ip_locked' %}
+    <div class="error">⛔ Tu dirección IP ha sido bloqueada temporalmente (15 min) por exceso de intentos fallidos.</div>
+    {% elif error == 'account_locked' %}
+    <div class="error">⛔ Esta cuenta ha sido bloqueada temporalmente (30 min) por múltiples intentos fallidos desde distintas IPs.</div>
+    {% elif error == 'locked' %}
+    <div class="error">⛔ Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.</div>
     {% elif error %}
     <div class="error">Usuario o contraseña incorrectos.</div>
     {% endif %}

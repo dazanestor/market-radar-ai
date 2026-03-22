@@ -520,7 +520,7 @@ def job_check_security_events():
             # Eventos críticos recientes
             critical = conn.execute(
                 "SELECT event_type, ip_address, created_at FROM audit_log "
-                "WHERE event_type IN ('gdpr_delete','totp_disabled','credentials_changed') "
+                "WHERE event_type IN ('login_locked','gdpr_delete','totp_disabled','credentials_changed','unhandled_exception') "
                 "AND created_at >= ?",
                 (since,)
             ).fetchall()

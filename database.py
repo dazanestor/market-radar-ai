@@ -473,7 +473,11 @@ def get_tr_cache(key: str):
 
 # ── reports ───────────────────────────────────────────────────────────────────
 
+_MAX_REPORT_LEN = 200_000  # 200 KB máximo por informe (ISO 27001 A.12.2)
+
 def save_report(content):
+    if content and len(content) > _MAX_REPORT_LEN:
+        content = content[:_MAX_REPORT_LEN] + "\n[TRUNCADO: informe excede límite de 200 KB]"
     with _db() as conn:
         conn.cursor().execute(
             "INSERT INTO reports (date, content) VALUES (?, ?)",

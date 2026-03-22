@@ -1234,13 +1234,20 @@ async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
 
 # ── QR code ───────────────────────────────────────────────────────────────────
 
+_SVG_DANGEROUS_RE = re.compile(r"<script|javascript:|on\w+=", re.IGNORECASE)
+
 def _make_qr_svg(uri: str) -> str:
+    """Genera QR SVG. Valida que el SVG no contiene scripts (ISO 27001 A.14.2)."""
     buf = io.BytesIO()
     try:
         segno.make_qr(uri).save(buf, kind="svg", scale=4, border=1, xmldecl=False, nl=False)
-        return buf.getvalue().decode("utf-8")
+        svg = buf.getvalue().decode("utf-8")
     finally:
         buf.close()
+    if _SVG_DANGEROUS_RE.search(svg):
+        logger.critical("QR SVG contiene contenido potencialmente peligroso — rechazado")
+        return ""
+    return svg
 
 
 

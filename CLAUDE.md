@@ -456,6 +456,10 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Truncado de campos en /tickers/import (ISO 27001 A.14.2)**: `nombre`, `bloque` y `region` en CSV importado usan constantes `_MAX_NAME_LEN`, `_MAX_BLOCK_LEN`, `_MAX_REGION_LEN` igual que el resto de endpoints.
 - **Servicio backup hardening (ISO 27001 A.12.3 / A.5.7)**: `security_opt: no-new-privileges:true` + `mem_limit: 256m` + `cpus: 0.25` para prevenir escalada de privilegios y consumo excesivo de recursos.
 - **requirements.txt versiones exactas (ISO 27001 A.12.6)**: `cryptography==44.0.3`, `scipy==1.15.3`, `pytest==8.3.5` — todas las dependencias usan `==` para builds reproducibles y deterministas.
+- **Clave VAPID privada en fichero (ISO 27001 A.10.1.2)**: `push_utils.py` ya no guarda la clave privada ECDH en la tabla `settings` (texto plano en BD). Se almacena en `data/vapid_private.pem` con `chmod 0o600`. Migración automática al arrancar si existe clave antigua en BD; se elimina de BD tras migrar. La clave pública (no sensible) permanece en BD.
+- **Validación de contenido SVG en QR (ISO 27001 A.14.2)**: `_make_qr_svg()` valida con `_SVG_DANGEROUS_RE` que el SVG generado no contiene `<script>`, `javascript:` ni handlers `on*=` antes de marcarlo como `Markup` seguro.
+- **Límite de tamaño en informes Claude (ISO 27001 A.12.2)**: `save_report()` trunca contenido si supera 200 KB (`_MAX_REPORT_LEN = 200_000`) para prevenir crecimiento ilimitado de BD.
+- **`job_check_security_events` ampliado (ISO 27001 A.12.4)**: añadidos `login_locked` y `unhandled_exception` a los eventos críticos monitorizados; antes solo incluía `gdpr_delete`, `totp_disabled` y `credentials_changed`.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

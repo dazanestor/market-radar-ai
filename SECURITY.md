@@ -48,7 +48,7 @@ Esta política debe revisarse cada 12 meses o tras:
 | Imagen Docker (`ghcr.io/...`) | Software | Público | Proyecto | GitHub Container Registry |
 | API Key Anthropic | Secreto | **Confidencial** | Usuario | `.env` / tabla `settings` |
 | Push subscriptions (endpoint, p256dh, auth) | Dato personal | **Personal** | Usuario | `push_subscriptions` en BD |
-| Claves VAPID (privada) | Secreto | **Confidencial** | Sistema | `settings` en BD |
+| Claves VAPID (privada) | Secreto | **Confidencial** | Sistema | `data/vapid_private.pem` (chmod 600) |
 | Historial de precios | Dato de mercado | Público | Sistema | `price_history` en BD |
 
 ### 2.2 Matriz de riesgos
@@ -138,7 +138,7 @@ Esta política debe revisarse cada 12 meses o tras:
 | Contraseña de usuario | `data/credentials.json` (0o600, bcrypt) | Manual. Forzada cada 90 días. |
 | TOTP secret | `data/totp_secret.key` (0o600) | Manual en `/2fa/setup` |
 | API Key Anthropic | `.env` o tabla `settings` | Manual. Recomendar cada 90 días. |
-| Claves VAPID | Tabla `settings` en BD | Sin rotación automática (mejora futura) |
+| Claves VAPID | `data/vapid_private.pem` (chmod 600, excluido de imagen Docker) | Sin rotación automática (mejora futura) |
 | BACKUP_PASSPHRASE | Variable de entorno `.env` | Manual |
 
 ### 4.3 Cifrado en tránsito

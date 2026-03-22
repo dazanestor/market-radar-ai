@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from database import (
     delete_push_subscription,
     get_all_push_subscriptions,
+    delete_setting,
     get_setting,
     set_setting,
 )
@@ -55,16 +56,42 @@ def _b64url_decode(s: str) -> bytes:
 
 # ── Gestión de claves VAPID ────────────────────────────────────────────────────
 
+_VAPID_PRIVATE_FILE = os.path.join("data", "vapid_private.pem")
+
+
 def get_or_create_vapid_keys() -> tuple:
     """
     Devuelve (private_pem, public_b64url).
-    Si no existen en BD, las genera y las persiste en settings.
+    La clave privada se guarda en data/vapid_private.pem (chmod 600, ISO 27001 A.10.1.2).
+    La clave pública se guarda en BD (no sensible).
+    Migra automáticamente claves antiguas almacenadas en BD texto plano.
     """
-    priv_pem = get_setting("vapid_private_pem")
-    pub_b64  = get_setting("vapid_public_b64")
-    if priv_pem and pub_b64:
-        return priv_pem, pub_b64
+    pub_b64 = get_setting("vapid_public_b64")
 
+    # Migración: clave privada almacenada en BD → fichero (ISO 27001 A.10.1.2)
+    old_priv_pem = get_setting("vapid_private_pem")
+    if old_priv_pem and not os.path.exists(_VAPID_PRIVATE_FILE):
+        try:
+            os.makedirs("data", exist_ok=True)
+            with open(_VAPID_PRIVATE_FILE, "w") as f:
+                f.write(old_priv_pem)
+            os.chmod(_VAPID_PRIVATE_FILE, 0o600)
+            delete_setting("vapid_private_pem")
+            logger.info("Clave VAPID privada migrada de BD a %s (chmod 600).", _VAPID_PRIVATE_FILE)
+        except Exception:
+            logger.exception("Error migrando clave VAPID privada a fichero.")
+
+    # Cargar clave privada desde fichero
+    if os.path.exists(_VAPID_PRIVATE_FILE) and pub_b64:
+        try:
+            with open(_VAPID_PRIVATE_FILE) as f:
+                priv_pem = f.read().strip()
+            if priv_pem:
+                return priv_pem, pub_b64
+        except Exception:
+            logger.exception("Error leyendo clave VAPID privada desde fichero.")
+
+    # Generar nuevo par de claves
     private_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
     priv_pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -77,9 +104,14 @@ def get_or_create_vapid_keys() -> tuple:
     )
     pub_b64 = _b64url_encode(pub_bytes)
 
-    set_setting("vapid_private_pem", priv_pem)
+    # Guardar privada en fichero (chmod 600), pública en BD
+    os.makedirs("data", exist_ok=True)
+    with open(_VAPID_PRIVATE_FILE, "w") as f:
+        f.write(priv_pem)
+    os.chmod(_VAPID_PRIVATE_FILE, 0o600)
+    delete_setting("vapid_private_pem")  # eliminar de BD si existía
     set_setting("vapid_public_b64", pub_b64)
-    logger.info("Nuevas claves VAPID generadas y guardadas en BD.")
+    logger.info("Nuevas claves VAPID generadas. Privada en %s (chmod 600), pública en BD.", _VAPID_PRIVATE_FILE)
     return priv_pem, pub_b64
 
 

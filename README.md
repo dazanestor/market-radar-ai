@@ -17,6 +17,8 @@ Herramienta de monitoreo de cartera e inversiones. Descarga datos de mercado, ca
 - [Base de datos](#base-de-datos)
 - [Scoring](#scoring)
 - [Flujo de datos](#flujo-de-datos)
+- [Seguridad](#seguridad)
+- [Tests](#tests)
 - [Ejecución standalone](#ejecución-standalone)
 
 ---
@@ -163,6 +165,7 @@ docker compose logs -f
 | `REPORT_HOUR` | No | `8` | Hora del reporte diario (formato 24h) |
 | `TIMEZONE` | No | `Europe/Madrid` | Zona horaria del reporte (`Europe/Madrid`, `America/New_York`, etc.) |
 | `WEB_PORT` | No | `8589` | Puerto del dashboard web |
+| `COOKIE_SECURE` | No | — | Establece el flag `Secure` en la cookie de sesión. Poner `1` en producción detrás de HTTPS |
 | `MPLCONFIGDIR` | No | `/app/output/.matplotlib` | Directorio de caché de matplotlib (configurado automáticamente en Docker) |
 | `TR_PHONE` | No | — | Teléfono Trade Republic (formato `+34600000000`) |
 | `TR_PIN` | No | — | PIN de Trade Republic |
@@ -205,6 +208,13 @@ market-radar-ai/
 ├── docker-compose.yml  # servicios: init, market-radar (scheduler), web, backup
 ├── requirements.txt
 ├── templates/          # plantillas Jinja2 del dashboard web
+├── static/             # activos estáticos (Alpine.js self-hosted; generado en build Docker)
+├── tests/              # suite pytest (138 tests: scoring, database, push_utils, discovery)
+│   ├── conftest.py
+│   ├── test_scoring.py
+│   ├── test_database.py
+│   ├── test_push_utils.py
+│   └── test_discovery.py
 ├── .github/
 │   └── workflows/
 │       └── docker-publish.yml  # CI/CD: build y push a GHCR en cada push a main
@@ -395,6 +405,7 @@ El dashboard usa autenticación segura basada en credenciales almacenadas en `da
 - **Bloqueo por IP**: tras 5 intentos fallidos, la IP queda bloqueada 15 minutos
 - **CSRF**: token global en todos los formularios POST
 - **Sesiones**: UUID por sesión, expiran en 30 días; se invalidan al hacer logout
+- **Cabeceras de seguridad**: CSP, X-Frame-Options, X-Content-Type-Options y más en todas las respuestas (ver sección [Seguridad](#seguridad))
 
 ---
 
@@ -424,6 +435,75 @@ El sistema puede sincronizar posiciones y saldo de efectivo desde Trade Republic
 - Los datos se cachean en `tr_cache` (SQLite) para no repetir llamadas innecesarias
 - La sincronización se hace bajo demanda desde el dashboard (botón **Sincronizar**)
 - La sesión de Trade Republic se persiste en `data/tr_cookies.txt`
+
+---
+
+## Seguridad
+
+El dashboard implementa las recomendaciones OWASP Top 10 para despliegues en producción.
+
+### Cabeceras HTTP
+
+Todas las respuestas incluyen:
+
+| Cabecera | Valor |
+|---|---|
+| `Content-Security-Policy` | `default-src 'self'`; scripts solo desde el propio origen; `object-src 'none'`; `frame-ancestors 'none'` |
+| `X-Frame-Options` | `DENY` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-XSS-Protection` | `1; mode=block` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+
+### Autenticación y sesiones
+
+- Contraseñas con **bcrypt** (hash + salt)
+- **2FA TOTP** obligatorio tras el primer acceso (Google Authenticator, Authy, etc.)
+- Cookie de sesión con `HttpOnly`, `SameSite=Strict` y `Secure` (activar con `COOKIE_SECURE=1` en producción HTTPS)
+- Bloqueo automático por IP tras 5 intentos fallidos (15 min)
+- **CSRF token** global en todos los formularios POST de usuario autenticado
+- Sesiones invalidadas al hacer logout
+
+### Dependencias de frontend
+
+Alpine.js se descarga durante el **build Docker** en una versión fijada (`3.14.9`) y se sirve desde `/static/alpine.min.js`. No hay peticiones a CDN externas en tiempo de ejecución, eliminando la dependencia de terceros y el riesgo de compromiso de la cadena de suministro.
+
+### Validación de entradas
+
+- Path params de ticker validados contra regex `[A-Z0-9.^=-]{1,20}` (HTTP 400 si no coincide)
+- Endpoint Web Push validado con `urlparse` (requiere `scheme=https` y `netloc` no vacío)
+- Alertas de drawdown validadas en rango `[-100, 0]`; alertas de score en `[0, 100]`
+- Rate limits en endpoints costosos: `/tickers/enrich`, `/recomendaciones/refresh` (2/min), `/generar-reporte` (2/min), `/tickers/search` (10/min)
+
+### Despliegue en producción
+
+```env
+# Añadir al .env en producción (detrás de Cloudflare Tunnel / Caddy / nginx con TLS)
+COOKIE_SECURE=1
+WEB_PASSWORD=contraseña_segura
+```
+
+> Los Service Workers (Web Push) solo se registran en orígenes HTTPS. En `localhost` funciona sin TLS.
+
+---
+
+## Tests
+
+El proyecto incluye una suite de 138 tests pytest que cubren la lógica de negocio principal.
+
+```bash
+pip install pytest pandas scipy cryptography
+python -m pytest tests/ -v
+```
+
+| Módulo | Tests | Qué cubre |
+|---|---|---|
+| `test_scoring.py` | 39 | `_compute_score`, `_opportunity_label`, `suggest_horizon`, `score_watchlist` |
+| `test_database.py` | 52 | CRUD completo en SQLite temporal: tickers, alertas, operaciones, snapshots, push |
+| `test_push_utils.py` | 15 | VAPID JWT, b64url, `send_push_to_all` (tri-state: éxito / expirado / error temporal) |
+| `test_discovery.py` | 32 | `_calc_rsi`, `_infer_region` (sufijos bolsa), `_score_and_classify` |
+
+Los tests de base de datos usan una BD SQLite temporal aislada via fixture `tmp_db` (monkeypatch). Los módulos externos (yfinance, anthropic, FastAPI) se substituyen con stubs en `conftest.py`.
 
 ---
 

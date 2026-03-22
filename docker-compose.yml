@@ -29,7 +29,8 @@ services:
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-web
     restart: unless-stopped
-    command: ["python", "-m", "uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8589"]
+    command: ["python", "-m", "uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8589",
+              "--proxy-headers", "--forwarded-allow-ips", "*"]
 
     environment:
       ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}
@@ -37,6 +38,7 @@ services:
       REPORT_HOUR:        ${REPORT_HOUR:-8}
       TIMEZONE:           ${TIMEZONE:-Europe/Madrid}
       WEB_PASSWORD:       ${WEB_PASSWORD:-}
+      COOKIE_SECURE:      ${COOKIE_SECURE:-}
       MPLCONFIGDIR:       /app/output/.matplotlib
       TR_PHONE:           ${TR_PHONE:-}
       TR_PIN:             ${TR_PIN:-}

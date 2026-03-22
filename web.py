@@ -670,7 +670,7 @@ def _validate_csrf(token: Optional[str]) -> bool:
 def _require_csrf(request: Request, token: Optional[str]) -> None:
     """Valida el token CSRF o lanza 403 con log de la IP."""
     if not _validate_csrf(token):
-        logger.warning("CSRF inválido: ip=%s path=%s", request.client.host, request.url.path)
+        logger.warning("CSRF inválido: ip=%s path=%s", get_remote_address(request), request.url.path)
         raise HTTPException(403, "Token CSRF inválido")
 
 

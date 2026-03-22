@@ -3,6 +3,8 @@ services:
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-ai
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: "json-file"
       options:
@@ -34,6 +36,8 @@ services:
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-web
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: "json-file"
       options:

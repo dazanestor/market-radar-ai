@@ -434,6 +434,20 @@ limiter      = Limiter(key_func=get_remote_address)
 app          = FastAPI(title="Market Radar AI", docs_url=None, redoc_url=None)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """ISO 27001 A.5 — Evita filtración de stack traces al cliente (OWASP A05)."""
+    logger.error("Excepción no capturada en %s: %s", request.url.path, type(exc).__name__, exc_info=exc)
+    try:
+        ip = get_remote_address(request)
+        log_audit_event("unhandled_exception", ip_address=ip, details=f"path={request.url.path},type={type(exc).__name__}")
+    except Exception:
+        pass
+    return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
+
+
+app.add_exception_handler(Exception, _generic_exception_handler)
 init_db()  # Asegura migraciones de BD tanto en uvicorn directo como vía __main__
 # Ficheros estáticos (Alpine.js auto-alojado, etc.)
 if os.path.isdir("static"):
@@ -1287,7 +1301,10 @@ async def gdpr_export(request: Request, session: Optional[str] = Cookie(default=
     return Response(
         content=content.encode("utf-8"),
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
     )
 
 
@@ -2063,6 +2080,7 @@ async def generar_reporte(
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
+    log_audit_event("report_triggered", ip_address=get_remote_address(request), details="manual_trigger")
     try:
         await asyncio.get_running_loop().run_in_executor(_executor, _do_generate_report)
     except Exception:
@@ -2487,6 +2505,7 @@ async def tickers_add(
         entry["notes"] = notes.strip()[:_MAX_NOTES_LEN]
     tickers[categoria][t] = entry
     _save_tickers(tickers)
+    log_audit_event("ticker_added", ip_address=get_remote_address(request), details=f"ticker={t},categoria={categoria}")
 
     # Auto-create price alert if requested and target_price is set
     if auto_alert and tp_float is not None and tp_float > 0:
@@ -2553,6 +2572,7 @@ async def tickers_update(
         meta["notes"] = notes.strip()[:_MAX_NOTES_LEN]
     tickers.setdefault(categoria, {})[ticker] = meta
     _save_tickers(tickers)
+    log_audit_event("ticker_updated", ip_address=get_remote_address(request), details=f"ticker={ticker.strip().upper()},categoria={categoria}")
 
     # Auto-create price alert if requested and target_price is set
     if auto_alert and tp_float is not None and tp_float > 0:
@@ -2633,6 +2653,7 @@ async def tickers_delete(
         del tickers[categoria][ticker]
         delete_ticker_record(ticker)
     _save_tickers(tickers)
+    log_audit_event("ticker_deleted", ip_address=get_remote_address(request), details=f"ticker={ticker.strip().upper()},categoria={categoria}")
     return RedirectResponse("/tickers", status_code=303)
 
 
@@ -2814,6 +2835,7 @@ async def operaciones_delete(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     delete_operation(op_id)
+    log_audit_event("operation_deleted", ip_address=get_remote_address(request), details=f"op_id={op_id}")
     return RedirectResponse("/operaciones", status_code=303)
 
 
@@ -3177,6 +3199,7 @@ async def alertas_add(
         direction = "below" if pct < 0 else "above"
         add_price_alert(t, pct, direction, condition_type="price_pct",
                         condition_value=current_price, expires_at=_expires_at)
+        log_audit_event("alert_created", ip_address=get_remote_address(request), details=f"ticker={t},type=price_pct,value={pct}")
         return RedirectResponse("/alertas", status_code=303)
     elif condition_type == "stoploss_pct":
         # Stop-loss dinámico: % de pérdida desde precio de compra
@@ -3185,6 +3208,7 @@ async def alertas_add(
             return RedirectResponse("/alertas?error=rango", status_code=303)
         add_price_alert(t, pct, "below", condition_type="stoploss_pct",
                         condition_value=pct, expires_at=_expires_at)
+        log_audit_event("alert_created", ip_address=get_remote_address(request), details=f"ticker={t},type=stoploss_pct,value={pct}")
         return RedirectResponse("/alertas", status_code=303)
     elif condition_type == "drawdown":
         # Los drawdowns son porcentajes negativos (-100 a 0)
@@ -3194,6 +3218,7 @@ async def alertas_add(
             return RedirectResponse("/alertas?error=rango", status_code=303)
         add_price_alert(t, target_price, "below", condition_type=condition_type,
                         condition_value=target_price, expires_at=_expires_at)
+        log_audit_event("alert_created", ip_address=get_remote_address(request), details=f"ticker={t},type=drawdown,value={target_price}")
         return RedirectResponse("/alertas", status_code=303)
     elif condition_type == "score":
         # El score debe estar entre 0 y 100
@@ -3201,6 +3226,7 @@ async def alertas_add(
             return RedirectResponse("/alertas?error=rango", status_code=303)
         add_price_alert(t, target_price, "above", condition_type=condition_type,
                         condition_value=target_price, expires_at=_expires_at)
+        log_audit_event("alert_created", ip_address=get_remote_address(request), details=f"ticker={t},type=score,value={target_price}")
         return RedirectResponse("/alertas", status_code=303)
 
     if not (0 < target_price < 1_000_000):
@@ -3215,6 +3241,7 @@ async def alertas_add(
             if current and not _is_nan(current):
                 direction = "below" if target_price < current else "above"
     add_price_alert(t, target_price, direction, condition_type="price", expires_at=_expires_at)
+    log_audit_event("alert_created", ip_address=get_remote_address(request), details=f"ticker={t},type=price,value={target_price}")
     return RedirectResponse("/alertas", status_code=303)
 
 
@@ -3229,6 +3256,7 @@ async def alertas_delete(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     deactivate_alert(alert_id)
+    log_audit_event("alert_deleted", ip_address=get_remote_address(request), details=f"alert_id={alert_id}")
     return RedirectResponse("/alertas", status_code=303)
 
 
@@ -5503,7 +5531,10 @@ async def tickers_import(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
 
-    content = (await file.read()).decode("utf-8", errors="ignore")
+    raw = await file.read()
+    if len(raw) > 2 * 1024 * 1024:  # 2 MB máximo (ISO 27001 A.12.2 — protección DoS)
+        return RedirectResponse("/tickers?error=archivo_muy_grande", status_code=303)
+    content = raw.decode("utf-8", errors="ignore")
     reader = csv.DictReader(io.StringIO(content))
     tickers_data = _load_tickers()
     imported = 0
@@ -5677,6 +5708,7 @@ async def push_subscribe(
         raise HTTPException(status_code=400, detail="endpoint inválido")
     ua = request.headers.get("user-agent", "")[:200]
     upsert_push_subscription(endpoint, p256dh, auth, ua)
+    log_audit_event("push_subscribed", ip_address=get_remote_address(request), details=f"ua={ua[:80]}")
     return JSONResponse({"ok": True})
 
 
@@ -5696,6 +5728,8 @@ async def push_unsubscribe(
     endpoint = body.get("endpoint", "")
     if endpoint:
         delete_push_subscription(endpoint)
+        _ep_hash = hashlib.sha256(endpoint.encode()).hexdigest()[:16]
+        log_audit_event("push_unsubscribed", ip_address=get_remote_address(request), details=f"endpoint_hash={_ep_hash}")
     return JSONResponse({"ok": True})
 
 

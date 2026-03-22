@@ -176,6 +176,16 @@ Esta política debe revisarse cada 12 meses o tras:
 | `position_upserted` | Posición de cartera añadida o modificada | INFO |
 | `position_deleted` | Posición de cartera eliminada | WARNING |
 | `operation_added` | Operación buy/sell registrada | INFO |
+| `operation_deleted` | Operación eliminada | WARNING |
+| `ticker_added` | Ticker añadido a cartera/watchlist | INFO |
+| `ticker_updated` | Metadatos de ticker actualizados | INFO |
+| `ticker_deleted` | Ticker eliminado de cartera/watchlist | WARNING |
+| `alert_created` | Alerta de precio/score/drawdown creada | INFO |
+| `alert_deleted` | Alerta desactivada | INFO |
+| `report_triggered` | Informe diario lanzado manualmente | INFO |
+| `push_subscribed` | Suscripción Web Push registrada | INFO |
+| `push_unsubscribed` | Suscripción Web Push eliminada | INFO |
+| `unhandled_exception` | Excepción no capturada en un endpoint | ERROR |
 | `gdpr_export` | Exportación de datos personales | INFO |
 | `gdpr_delete` | Borrado de datos personales | WARNING |
 
@@ -207,6 +217,7 @@ Cada push a `main` ejecuta:
 | **Bandit** | Vulnerabilidades en código Python (SAST) | `bandit-report.json` (90 días) |
 | **pip-audit** | CVEs en dependencias Python | `pip-audit-report.json` (90 días) |
 | **Trivy** | Vulnerabilidades en imagen Docker | SARIF → GitHub Security tab |
+| **anchore/sbom-action** | SBOM completo de la imagen (supply chain) | `sbom-spdx.json` (365 días, formato SPDX) |
 
 ### 6.2 Revisión manual periódica
 

@@ -135,3 +135,18 @@ jobs:
         if: always()
         with:
           sarif_file: trivy-results.sarif
+
+      # ISO 27001 A.12.6 / A.14.2: SBOM para trazabilidad de supply chain
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format: spdx-json
+          output-file: sbom-spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-spdx
+          path: sbom-spdx.json
+          retention-days: 365

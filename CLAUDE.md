@@ -444,6 +444,12 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Audit log de cambios en cartera (ISO 27001 A.12.4)**: `/posiciones/add`, `/posiciones/delete` y `/operaciones/add` registran eventos `position_upserted`, `position_deleted` y `operation_added` con ticker, shares y precio en audit_log.
 - **TR_PHONE tipo password (ISO 27701 Art. 5 — minimización)**: campo `TR_PHONE` en `_APP_SETTINGS` cambia de `type="text"` a `type="password"` para evitar exposición del número de teléfono en pantalla.
 - **Docker logging con rotación (ISO 27001 A.12.4.3)**: servicios `market-radar` y `market-radar-web` usan `driver: json-file` con `max-size: 10m` y `max-file: 5`; previene pérdida de logs por overflow y crecimiento ilimitado en disco.
+- **Handler global de excepciones 500 (OWASP A05 / ISO 27001 A.5)**: `_generic_exception_handler` registrado en FastAPI; captura cualquier excepción no manejada, logea en audit_log como `unhandled_exception` y devuelve `{"detail": "Error interno del servidor"}` sin stack trace ni información interna.
+- **Audit log completo para todos los endpoints POST mutantes (ISO 27001 A.12.4)**: añadidos eventos `ticker_added`, `ticker_updated`, `ticker_deleted`, `alert_created`, `alert_deleted`, `operation_deleted`, `report_triggered`, `push_subscribed`, `push_unsubscribed` — ahora todos los cambios de datos generan traza de auditoría.
+- **Cache-Control: no-store en /gdpr/export (ISO 27701 Art. 20)**: la respuesta de exportación de datos personales incluye `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` para evitar caching en navegador o proxies intermedios.
+- **Límite de tamaño en /tickers/import (ISO 27001 A.12.2)**: upload de CSV rechazado si supera 2 MB para prevenir DoS por archivos grandes.
+- **Docker security_opt: no-new-privileges (ISO 27001 A.5.7 — Menor privilegio)**: ambos servicios añaden `security_opt: [no-new-privileges:true]` para evitar escalada de privilegios desde el proceso del contenedor.
+- **SBOM en CI/CD (ISO 27001 A.12.6)**: `anchore/sbom-action` genera SBOM en formato SPDX-JSON tras el build; artefacto `sbom-spdx` retenido 365 días para trazabilidad de supply chain.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

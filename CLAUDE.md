@@ -450,6 +450,12 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Límite de tamaño en /tickers/import (ISO 27001 A.12.2)**: upload de CSV rechazado si supera 2 MB para prevenir DoS por archivos grandes.
 - **Docker security_opt: no-new-privileges (ISO 27001 A.5.7 — Menor privilegio)**: ambos servicios añaden `security_opt: [no-new-privileges:true]` para evitar escalada de privilegios desde el proceso del contenedor.
 - **SBOM en CI/CD (ISO 27001 A.12.6)**: `anchore/sbom-action` genera SBOM en formato SPDX-JSON tras el build; artefacto `sbom-spdx` retenido 365 días para trazabilidad de supply chain.
+- **Cache-Control: no-store en /export/portfolio y /export/watchlist (ISO 27001 A.5)**: los CSV de exportación incluyen `no-store, no-cache` igual que `/gdpr/export`; datos financieros no se cachean en el navegador.
+- **Audit log completo en endpoints faltantes (ISO 27001 A.12.4)**: `tickers_imported` (con conteo importado/errores), `push_test_sent`; `/recomendaciones/add-to-watchlist` registra `ticker_added` con `origen=recomendaciones`.
+- **Validación de entrada en /settings/app POST (ISO 27001 A.14.2)**: `_valid_setting()` valida REPORT_HOUR (0-23), TIMEZONE (ZoneInfo), ANTHROPIC_API_KEY (≤500 chars), límite genérico 2000 chars; valores inválidos se ignoran en lugar de guardarse.
+- **Truncado de campos en /tickers/import (ISO 27001 A.14.2)**: `nombre`, `bloque` y `region` en CSV importado usan constantes `_MAX_NAME_LEN`, `_MAX_BLOCK_LEN`, `_MAX_REGION_LEN` igual que el resto de endpoints.
+- **Servicio backup hardening (ISO 27001 A.12.3 / A.5.7)**: `security_opt: no-new-privileges:true` + `mem_limit: 256m` + `cpus: 0.25` para prevenir escalada de privilegios y consumo excesivo de recursos.
+- **requirements.txt versiones exactas (ISO 27001 A.12.6)**: `cryptography==44.0.3`, `scipy==1.15.3`, `pytest==8.3.5` — todas las dependencias usan `==` para builds reproducibles y deterministas.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

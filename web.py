@@ -1900,6 +1900,25 @@ async def settings_app_update(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     form = await request.form()
+
+    # Validadores por clave (ISO 27001 A.14.2 — validación de entrada)
+    def _valid_setting(key: str, value: str) -> bool:
+        if key == "REPORT_HOUR":
+            try:
+                return 0 <= int(value) <= 23
+            except ValueError:
+                return False
+        if key == "TIMEZONE":
+            try:
+                from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+                ZoneInfo(value)
+                return True
+            except Exception:
+                return False
+        if key == "ANTHROPIC_API_KEY":
+            return len(value) <= 500  # evita DoS por valores enormes
+        return len(value) <= 2000  # límite genérico para todos los demás campos
+
     valid_keys = {s["key"] for s in _APP_SETTINGS}
     for key in valid_keys:
         value = (form.get(key) or "").strip()
@@ -1907,7 +1926,10 @@ async def settings_app_update(
         if clear:
             delete_setting(key)
         elif value:
-            set_setting(key, value)
+            if _valid_setting(key, value):
+                set_setting(key, value)
+            else:
+                logger.warning("Valor inválido para %s ignorado en /settings/app", key)
         # Empty + no clear → leave unchanged
     return RedirectResponse("/settings/app?ok=1", status_code=303)
 
@@ -5476,7 +5498,10 @@ async def export_portfolio(session: Optional[str] = Cookie(default=None)):
     return StreamingResponse(
         _gen(),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=portfolio.csv"},
+        headers={
+            "Content-Disposition": "attachment; filename=portfolio.csv",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
     )
 
 
@@ -5514,7 +5539,10 @@ async def export_watchlist(session: Optional[str] = Cookie(default=None)):
     return StreamingResponse(
         _gen(),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=watchlist.csv"},
+        headers={
+            "Content-Disposition": "attachment; filename=watchlist.csv",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
     )
 
 
@@ -5542,9 +5570,9 @@ async def tickers_import(
     for i, row in enumerate(reader, start=2):
         ticker = (row.get("ticker") or "").strip().upper()
         categoria = (row.get("categoria") or "watchlist").strip().lower()
-        nombre = (row.get("nombre") or row.get("name") or ticker).strip()
-        bloque = (row.get("bloque") or row.get("block") or "").strip()
-        region = (row.get("region") or "").strip()
+        nombre = (row.get("nombre") or row.get("name") or ticker).strip()[:_MAX_NAME_LEN]
+        bloque = (row.get("bloque") or row.get("block") or "").strip()[:_MAX_BLOCK_LEN]
+        region = (row.get("region") or "").strip()[:_MAX_REGION_LEN]
         if not _TICKER_RE.match(ticker):
             errors.append(f"Fila {i}: ticker inválido '{ticker}'")
             continue
@@ -5557,6 +5585,7 @@ async def tickers_import(
 
     if imported:
         _save_tickers(tickers_data)
+    log_audit_event("tickers_imported", ip_address=get_remote_address(request), details=f"count={imported},errors={len(errors)}")
     msg = f"import_ok={imported}&import_errors={len(errors)}"
     return RedirectResponse(f"/tickers?{msg}", status_code=303)
 
@@ -5752,6 +5781,7 @@ async def push_test(
             "/alertas",
         ),
     )
+    log_audit_event("push_test_sent", ip_address=get_remote_address(request), details=f"sent={sent}")
     return JSONResponse({"sent": sent})
 
 
@@ -5843,6 +5873,7 @@ async def recomendaciones_add_watchlist(
 
     upsert_ticker(ticker, "watchlist", name=name or None, block=sector or None,
                   region=region or None, horizon=horizon)
+    log_audit_event("ticker_added", ip_address=get_remote_address(request), details=f"ticker={ticker},categoria=watchlist,origen=recomendaciones")
     return RedirectResponse("/recomendaciones?added=" + ticker, status_code=303)
 
 

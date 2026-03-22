@@ -30,8 +30,11 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from urllib.parse import urlparse
+
 from fastapi import Cookie, FastAPI, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -115,6 +118,8 @@ INITIAL_PASSWORD_FILE = "data/initial-password.txt"
 TOTP_SECRET_FILE      = "data/totp_secret.key"
 DEFAULT_USERNAME      = "admin"
 
+# Cookie secure flag: activar en producción (HTTPS) mediante COOKIE_SECURE=1
+COOKIE_SECURE     = os.getenv("COOKIE_SECURE", "").lower() in ("1", "true", "yes")
 # Sesiones activas: session_id → expiry timestamp (monotonic)
 SESSION_EXPIRY    = 86400 * 30  # 30 días
 _active_sessions: dict = {}
@@ -342,6 +347,9 @@ app          = FastAPI(title="Market Radar AI", docs_url=None, redoc_url=None)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 init_db()  # Asegura migraciones de BD tanto en uvicorn directo como vía __main__
+# Ficheros estáticos (Alpine.js auto-alojado, etc.)
+if os.path.isdir("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 templates    = Jinja2Templates(directory="templates")
 _executor    = ThreadPoolExecutor(max_workers=4)
 _chart_lock  = threading.Lock()  # matplotlib no es thread-safe
@@ -465,6 +473,18 @@ async def _refresh_csrf_global(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    # CSP: permite recursos propios + inline styles/scripts necesarios por Alpine.js
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "font-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none';"
+    )
     return response
 
 
@@ -875,6 +895,8 @@ async def chart_precio(ticker: str, session: Optional[str] = Cookie(default=None
     if not _is_auth(session):
         raise HTTPException(401)
     ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(400, "Ticker inválido")
 
     def _fetch():
         try:
@@ -896,7 +918,10 @@ async def chart_precio(ticker: str, session: Optional[str] = Cookie(default=None
 async def chart_historial(ticker: str, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
-    rows = get_ticker_history(ticker.upper(), days=30)
+    ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(400, "Ticker inválido")
+    rows = get_ticker_history(ticker, days=30)
     if len(rows) < 2:
         raise HTTPException(404, "Sin historial suficiente")
     fig = _make_history_chart(ticker.upper(), rows)
@@ -1039,7 +1064,8 @@ async def health():
             _snap = conn.execute("SELECT MAX(date) FROM price_history").fetchone()
             snapshot_date = _snap[0] if _snap and _snap[0] else None
     except Exception as exc:
-        status = f"db_error: {exc}"
+        logger.error("Health check DB error: %s", exc)
+        status = "db_error"
     return JSONResponse({
         "status":        status,
         "snapshot_date": snapshot_date,
@@ -1079,19 +1105,19 @@ async def login(
     if creds.get("first_login"):
         token = _create_pending_token(600)
         resp = RedirectResponse("/setup/first-login", status_code=303)
-        resp.set_cookie("setup_pending", token, httponly=True, samesite="strict", max_age=600)
+        resp.set_cookie("setup_pending", token, httponly=True, samesite="strict", max_age=600, secure=COOKIE_SECURE)
         return resp
 
     # 2FA activo
     if _totp_enabled():
         token = _create_pending_token(300)
         resp = RedirectResponse("/login/totp", status_code=303)
-        resp.set_cookie("totp_pending", token, httponly=True, samesite="strict", max_age=300)
+        resp.set_cookie("totp_pending", token, httponly=True, samesite="strict", max_age=300, secure=COOKIE_SECURE)
         return resp
 
     sid = _create_session()
     resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie("session", sid, httponly=True, samesite="strict", max_age=SESSION_EXPIRY)
+    resp.set_cookie("session", sid, httponly=True, samesite="strict", max_age=SESSION_EXPIRY, secure=COOKIE_SECURE)
     return resp
 
 
@@ -1116,11 +1142,11 @@ async def totp_verify(
         resp = templates.TemplateResponse(
             "login_totp.html", {"request": request, "error": "1"}, status_code=200
         )
-        resp.set_cookie("totp_pending", new_token, httponly=True, samesite="strict", max_age=300)
+        resp.set_cookie("totp_pending", new_token, httponly=True, samesite="strict", max_age=300, secure=COOKIE_SECURE)
         return resp
     sid = _create_session()
     resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie("session", sid, httponly=True, samesite="strict", max_age=SESSION_EXPIRY)
+    resp.set_cookie("session", sid, httponly=True, samesite="strict", max_age=SESSION_EXPIRY, secure=COOKIE_SECURE)
     resp.delete_cookie("totp_pending")
     return resp
 
@@ -1179,7 +1205,7 @@ async def first_login_submit(
             "error": " ".join(errors),
             "form_username": username,
         })
-        resp.set_cookie("setup_pending", new_token, httponly=True, samesite="strict", max_age=600)
+        resp.set_cookie("setup_pending", new_token, httponly=True, samesite="strict", max_age=600, secure=COOKIE_SECURE)
         return resp
 
     _save_credentials(username.strip(), password, first_login=False)
@@ -1805,6 +1831,8 @@ async def ticker_detalle(ticker: str, request: Request,
         return RedirectResponse("/login", status_code=302)
 
     ticker = ticker.upper()
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(400, "Ticker inválido")
 
     def _fetch():
         info = {}
@@ -5237,7 +5265,11 @@ async def push_subscribe(
     if not _is_auth(session):
         raise HTTPException(status_code=401)
     _require_csrf(request, csrf_token)
-    if not endpoint.startswith("https://"):
+    try:
+        _parsed = urlparse(endpoint)
+        if _parsed.scheme != "https" or not _parsed.netloc:
+            raise ValueError
+    except Exception:
         raise HTTPException(status_code=400, detail="endpoint inválido")
     ua = request.headers.get("user-agent", "")[:200]
     upsert_push_subscription(endpoint, p256dh, auth, ua)

@@ -404,6 +404,13 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Cabeceras de seguridad HTTP (OWASP A05)**: middleware `_refresh_csrf_global` añade `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin` y `Permissions-Policy` en todas las respuestas.
 - **CSRF bug en rutas Recomendaciones**: `/recomendaciones/refresh` y `/recomendaciones/add-to-watchlist` llamaban `_validate_csrf(request, form)` (2 args, 1 esperado → TypeError en producción). Corregido a `_require_csrf(request, form.get("csrf_token"))`.
 - **Rate limit en operaciones costosas (OWASP A04)**: `@limiter.limit("2/minute")` añadido a `/tickers/enrich` (yfinance paralelo para todos los tickers) y `/recomendaciones/refresh` (yfinance + Claude para ~300 tickers).
+- **Content-Security-Policy (OWASP A05)**: cabecera CSP añadida en el middleware — `default-src 'self'`, `script-src 'self' 'unsafe-inline'` (requerido por Alpine.js), `style-src 'self' 'unsafe-inline'`, `img-src 'self' data:`, `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`.
+- **Alpine.js self-hosted (OWASP A06 / SRI)**: eliminados CDN de Tailwind (sin uso) y CDN de Alpine.js de `base.html`. Alpine.js 3.14.9 se descarga durante el build Docker (`curl` + `unpkg.com`) y se sirve desde `/static/alpine.min.js`. FastAPI monta `static/` con `StaticFiles`.
+- **Divulgación de info en `/health` (OWASP A05)**: el endpoint ya no expone el mensaje de excepción SQLite en la respuesta; solo devuelve `"db_error"` genérico.
+- **Validación de path params de ticker (OWASP A03)**: `/chart/precio/{ticker}`, `/chart/historial/{ticker}` y `/ticker/{ticker}` ahora validan contra `_TICKER_RE` y lanzan HTTP 400 si el valor no es válido, evitando path traversal / inyección.
+- **Cookie `secure=` configurable (OWASP A07)**: variable `COOKIE_SECURE` (env `COOKIE_SECURE=1`) activa el flag `Secure` en la cookie de sesión para despliegues HTTPS. En desarrollo HTTP permanece desactivado.
+- **Validación de endpoint push con `urlparse` (OWASP A10)**: `/push/subscribe` usa `urlparse` para exigir `scheme == 'https'` y `netloc` no vacío en lugar de un simple `startswith`, evitando bypass con URLs malformadas.
+- **`treemap.html` sin `onerror` inline (OWASP A03)**: eliminado manejador `onerror` inline con `innerHTML`. Reemplazado por `addEventListener('error', ...)` en bloque `<script>` separado; usa `textContent` en lugar de `innerHTML`.
 - **P&L realizado sin comisiones (web.py)**: `pnl_realized = total_sold - total_bought` no descontaba comisiones. Corregido: `pnl_net = total_sold - total_bought - total_commissions`.
 - **Stat card divisas sin contexto (distribucion.html)**: la tarjeta "Divisas distintas" solo mostraba el número. Añadido `stat-sub` con los códigos de divisa (ej. EUR · USD · GBP).
 - **`/api/upcoming-events` lento**: scheduler ahora guarda resultado en `settings("upcoming_exdiv_cache")` y `settings("upcoming_earnings_cache")` tras cada job; el endpoint lee de BD en lugar de llamar a yfinance en tiempo real.
@@ -461,8 +468,10 @@ python -m pytest tests/ -v
 ## Trabajo pendiente / próximas funcionalidades
 
 - **Tests automatizados**: ✅ implementado — 138 tests en `tests/`.
+- **OWASP hardening para producción**: ✅ implementado — CSP, Alpine.js self-hosted, validación path params, `Cookie secure=`, push urlparse, info disclosure `/health`, treemap onerror, rate limits, security headers.
 - **CSRF no en formularios de login/setup**: los endpoints de login no necesitan CSRF (no requieren sesión previa); el CSRF token global cubre todos los formularios de usuario autenticado.
 - **Web Push require HTTPS en producción**: los Service Workers solo se registran en orígenes seguros. En `localhost` funciona sin TLS. En producción se necesita reverse proxy con TLS (Cloudflare Tunnel, Caddy, nginx).
+- **Activar `COOKIE_SECURE=1` en producción**: añadir al `.env` cuando el dashboard esté detrás de un reverse proxy HTTPS.
 ## CI/CD
 
 GitHub Actions en `.github/workflows/docker-publish.yml`:

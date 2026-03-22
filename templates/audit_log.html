@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Registro de Auditoría — Market Radar AI{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <button class="hamburger" onclick="toggleSidebar()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <h1 class="topbar-title">Registro de Auditoría</h1>
+  </div>
+  <div style="color:#8b949e;font-size:12px;">
+    {{ total }} eventos · ISO 27001 A.12.4.1
+  </div>
+</div>
+<div class="content">
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Eventos de seguridad</span>
+      <a href="/gdpr" style="color:#8b949e;font-size:12px;text-decoration:none;">← Volver a Mis Datos</a>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Timestamp</th>
+            <th>Evento</th>
+            <th>IP</th>
+            <th>Detalles</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ev in events %}
+          {% set ev_id = ev[0] %}
+          {% set ev_type = ev[1] %}
+          {% set ev_ip = ev[2] or "—" %}
+          {% set ev_details = ev[3] or "" %}
+          {% set ev_ts = ev[4] %}
+          <tr>
+            <td style="color:#484f58;font-size:11px;">{{ ev_id }}</td>
+            <td style="font-size:12px;white-space:nowrap;">{{ ev_ts }}</td>
+            <td>
+              {% if ev_type == "login_success" %}
+                <span class="badge badge-green">login_success</span>
+              {% elif ev_type == "login_failed" %}
+                <span class="badge badge-red">login_failed</span>
+              {% elif ev_type == "login_locked" %}
+                <span class="badge" style="background:#3a2010;color:#f0883e;border:1px solid #f0883e;">login_locked</span>
+              {% elif ev_type == "logout" %}
+                <span class="badge badge-yellow">logout</span>
+              {% elif ev_type == "totp_success" %}
+                <span class="badge badge-green">totp_success</span>
+              {% elif ev_type == "totp_failed" %}
+                <span class="badge badge-red">totp_failed</span>
+              {% elif ev_type == "totp_enabled" %}
+                <span class="badge badge-blue">totp_enabled</span>
+              {% elif ev_type == "totp_disabled" %}
+                <span class="badge badge-yellow">totp_disabled</span>
+              {% elif ev_type == "credentials_changed" %}
+                <span class="badge badge-blue">credentials_changed</span>
+              {% elif ev_type == "password_expired" %}
+                <span class="badge badge-red">password_expired</span>
+              {% elif ev_type == "gdpr_export" %}
+                <span class="badge badge-blue">gdpr_export</span>
+              {% elif ev_type == "gdpr_delete" %}
+                <span class="badge badge-red">gdpr_delete</span>
+              {% else %}
+                <span class="badge">{{ ev_type }}</span>
+              {% endif %}
+            </td>
+            <td style="font-size:12px;font-family:monospace;">{{ ev_ip }}</td>
+            <td style="font-size:12px;color:#8b949e;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                title="{{ ev_details }}">{{ ev_details }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" style="text-align:center;color:#484f58;padding:32px;">Sin eventos registrados</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pages > 1 %}
+    <div class="card-body" style="padding:14px 20px;border-top:1px solid #30363d;display:flex;align-items:center;gap:8px;">
+      {% if page > 1 %}
+        <a href="/audit-log?page={{ page - 1 }}" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:5px 12px;border-radius:5px;text-decoration:none;font-size:13px;">← Anterior</a>
+      {% endif %}
+      <span style="color:#8b949e;font-size:13px;">Página {{ page }} de {{ pages }}</span>
+      {% if page < pages %}
+        <a href="/audit-log?page={{ page + 1 }}" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:5px 12px;border-radius:5px;text-decoration:none;font-size:13px;">Siguiente →</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Leyenda de eventos -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><span class="card-title">Leyenda de eventos</span></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;font-size:12px;">
+        <div><span class="badge badge-green">login_success</span> <span style="color:#8b949e;">— Login correcto</span></div>
+        <div><span class="badge badge-red">login_failed</span> <span style="color:#8b949e;">— Contraseña incorrecta</span></div>
+        <div><span class="badge" style="background:#3a2010;color:#f0883e;border:1px solid #f0883e;">login_locked</span> <span style="color:#8b949e;">— IP bloqueada (5 intentos)</span></div>
+        <div><span class="badge badge-yellow">logout</span> <span style="color:#8b949e;">— Sesión cerrada</span></div>
+        <div><span class="badge badge-green">totp_success</span> <span style="color:#8b949e;">— 2FA correcto</span></div>
+        <div><span class="badge badge-red">totp_failed</span> <span style="color:#8b949e;">— Código 2FA incorrecto</span></div>
+        <div><span class="badge badge-blue">totp_enabled</span> <span style="color:#8b949e;">— 2FA activado</span></div>
+        <div><span class="badge badge-yellow">totp_disabled</span> <span style="color:#8b949e;">— 2FA desactivado</span></div>
+        <div><span class="badge badge-blue">credentials_changed</span> <span style="color:#8b949e;">— Credenciales cambiadas</span></div>
+        <div><span class="badge badge-red">password_expired</span> <span style="color:#8b949e;">— Contraseña expirada (90 días)</span></div>
+        <div><span class="badge badge-blue">gdpr_export</span> <span style="color:#8b949e;">— Exportación de datos</span></div>
+        <div><span class="badge badge-red">gdpr_delete</span> <span style="color:#8b949e;">— Eliminación de datos personales</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

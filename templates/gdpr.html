@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}GDPR / Mis Datos — Market Radar AI{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <button class="hamburger" onclick="toggleSidebar()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <h1 class="topbar-title">GDPR / Mis Datos</h1>
+  </div>
+</div>
+<div class="content">
+  {% if deleted %}
+  <div class="alert alert-success" style="background:#1a3a1a;border:1px solid #3fb950;border-radius:6px;padding:14px 18px;margin-bottom:20px;color:#3fb950;">
+    Todos los datos personales han sido eliminados correctamente. La sesión ha sido cerrada.
+    <a href="/login" style="color:#58a6ff;margin-left:8px;">Ir al login</a>
+  </div>
+  {% endif %}
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:900px;">
+
+    <!-- Exportar datos -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Exportar mis datos</span>
+        <span class="badge badge-blue">Art. 20 RGPD</span>
+      </div>
+      <div class="card-body">
+        <p style="color:#8b949e;font-size:13px;margin-top:0;">
+          Descarga todos tus datos personales en formato JSON: cartera, operaciones, alertas y tickers.
+          Los datos de mercado (precios históricos) no se incluyen por ser datos públicos.
+        </p>
+        <p style="color:#8b949e;font-size:13px;">
+          El archivo incluye un timestamp de exportación y puede importarse en otras aplicaciones.
+        </p>
+        <a href="/gdpr/export" class="btn btn-primary" style="display:inline-block;margin-top:8px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Descargar mis datos (JSON)
+        </a>
+      </div>
+    </div>
+
+    <!-- Visor de auditoría -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Registro de auditoría</span>
+        <span class="badge badge-blue">ISO 27001 A.12.4</span>
+      </div>
+      <div class="card-body">
+        <p style="color:#8b949e;font-size:13px;margin-top:0;">
+          Consulta el historial completo de eventos de seguridad: accesos, cambios de credenciales,
+          exportaciones de datos y eventos 2FA.
+        </p>
+        <p style="color:#8b949e;font-size:13px;">
+          Los registros se conservan durante 365 días y se purgan automáticamente.
+        </p>
+        <a href="/audit-log" class="btn" style="display:inline-block;margin-top:8px;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:8px 14px;border-radius:6px;text-decoration:none;font-size:13px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Ver registro de auditoría
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Eliminar datos -->
+  <div class="card" style="max-width:900px;margin-top:20px;border-color:#f85149;" x-data="{open:false}">
+    <div class="card-header" style="border-color:#f85149;">
+      <span class="card-title" style="color:#f85149;">Eliminar mis datos</span>
+      <span class="badge" style="background:#3a1010;color:#f85149;border:1px solid #f85149;">Art. 17 RGPD — Derecho al olvido</span>
+    </div>
+    <div class="card-body">
+      <p style="color:#8b949e;font-size:13px;margin-top:0;">
+        Esta acción elimina permanentemente todos tus datos personales:
+        <strong style="color:#c9d1d9;">cartera, operaciones, alertas, historial de alertas, suscripciones push y valor histórico de la cartera</strong>.
+      </p>
+      <p style="color:#8b949e;font-size:13px;">
+        Los datos de mercado (precios históricos, noticias, descubrimientos) son datos públicos y se conservan.
+        Esta operación <strong style="color:#f85149;">no se puede deshacer</strong> y cerrará tu sesión actual.
+      </p>
+
+      <button class="btn" style="background:#f85149;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer;margin-top:8px;"
+              @click="open=true">
+        Eliminar todos mis datos
+      </button>
+
+      <!-- Modal de confirmación -->
+      <div x-show="open" x-cloak style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;" @click.self="open=false">
+        <div class="card" style="width:440px;max-width:95vw;border-color:#f85149;">
+          <div class="card-header" style="border-color:#f85149;">
+            <span class="card-title" style="color:#f85149;">Confirmar eliminación de datos</span>
+          </div>
+          <div class="card-body">
+            <p style="color:#c9d1d9;font-size:13px;margin-top:0;">
+              Para confirmar la eliminación, escribe <strong>BORRAR</strong> en el campo de abajo.
+            </p>
+            <form method="post" action="/gdpr/delete">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="text" name="confirm" placeholder="BORRAR" required
+                     style="width:100%;background:#0d1117;border:1px solid #f85149;color:#e6edf3;border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:14px;box-sizing:border-box;">
+              <div style="display:flex;gap:10px;">
+                <button type="submit" style="background:#f85149;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer;flex:1;">
+                  Eliminar datos permanentemente
+                </button>
+                <button type="button" @click="open=false"
+                        style="background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer;flex:1;">
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info RGPD -->
+  <div class="card" style="max-width:900px;margin-top:20px;background:#0d1117;">
+    <div class="card-body" style="padding:16px 20px;">
+      <p style="color:#484f58;font-size:12px;margin:0;">
+        Tus derechos según el RGPD (UE) 2016/679: Acceso (Art. 15) · Rectificación (Art. 16) · Supresión (Art. 17) · Portabilidad (Art. 20).
+        Conforme a ISO/IEC 27701:2019 — Privacy Information Management System.
+        <a href="/privacy" style="color:#388bfd;">Ver política de privacidad completa</a>
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

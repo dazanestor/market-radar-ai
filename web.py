@@ -94,6 +94,18 @@ from database import (
     upsert_tr_isin,
     delete_tr_isin,
     _db,
+    # ISO 27001 / 27701: auditoría, sesiones persistentes, GDPR
+    log_audit_event,
+    get_audit_log,
+    count_audit_log,
+    create_session_db,
+    get_session_db,
+    touch_session_db,
+    delete_session_db,
+    delete_expired_sessions_db,
+    get_all_active_sessions_db,
+    delete_all_sessions_db,
+    gdpr_delete_personal_data,
 )
 from fetch_data import get_macro_context, get_news, to_eur
 from generate_csv import generate
@@ -288,10 +300,12 @@ def _load_credentials() -> dict:
 
 
 def _save_credentials(username: str, password: str, first_login: bool = False) -> None:
+    import datetime as _dt
     creds = {
         "username": username,
         "password_hash": _hash_password(password),
         "first_login": first_login,
+        "password_changed_at": _dt.datetime.now().isoformat(timespec="seconds"),
     }
     os.makedirs("data", exist_ok=True)
     tmp = CREDENTIALS_FILE + ".tmp"
@@ -304,6 +318,39 @@ def _save_credentials(username: str, password: str, first_login: bool = False) -
         os.remove(INITIAL_PASSWORD_FILE)
     except FileNotFoundError:
         pass
+
+
+# Días antes de que expire la contraseña (ISO 27001 A.9.2.1)
+_PASSWORD_EXPIRY_DAYS = 90
+
+
+def _is_password_expired(creds: dict) -> bool:
+    """Devuelve True si la contraseña lleva más de _PASSWORD_EXPIRY_DAYS días sin cambiar."""
+    import datetime as _dt
+    changed_at_str = creds.get("password_changed_at")
+    if not changed_at_str:
+        return False  # Credenciales antiguas sin timestamp → no forzar aún
+    try:
+        changed_at = _dt.datetime.fromisoformat(changed_at_str)
+        age_days = (_dt.datetime.now() - changed_at).days
+        return age_days >= _PASSWORD_EXPIRY_DAYS
+    except Exception:
+        return False
+
+
+def _password_days_remaining(creds: dict) -> Optional[int]:
+    """Devuelve los días que quedan antes de que expire la contraseña, o None."""
+    import datetime as _dt
+    changed_at_str = creds.get("password_changed_at")
+    if not changed_at_str:
+        return None
+    try:
+        changed_at = _dt.datetime.fromisoformat(changed_at_str)
+        age_days = (_dt.datetime.now() - changed_at).days
+        remaining = _PASSWORD_EXPIRY_DAYS - age_days
+        return max(0, remaining)
+    except Exception:
+        return None
 
 
 # ── Pending tokens ────────────────────────────────────────────────────────────
@@ -490,9 +537,17 @@ async def _refresh_csrf_global(request: Request, call_next):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-def _create_session() -> str:
+def _create_session(ip: Optional[str] = None, user_agent: Optional[str] = None) -> str:
+    """Crea sesión en memoria Y en BD (persistente entre reinicios)."""
     sid = secrets.token_urlsafe(32)
     _active_sessions[sid] = _time.monotonic() + SESSION_EXPIRY
+    # Persistir en BD con timestamp absoluto (ISO 8601)
+    import datetime as _dt
+    expires_abs = (_dt.datetime.now() + _dt.timedelta(seconds=SESSION_EXPIRY)).isoformat(timespec="seconds")
+    try:
+        create_session_db(sid, expires_abs, ip_address=ip, user_agent=user_agent)
+    except Exception:
+        logger.exception("Error persistiendo sesión en BD")
     return sid
 
 def _is_auth(session: Optional[str]) -> bool:
@@ -506,16 +561,42 @@ def _is_auth(session: Optional[str]) -> bool:
     if not session:
         return False
     with _cleanup_lock:
-        if session not in _active_sessions:
-            return False
-        if now > _active_sessions[session]:
-            del _active_sessions[session]
-            return False
-    return True
+        if session in _active_sessions:
+            if now > _active_sessions[session]:
+                del _active_sessions[session]
+                try:
+                    delete_session_db(session)
+                except Exception:
+                    pass
+                return False
+            return True
+    # No está en memoria → buscar en BD (sesión restaurada tras reinicio)
+    try:
+        row = get_session_db(session)
+        if row:
+            # Restaurar en memoria para próximas peticiones
+            import datetime as _dt
+            expires_abs = _dt.datetime.fromisoformat(row[1])
+            remaining = (expires_abs - _dt.datetime.now()).total_seconds()
+            if remaining > 0:
+                with _cleanup_lock:
+                    _active_sessions[session] = _time.monotonic() + remaining
+                try:
+                    touch_session_db(session)
+                except Exception:
+                    pass
+                return True
+    except Exception:
+        pass
+    return False
 
 def _invalidate_session(session: Optional[str]) -> None:
     if session:
         _active_sessions.pop(session, None)
+        try:
+            delete_session_db(session)
+        except Exception:
+            pass
 
 def _cleanup_expired_state() -> None:
     """Elimina sesiones y tokens pendientes expirados para evitar crecimiento ilimitado."""
@@ -526,6 +607,27 @@ def _cleanup_expired_state() -> None:
     expired_tokens = [tok for tok, exp in list(_pending_tokens.items()) if now > exp]
     for tok in expired_tokens:
         _pending_tokens.pop(tok, None)
+    # Limpiar sesiones expiradas de BD (throttleado — ya viene del lock de 60s)
+    try:
+        delete_expired_sessions_db()
+    except Exception:
+        pass
+
+
+def _load_sessions_from_db() -> None:
+    """Carga sesiones activas de BD a memoria al arrancar (restaura tras reinicio)."""
+    try:
+        rows = get_all_active_sessions_db()
+        import datetime as _dt
+        for sid, expires_at_str in rows:
+            expires_abs = _dt.datetime.fromisoformat(expires_at_str)
+            remaining = (expires_abs - _dt.datetime.now()).total_seconds()
+            if remaining > 0:
+                _active_sessions[sid] = _time.monotonic() + remaining
+        if rows:
+            logger.info("Sesiones restauradas desde BD: %d", len(rows))
+    except Exception:
+        logger.exception("Error cargando sesiones desde BD")
 
 def _check_lockout(ip: str) -> bool:
     """Devuelve True si la IP está bloqueada por exceso de fallos."""
@@ -1052,7 +1154,120 @@ def _make_qr_svg(uri: str) -> str:
 
 
 
+# ── Privacidad y GDPR (ISO 27701) ─────────────────────────────────────────────
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_page(request: Request, session: Optional[str] = Cookie(default=None)):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse("privacy.html", {"request": request})
+
+
+@app.get("/gdpr", response_class=HTMLResponse)
+async def gdpr_page(request: Request, session: Optional[str] = Cookie(default=None), deleted: str = ""):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse("gdpr.html", {"request": request, "deleted": deleted})
+
+
+@app.get("/gdpr/export")
+async def gdpr_export(request: Request, session: Optional[str] = Cookie(default=None)):
+    """Descarga todos los datos personales como JSON (ISO 27701 Art. 9 - portabilidad)."""
+    if not _is_auth(session):
+        raise HTTPException(401)
+    ip = get_remote_address(request)
+    import datetime as _dt
+
+    positions  = get_all_positions()
+    operations = get_operations(limit=10000, order_asc=True)
+    alerts     = get_active_alerts()
+    tickers    = get_all_tickers()
+
+    export = {
+        "exported_at":   _dt.datetime.now().isoformat(timespec="seconds"),
+        "app":           "Market Radar AI",
+        "gdpr_basis":    "ISO 27701 Art. 9 — Derecho de portabilidad",
+        "portfolio": [
+            {"ticker": r[0], "shares": r[1], "avg_price_eur": r[2]}
+            for r in positions
+        ],
+        "operations": [
+            {"id": r[0], "ticker": r[1], "date": r[2], "type": r[3],
+             "shares": r[4], "price_eur": r[5], "notes": r[6], "commission_eur": r[7]}
+            for r in operations
+        ],
+        "alerts": [
+            {"id": r[0], "ticker": r[1], "target_price": r[2], "direction": r[3],
+             "created": r[4], "condition_type": r[5], "condition_value": r[6], "expires_at": r[7]}
+            for r in alerts
+        ],
+        "tickers": tickers,
+    }
+
+    log_audit_event("gdpr_export", ip_address=ip, details="full_data_export")
+    content = json.dumps(export, ensure_ascii=False, indent=2, default=str)
+    filename = f"market-radar-export-{_dt.date.today().isoformat()}.json"
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/gdpr/delete")
+async def gdpr_delete(
+    request: Request,
+    session: Optional[str] = Cookie(default=None),
+    csrf_token: Optional[str] = Form(default=None),
+    confirm: str = Form(default=""),
+):
+    """Elimina todos los datos personales (ISO 27701 Art. 9 - derecho al olvido)."""
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    _require_csrf(request, csrf_token)
+    if confirm != "BORRAR":
+        return RedirectResponse("/gdpr?error=confirm", status_code=303)
+    ip = get_remote_address(request)
+    counts = gdpr_delete_personal_data()
+    log_audit_event("gdpr_delete", ip_address=ip, details=json.dumps(counts))
+    # Invalidar sesión actual (los datos han sido purgados)
+    _invalidate_session(session)
+    resp = RedirectResponse("/gdpr?deleted=1", status_code=303)
+    resp.delete_cookie("session")
+    return resp
+
+
+# ── Audit log (ISO 27001 A.12.4.1) ───────────────────────────────────────────
+
+@app.get("/audit-log", response_class=HTMLResponse)
+async def audit_log_page(
+    request: Request,
+    session: Optional[str] = Cookie(default=None),
+    page: int = 1,
+):
+    if not _is_auth(session):
+        return RedirectResponse("/login", status_code=302)
+    per_page = 50
+    offset   = (page - 1) * per_page
+    events   = get_audit_log(limit=per_page, offset=offset)
+    total    = count_audit_log()
+    pages    = max(1, (total + per_page - 1) // per_page)
+    return templates.TemplateResponse("audit_log.html", {
+        "request": request,
+        "events":  events,
+        "page":    page,
+        "pages":   pages,
+        "total":   total,
+    })
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def _on_startup():
+    """Restaura sesiones activas desde BD tras reinicio (ISO 27001 A.9.4)."""
+    _load_sessions_from_db()
+
 
 @app.get("/health")
 async def health():
@@ -1088,7 +1303,9 @@ async def login(
     password: str = Form(...),
 ):
     ip = get_remote_address(request)
+    ua = request.headers.get("user-agent", "")
     if _check_lockout(ip):
+        log_audit_event("login_locked", ip_address=ip, details=f"username={username[:32]}")
         return templates.TemplateResponse("login.html", {
             "request": request,
             "error": "locked",
@@ -1097,15 +1314,25 @@ async def login(
     creds = _load_credentials()
     if username != creds["username"] or not _verify_password(password, creds["password_hash"]):
         _record_failed_login(ip)
+        log_audit_event("login_failed", ip_address=ip, details=f"username={username[:32]}")
         return RedirectResponse("/login?error=1", status_code=303)
 
     _reset_lockout(ip)
+    log_audit_event("login_success", ip_address=ip, details=f"username={creds['username']}")
 
     # Primer login: forzar configuración
     if creds.get("first_login"):
         token = _create_pending_token(600)
         resp = RedirectResponse("/setup/first-login", status_code=303)
         resp.set_cookie("setup_pending", token, httponly=True, samesite="strict", max_age=600, secure=COOKIE_SECURE)
+        return resp
+
+    # Contraseña expirada → forzar cambio
+    if _is_password_expired(creds):
+        log_audit_event("password_expired", ip_address=ip, details=f"username={creds['username']}")
+        token = _create_pending_token(600)
+        resp = RedirectResponse("/settings/credentials?expired=1", status_code=303)
+        resp.set_cookie("pwd_expired_token", token, httponly=True, samesite="strict", max_age=600, secure=COOKIE_SECURE)
         return resp
 
     # 2FA activo
@@ -1115,7 +1342,7 @@ async def login(
         resp.set_cookie("totp_pending", token, httponly=True, samesite="strict", max_age=300, secure=COOKIE_SECURE)
         return resp
 
-    sid = _create_session()
+    sid = _create_session(ip=ip, user_agent=ua)
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie("session", sid, httponly=True, samesite="strict", max_age=SESSION_EXPIRY, secure=COOKIE_SECURE)
     return resp
@@ -1135,16 +1362,20 @@ async def totp_verify(
     code: str = Form(...),
     totp_pending: Optional[str] = Cookie(default=None),
 ):
+    ip = get_remote_address(request)
+    ua = request.headers.get("user-agent", "")
     if not _consume_pending_token(totp_pending):
         return RedirectResponse("/login", status_code=303)
     if not _verify_totp(code):
+        log_audit_event("totp_failed", ip_address=ip)
         new_token = _create_pending_token(300)
         resp = templates.TemplateResponse(
             "login_totp.html", {"request": request, "error": "1"}, status_code=200
         )
         resp.set_cookie("totp_pending", new_token, httponly=True, samesite="strict", max_age=300, secure=COOKIE_SECURE)
         return resp
-    sid = _create_session()
+    log_audit_event("totp_success", ip_address=ip)
+    sid = _create_session(ip=ip, user_agent=ua)
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie("session", sid, httponly=True, samesite="strict", max_age=SESSION_EXPIRY, secure=COOKIE_SECURE)
     resp.delete_cookie("totp_pending")
@@ -1262,6 +1493,7 @@ async def totp_setup(
     with open(TOTP_SECRET_FILE, "w") as f:
         f.write(secret)
     os.chmod(TOTP_SECRET_FILE, 0o600)
+    log_audit_event("totp_enabled", ip_address=get_remote_address(request))
     return RedirectResponse("/2fa/setup?ok=1", status_code=303)
 
 
@@ -1278,20 +1510,32 @@ async def totp_disable(
         os.remove(TOTP_SECRET_FILE)
     except FileNotFoundError:
         pass
+    log_audit_event("totp_disabled", ip_address=get_remote_address(request))
     return RedirectResponse("/2fa/setup?disabled=1", status_code=303)
 
 
 # ── Cambiar credenciales ───────────────────────────────────────────────────────
 
 @app.get("/settings/credentials", response_class=HTMLResponse)
-async def credentials_page(request: Request, session: Optional[str] = Cookie(default=None), ok: str = ""):
-    if not _is_auth(session):
+async def credentials_page(
+    request: Request,
+    session: Optional[str] = Cookie(default=None),
+    ok: str = "",
+    expired: str = "",
+):
+    # Permitir acceso si hay token de contraseña expirada (flujo post-login)
+    pwd_expired_token = request.cookies.get("pwd_expired_token")
+    if not _is_auth(session) and not (expired and pwd_expired_token and pwd_expired_token in _pending_tokens):
         return RedirectResponse("/login", status_code=302)
     creds = _load_credentials()
+    days_remaining = _password_days_remaining(creds)
     return templates.TemplateResponse("settings_credentials.html", {
         "request": request,
         "current_username": creds["username"],
         "ok": ok,
+        "expired": expired,
+        "days_remaining": days_remaining,
+        "expiry_days": _PASSWORD_EXPIRY_DAYS,
     })
 
 
@@ -1324,6 +1568,8 @@ async def credentials_update(
             "error": " ".join(errors),
         })
     _save_credentials(username.strip(), password, first_login=False)
+    ip = get_remote_address(request)
+    log_audit_event("credentials_changed", ip_address=ip, details=f"new_username={username.strip()}")
     return RedirectResponse("/settings/credentials?ok=1", status_code=303)
 
 
@@ -1574,8 +1820,10 @@ async def settings_benchmark_ticker(
 
 
 @app.get("/logout")
-async def logout(session: Optional[str] = Cookie(default=None)):
+async def logout(request: Request, session: Optional[str] = Cookie(default=None)):
+    ip = get_remote_address(request)
     _invalidate_session(session)
+    log_audit_event("logout", ip_address=ip)
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie("session")
     resp.delete_cookie("totp_pending")

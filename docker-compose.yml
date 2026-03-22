@@ -59,14 +59,30 @@ services:
   backup:
     image: alpine:3.21
     restart: unless-stopped
+    # ISO 27001 A.10.2 / A.12.3: backups cifrados con AES-256-CBC.
+    # Requiere BACKUP_PASSPHRASE en el .env. Para restaurar:
+    #   openssl enc -d -aes-256-cbc -pbkdf2 -in radar_YYYYMMDD.db.enc -out radar.db -pass env:BACKUP_PASSPHRASE
+    environment:
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
     entrypoint: >
       sh -c "
+        apk add --no-cache openssl 2>/dev/null;
         while true; do
           sleep 86400;
           mkdir -p /data/backups;
-          cp /data/radar.db /data/backups/radar_\$$(date +%Y%m%d).db 2>/dev/null || true;
-          ls -t /data/backups/radar_*.db 2>/dev/null | tail -n +8 | xargs rm -f;
-          echo \"[backup] snapshot $$(date +%Y-%m-%d) done\";
+          DATE=$$(date +%Y%m%d);
+          if [ -n \"$$BACKUP_PASSPHRASE\" ]; then
+            openssl enc -aes-256-cbc -pbkdf2 -salt
+              -in /data/radar.db
+              -out /data/backups/radar_$${DATE}.db.enc
+              -pass env:BACKUP_PASSPHRASE 2>/dev/null || true;
+            ls -t /data/backups/radar_*.db.enc 2>/dev/null | tail -n +8 | xargs rm -f;
+            echo \"[backup] snapshot cifrado $$(date +%Y-%m-%d) completado\";
+          else
+            cp /data/radar.db /data/backups/radar_$${DATE}.db 2>/dev/null || true;
+            ls -t /data/backups/radar_*.db 2>/dev/null | tail -n +8 | xargs rm -f;
+            echo \"[backup] snapshot SIN cifrar $$(date +%Y-%m-%d) — configura BACKUP_PASSPHRASE\";
+          fi
         done
       "
     volumes:

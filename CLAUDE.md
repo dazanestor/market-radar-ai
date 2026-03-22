@@ -469,9 +469,77 @@ python -m pytest tests/ -v
 
 - **Tests automatizados**: ✅ implementado — 138 tests en `tests/`.
 - **OWASP hardening para producción**: ✅ implementado — CSP, Alpine.js self-hosted, validación path params, `Cookie secure=`, push urlparse, info disclosure `/health`, treemap onerror, rate limits, security headers.
+- **ISO 27001 + ISO 27701**: ✅ implementado — ver sección "Cumplimiento ISO 27001/27701" más abajo.
 - **CSRF no en formularios de login/setup**: los endpoints de login no necesitan CSRF (no requieren sesión previa); el CSRF token global cubre todos los formularios de usuario autenticado.
 - **Web Push require HTTPS en producción**: los Service Workers solo se registran en orígenes seguros. En `localhost` funciona sin TLS. En producción se necesita reverse proxy con TLS (Cloudflare Tunnel, Caddy, nginx).
 - **Activar `COOKIE_SECURE=1` en producción**: añadir al `.env` cuando el dashboard esté detrás de un reverse proxy HTTPS.
+
+## Cumplimiento ISO 27001 / ISO 27701
+
+### Controles implementados
+
+#### ISO 27001 A.9 — Control de acceso
+- **Autenticación 2FA**: TOTP (pyotp, RFC 6238) + bcrypt cost 12
+- **Sesiones persistentes en BD** (`sessions` table): sobreviven reinicios; TTL 30 días; carga al arrancar desde `get_all_active_sessions_db()`
+- **Expiración de contraseña**: 90 días (`_PASSWORD_EXPIRY_DAYS = 90`); se comprueba en cada login; aviso a 15 días; fuerza cambio al expirar
+- **Bloqueo de IP**: 5 intentos fallidos → 15 minutos (`_LOCKOUT_MAX`, `_LOCKOUT_DURATION`)
+
+#### ISO 27001 A.10 — Criptografía
+- **Web Push**: AES-GCM + ECDH RFC 8291 con `cryptography>=42.0.0` (declarado explícito en requirements.txt)
+- **Backups cifrados**: AES-256-CBC con PBKDF2 via `openssl enc`; activar con `BACKUP_PASSPHRASE` en `.env`; restaurar con `openssl enc -d -aes-256-cbc -pbkdf2`
+
+#### ISO 27001 A.12.4 — Registro y auditoría
+- **Tabla `audit_log`**: registra `login_success`, `login_failed`, `login_locked`, `logout`, `totp_success`, `totp_failed`, `totp_enabled`, `totp_disabled`, `credentials_changed`, `password_expired`, `gdpr_export`, `gdpr_delete`
+- **Visor paginado**: `GET /audit-log` — tabla con tipo de evento, IP, timestamp, detalles
+- **Purga automática**: `purge_old_audit_log(days=365)` ejecutado cada domingo en `job_vacuum_db()`
+
+#### ISO 27001 A.14 — Seguridad en desarrollo
+- **CSP**: `Content-Security-Policy` en todas las respuestas (middleware `_refresh_csrf_global`)
+- **Cabeceras HTTP**: X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- **SQL parameterizado**: todas las queries usan placeholders `?`
+
+#### ISO 27701 Art. 7 — Consentimiento y privacidad
+- **Política de privacidad**: `GET /privacy` — página con finalidad, plazos, medidas de seguridad, derechos
+- **Sección GDPR**: `GET /gdpr` — hub de derechos del interesado
+
+#### ISO 27701 Art. 9 — Derechos del interesado
+- **Portabilidad (Art. 20 RGPD)**: `GET /gdpr/export` — descarga JSON con cartera, operaciones, alertas, tickers; loggea evento `gdpr_export`
+- **Derecho al olvido (Art. 17 RGPD)**: `POST /gdpr/delete` — elimina portfolio, operations, price_alerts, alert_history, push_subscriptions, sessions, portfolio_value; requiere confirmación "BORRAR"; loggea evento `gdpr_delete`
+
+### Nuevas tablas en BD
+
+- **`audit_log`**: `id`, `event_type`, `ip_address`, `details`, `created_at` — índice en `created_at DESC` y `event_type`
+- **`sessions`**: `session_id PK`, `ip_address`, `user_agent`, `created_at`, `expires_at`, `last_seen` — índice en `expires_at`
+
+### Nuevas rutas web
+
+| Ruta | Método | Descripción |
+|------|--------|-------------|
+| `/privacy` | GET | Política de privacidad ISO 27701 |
+| `/gdpr` | GET | Hub de derechos GDPR: exportar, borrar, auditoría |
+| `/gdpr/export` | GET | Descarga JSON portabilidad de datos |
+| `/gdpr/delete` | POST | Elimina datos personales (confirmación requerida) |
+| `/audit-log` | GET | Visor paginado de eventos de auditoría |
+
+### Nuevas funciones en `database.py`
+
+- `log_audit_event(event_type, ip_address, details)` — inserta evento en audit_log
+- `get_audit_log(limit, offset, event_type)` — consulta eventos con paginación
+- `count_audit_log()` — total de eventos
+- `purge_old_audit_log(days=365)` — purga eventos antiguos
+- `create_session_db(session_id, expires_at, ip_address, user_agent)` — persiste sesión
+- `get_session_db(session_id)` — busca sesión no expirada
+- `touch_session_db(session_id)` — actualiza last_seen
+- `delete_session_db(session_id)` — elimina sesión
+- `delete_expired_sessions_db()` — purga sesiones expiradas
+- `get_all_active_sessions_db()` — sesiones activas para restaurar al arrancar
+- `delete_all_sessions_db()` — purga total (GDPR)
+- `gdpr_delete_personal_data()` — elimina datos personales (GDPR Art. 17)
+
+### Variables de entorno nuevas
+
+- `BACKUP_PASSPHRASE` — frase de cifrado para backups AES-256-CBC (recomendado en producción)
+
 ## CI/CD
 
 GitHub Actions en `.github/workflows/docker-publish.yml`:

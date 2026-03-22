@@ -187,6 +187,32 @@ CREATE TABLE IF NOT EXISTS tr_isin_map (
         c.execute("CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_tr_cache_key ON tr_cache(key)")
 
+        # ── audit_log (ISO 27001 A.12.4) ─────────────────────────────────────
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type  TEXT NOT NULL,
+            ip_address  TEXT,
+            details     TEXT,
+            created_at  TEXT NOT NULL
+        )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_event ON audit_log(event_type)")
+
+        # ── sessions persistentes (ISO 27001 A.9.4) ──────────────────────────
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id  TEXT PRIMARY KEY,
+            ip_address  TEXT,
+            user_agent  TEXT,
+            created_at  TEXT NOT NULL,
+            expires_at  TEXT NOT NULL,
+            last_seen   TEXT
+        )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)")
+
         c.execute("""
         CREATE TABLE IF NOT EXISTS market_discoveries (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -926,3 +952,134 @@ def get_discoveries_generated_at() -> Optional[str]:
         c.execute("SELECT MAX(generated_at) FROM market_discoveries")
         row = c.fetchone()
         return row[0] if row else None
+
+
+# ── audit_log (ISO 27001 A.12.4.1) ────────────────────────────────────────────
+
+def log_audit_event(event_type: str, ip_address: Optional[str] = None, details: Optional[str] = None) -> None:
+    """Registra un evento de seguridad/auditoría en la BD."""
+    try:
+        with _db() as conn:
+            conn.cursor().execute(
+                "INSERT INTO audit_log (event_type, ip_address, details, created_at) VALUES (?, ?, ?, ?)",
+                (event_type, ip_address, details, datetime.now().isoformat(timespec="seconds"))
+            )
+    except Exception:
+        logger.exception("Error guardando evento de auditoría: %s", event_type)
+
+
+def get_audit_log(limit: int = 100, offset: int = 0, event_type: Optional[str] = None) -> list:
+    """Devuelve eventos de auditoría ordenados por fecha DESC."""
+    with _db() as conn:
+        c = conn.cursor()
+        if event_type:
+            c.execute(
+                "SELECT id, event_type, ip_address, details, created_at FROM audit_log WHERE event_type = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (event_type, limit, offset)
+            )
+        else:
+            c.execute(
+                "SELECT id, event_type, ip_address, details, created_at FROM audit_log ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset)
+            )
+        return c.fetchall()
+
+
+def count_audit_log() -> int:
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM audit_log")
+        row = c.fetchone()
+        return row[0] if row else 0
+
+
+def purge_old_audit_log(days: int = 365) -> int:
+    """Elimina eventos de auditoría con más de `days` días. Devuelve filas eliminadas."""
+    with _db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM audit_log WHERE created_at < datetime('now', ?)",
+            (f"-{days} days",)
+        )
+        return cur.rowcount
+
+
+# ── sessions persistentes (ISO 27001 A.9.4) ───────────────────────────────────
+
+def create_session_db(session_id: str, expires_at: str,
+                      ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> None:
+    """Persiste una sesión en BD."""
+    now = datetime.now().isoformat(timespec="seconds")
+    with _db() as conn:
+        conn.cursor().execute("""
+            INSERT OR REPLACE INTO sessions (session_id, ip_address, user_agent, created_at, expires_at, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (session_id, ip_address, user_agent, now, expires_at, now))
+
+
+def get_session_db(session_id: str) -> Optional[tuple]:
+    """Devuelve (session_id, expires_at) o None si no existe/está expirada."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT session_id, expires_at FROM sessions WHERE session_id = ? AND expires_at > datetime('now')",
+            (session_id,)
+        )
+        return c.fetchone()
+
+
+def touch_session_db(session_id: str) -> None:
+    """Actualiza last_seen de la sesión."""
+    with _db() as conn:
+        conn.cursor().execute(
+            "UPDATE sessions SET last_seen = ? WHERE session_id = ?",
+            (datetime.now().isoformat(timespec="seconds"), session_id)
+        )
+
+
+def delete_session_db(session_id: str) -> None:
+    with _db() as conn:
+        conn.cursor().execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+
+def delete_expired_sessions_db() -> int:
+    """Elimina sesiones expiradas. Devuelve número de filas eliminadas."""
+    with _db() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+        return cur.rowcount
+
+
+def get_all_active_sessions_db() -> list:
+    """Devuelve todas las sesiones no expiradas (para restaurar tras reinicio)."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT session_id, expires_at FROM sessions WHERE expires_at > datetime('now')"
+        )
+        return c.fetchall()
+
+
+def delete_all_sessions_db() -> None:
+    """Elimina todas las sesiones (usado en purga GDPR)."""
+    with _db() as conn:
+        conn.cursor().execute("DELETE FROM sessions")
+
+
+# ── GDPR / borrado de datos personales (ISO 27701 Art. 9) ─────────────────────
+
+def gdpr_delete_personal_data() -> dict:
+    """
+    Elimina los datos personales de la aplicación (derecho al olvido).
+    Conserva: price_history, news_cache, market_discoveries (datos de mercado, no personales).
+    Elimina: portfolio, operations, price_alerts, alert_history, push_subscriptions, sessions.
+    Devuelve un dict con el número de filas eliminadas por tabla.
+    """
+    counts = {}
+    with _db() as conn:
+        for table in ("portfolio", "operations", "price_alerts", "alert_history",
+                      "push_subscriptions", "sessions", "portfolio_value"):
+            cur = conn.cursor()
+            cur.execute(f"DELETE FROM {table}")
+            counts[table] = cur.rowcount
+    return counts

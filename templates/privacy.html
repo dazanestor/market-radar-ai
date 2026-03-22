@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Política de Privacidad — Market Radar AI{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <button class="hamburger" onclick="toggleSidebar()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <h1 class="topbar-title">Política de Privacidad</h1>
+  </div>
+</div>
+<div class="content">
+  <div class="card" style="max-width:860px;margin:0 auto;">
+    <div class="card-header">
+      <span class="card-title">Política de Privacidad y Protección de Datos</span>
+      <span class="badge badge-blue">ISO 27701</span>
+    </div>
+    <div class="card-body" style="line-height:1.7;color:#c9d1d9;">
+
+      <h2 style="color:#e6edf3;font-size:15px;margin-top:0;">1. Responsable del tratamiento</h2>
+      <p>Market Radar AI es una aplicación de uso personal para monitoreo de inversiones. El usuario que instala y opera la aplicación actúa simultáneamente como <strong>responsable del tratamiento</strong> y como <strong>interesado</strong>.</p>
+
+      <h2 style="color:#e6edf3;font-size:15px;">2. Datos que se tratan</h2>
+      <ul>
+        <li><strong>Cartera de inversiones</strong>: ticker, número de acciones, precio medio de compra.</li>
+        <li><strong>Historial de operaciones</strong>: compras, ventas, comisiones, notas personales.</li>
+        <li><strong>Alertas de precio</strong>: condiciones, precios objetivo, historial de disparos.</li>
+        <li><strong>Datos de mercado</strong>: precios, métricas técnicas y fundamentales (fuente: Yahoo Finance). Estos son datos públicos, no datos personales.</li>
+        <li><strong>Análisis de IA</strong>: informes generados con Claude (Anthropic). Los datos de cartera se envían a la API de Anthropic para su procesamiento.</li>
+        <li><strong>Suscripciones Web Push</strong>: endpoint, claves de cifrado del navegador.</li>
+        <li><strong>Registro de auditoría</strong>: eventos de acceso (IP, tipo de evento, timestamp).</li>
+      </ul>
+
+      <h2 style="color:#e6edf3;font-size:15px;">3. Finalidad y base jurídica</h2>
+      <p>Los datos se tratan exclusivamente para el funcionamiento de la aplicación de monitoreo de inversiones. La base jurídica es el <strong>interés legítimo del propio usuario</strong> (RGPD Art. 6.1.f) al gestionar su propia cartera de valores.</p>
+
+      <h2 style="color:#e6edf3;font-size:15px;">4. Transferencias internacionales</h2>
+      <p>Los datos de cartera (tickers, métricas) se envían a <strong>Anthropic, Inc.</strong> (USA) para la generación de informes de análisis. Anthropic actúa como encargado del tratamiento sujeto a sus <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener" style="color:#58a6ff;">términos de privacidad</a> y las Cláusulas Contractuales Tipo de la UE.</p>
+      <p>No se realizan otras transferencias internacionales de datos personales.</p>
+
+      <h2 style="color:#e6edf3;font-size:15px;">5. Plazos de conservación</h2>
+      <table class="data-table" style="margin-bottom:16px;">
+        <thead><tr><th>Dato</th><th>Retención</th></tr></thead>
+        <tbody>
+          <tr><td>Historial de precios (snapshots)</td><td>365 días (purgado automático)</td></tr>
+          <tr><td>Caché de noticias traducidas</td><td>30 días (purgado automático)</td></tr>
+          <tr><td>Registro de auditoría</td><td>365 días (purgado automático)</td></tr>
+          <tr><td>Cartera y operaciones</td><td>Hasta que el usuario las elimine</td></tr>
+          <tr><td>Sesiones</td><td>30 días desde el último acceso</td></tr>
+          <tr><td>Backups de BD</td><td>7 copias diarias rotantes</td></tr>
+        </tbody>
+      </table>
+
+      <h2 style="color:#e6edf3;font-size:15px;">6. Medidas de seguridad (ISO 27001)</h2>
+      <ul>
+        <li>Autenticación con contraseña bcrypt + 2FA TOTP (RFC 6238).</li>
+        <li>Sesiones persistentes con expiración de 30 días; contraseña con expiración a 90 días.</li>
+        <li>Cifrado en tránsito: HTTPS (configuración del reverse proxy), Web Push AES-GCM (RFC 8291).</li>
+        <li>Cabeceras de seguridad HTTP: X-Frame-Options, CSP, X-Content-Type-Options, etc.</li>
+        <li>Protección CSRF con token rotatorio (24 h) en todos los formularios POST.</li>
+        <li>Rate limiting en endpoints de autenticación y operaciones costosas.</li>
+        <li>Bloqueo de IP tras 5 intentos fallidos de login (15 minutos).</li>
+        <li>Registro de auditoría de eventos de seguridad en BD SQLite.</li>
+        <li>Backups automáticos diarios cifrados con AES-256-CBC.</li>
+      </ul>
+
+      <h2 style="color:#e6edf3;font-size:15px;">7. Derechos del interesado (ISO 27701 Art. 9)</h2>
+      <p>Como usuario y responsable del tratamiento, puedes ejercer los siguientes derechos desde la sección <strong><a href="/gdpr" style="color:#58a6ff;">GDPR / Mis Datos</a></strong>:</p>
+      <ul>
+        <li><strong>Acceso y portabilidad</strong>: exportar todos tus datos en formato JSON.</li>
+        <li><strong>Supresión (derecho al olvido)</strong>: eliminar todos los datos personales de la aplicación.</li>
+        <li><strong>Rectificación</strong>: editar posiciones, operaciones y alertas desde el dashboard.</li>
+      </ul>
+
+      <h2 style="color:#e6edf3;font-size:15px;">8. Web Push</h2>
+      <p>Las notificaciones Web Push requieren que el navegador registre una suscripción (endpoint + claves de cifrado). Estos datos se almacenan en la base de datos local y se usan exclusivamente para enviar notificaciones de la aplicación. Puedes cancelar la suscripción en cualquier momento desde la configuración del navegador o desde el dashboard.</p>
+
+      <h2 style="color:#e6edf3;font-size:15px;">9. Contacto</h2>
+      <p>Al ser una aplicación de uso personal, el responsable del tratamiento es el propio usuario. Para cualquier cuestión técnica, consulta la documentación del proyecto.</p>
+
+      <p style="color:#484f58;font-size:12px;margin-top:32px;border-top:1px solid #30363d;padding-top:12px;">
+        Última actualización: 2026-03-22 — Conforme a ISO/IEC 27701:2019 y RGPD (UE) 2016/679.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

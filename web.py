@@ -4107,7 +4107,7 @@ async def backtesting_page(request: Request, session: Optional[str] = Cookie(def
                 ORDER BY date ASC
             """).fetchall()
         if not rows:
-            return [], {}, []
+            return []
 
         # Pre-fetch históricos en paralelo para todos los tickers únicos
         unique_tickers = list({r[0] for r in rows})

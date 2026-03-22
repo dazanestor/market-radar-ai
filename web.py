@@ -520,6 +520,11 @@ async def _refresh_csrf_global(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    # HSTS: solo cuando el servicio está detrás de HTTPS (COOKIE_SECURE=1)
+    if COOKIE_SECURE:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Previene leaks de memoria entre ventanas/tabs (COOP)
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     # CSP: permite recursos propios + inline styles/scripts necesarios por Alpine.js
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
@@ -1900,19 +1905,37 @@ async def dashboard(
 
     has_value_history = len(get_portfolio_value_history(days=365)) >= 2
 
+    # Avisos de seguridad para el administrador (ISO 27001 A.12.4)
+    security_warnings = []
+    if not COOKIE_SECURE:
+        security_warnings.append({
+            "level": "warning",
+            "msg": "COOKIE_SECURE no está activado. Configura tu reverse proxy con HTTPS y añade COOKIE_SECURE=1 al .env para producción.",
+            "link": "/privacy",
+        })
+    creds_for_warning = _load_credentials()
+    days_left = _password_days_remaining(creds_for_warning)
+    if days_left is not None and days_left <= 15:
+        security_warnings.append({
+            "level": "warning" if days_left > 0 else "danger",
+            "msg": f"Contraseña {'expirará en ' + str(days_left) + ' días' if days_left > 0 else 'expirada'} (política ISO 27001 A.9.2.1 — 90 días).",
+            "link": "/settings/credentials",
+        })
+
     return templates.TemplateResponse("dashboard.html", {
-        "request":           request,
-        "portfolio":         portfolio,
-        "watchlist":         watchlist,
-        "total_value":       total_value if total_value else None,
-        "last_report":       reports[0] if reports else None,
-        "has_data":          df is not None,
-        "n_alerts":          len(get_active_alerts()),
-        "n_tickers":         len(portfolio) + len(watchlist),
-        "tr_cash":           tr_cash,
-        "data_age":          data_age,
-        "error":             error,
-        "has_value_history": has_value_history,
+        "request":            request,
+        "portfolio":          portfolio,
+        "watchlist":          watchlist,
+        "total_value":        total_value if total_value else None,
+        "last_report":        reports[0] if reports else None,
+        "has_data":           df is not None,
+        "n_alerts":           len(get_active_alerts()),
+        "n_tickers":          len(portfolio) + len(watchlist),
+        "tr_cash":            tr_cash,
+        "data_age":           data_age,
+        "error":              error,
+        "has_value_history":  has_value_history,
+        "security_warnings":  security_warnings,
     })
 
 

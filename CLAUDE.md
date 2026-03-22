@@ -35,6 +35,7 @@ requirements.txt    # Dependencias Python
 Dockerfile          # python:3.12-slim, usuario no-root appuser
 docker-compose.yml  # Servicios: init, market-radar (scheduler), market-radar-web
 .env.example        # Plantilla de variables de entorno requeridas
+SECURITY.md         # Documento formal SGSI: política, riesgos, activos, criptografía, incidentes, DPIA
 templates/          # Plantillas Jinja2 HTML para el dashboard web
 ```
 
@@ -493,9 +494,16 @@ python -m pytest tests/ -v
 - **Visor paginado**: `GET /audit-log` — tabla con tipo de evento, IP, timestamp, detalles
 - **Purga automática**: `purge_old_audit_log(days=365)` ejecutado cada domingo en `job_vacuum_db()`
 
+#### ISO 27001 A.12.6 / A.14.2 — Escaneo de vulnerabilidades en CI/CD
+- **Bandit SAST**: análisis estático Python en cada push a `main`; artefacto `bandit-security-report` retenido 90 días
+- **pip-audit**: escaneo de CVEs en dependencias Python; artefacto `pip-audit-report` retenido 90 días
+- **Trivy**: escaneo de imagen Docker post-publicación (HIGH + CRITICAL); SARIF subido a GitHub Security tab
+
 #### ISO 27001 A.14 — Seguridad en desarrollo
 - **CSP**: `Content-Security-Policy` en todas las respuestas (middleware `_refresh_csrf_global`)
 - **Cabeceras HTTP**: X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- **HSTS**: `Strict-Transport-Security: max-age=31536000; includeSubDomains` cuando `COOKIE_SECURE=1`
+- **COOP**: `Cross-Origin-Opener-Policy: same-origin` en todas las respuestas
 - **SQL parameterizado**: todas las queries usan placeholders `?`
 
 #### ISO 27701 Art. 7 — Consentimiento y privacidad
@@ -536,13 +544,39 @@ python -m pytest tests/ -v
 - `delete_all_sessions_db()` — purga total (GDPR)
 - `gdpr_delete_personal_data()` — elimina datos personales (GDPR Art. 17)
 
+### Nuevos jobs en scheduler.py (segunda ronda)
+
+| Job | Cuándo | Qué hace |
+|-----|--------|----------|
+| `job_check_security_events` | Cada hora | Web Push si ≥5 `login_failed` en última hora o eventos críticos |
+| `job_vacuum_with_integrity` | Domingos 01:50 | `PRAGMA integrity_check` antes del VACUUM; Web Push si falla |
+| `job_cleanup_sessions` | Diario 03:00 | `delete_expired_sessions_db()` para mantener tabla `sessions` limpia |
+
+### Avisos de seguridad en dashboard
+
+- `security_warnings` calculado en el servidor y pasado al template de `/`
+- Muestra banner rojo/amarillo si: `COOKIE_SECURE` no está activo, contraseña próxima a expirar (≤15 días), o contraseña ya expirada
+
+### Integridad de backups
+
+- Cada backup (cifrado o en claro) genera también un fichero `.sha256` con `sha256sum`
+- Los `.sha256` rotan junto con los backups (se conservan los últimos 7)
+
 ### Variables de entorno nuevas
 
 - `BACKUP_PASSPHRASE` — frase de cifrado para backups AES-256-CBC (recomendado en producción)
+- `COOKIE_SECURE` — activa HSTS + cookies Secure (requerido detrás de HTTPS reverse proxy)
+
+### Documento formal SGSI
+
+- **`SECURITY.md`**: política SGSI, matriz de riesgos (12 riesgos), inventario de activos (9 activos), tabla de algoritmos criptográficos, procedimiento de respuesta a incidentes, DPIA Anthropic, RTO ≤4h / RPO ≤24h, checklist auditoría anual.
 
 ## CI/CD
 
 GitHub Actions en `.github/workflows/docker-publish.yml`:
+- **`security-scan`** (job nuevo, se ejecuta antes de build): Bandit SAST + pip-audit; artefactos retenidos 90 días
+- **`build-and-push`** depende de `security-scan` (no publica si el escaneo no termina)
 - Trigger: push a `main` o `workflow_dispatch`
 - Build multi-arquitectura con QEMU (amd64 + arm64)
 - Publica en `ghcr.io/dazanestor/market-radar-ai:latest` + tag SHA
+- **Trivy** post-publicación: escaneo imagen Docker (HIGH+CRITICAL), tabla en log + SARIF a GitHub Security

@@ -29,6 +29,8 @@ from database import (
     get_latest_snapshot_as_df,
     get_setting, set_setting,
     get_previous_opportunities,
+    get_audit_log, delete_expired_sessions_db,
+    _db,
 )
 from config import REPORT_HOUR, TIMEZONE, DRAWDOWN_ALERT_THRESHOLD
 
@@ -493,6 +495,71 @@ def job_vacuum_db():
         logging.exception("Error en mantenimiento semanal de BD")
 
 
+def job_check_security_events():
+    """ISO 27001 A.12.4: detecta patrones sospechosos en audit_log y alerta via Web Push."""
+    try:
+        # Ventana de análisis: última hora
+        since = (datetime.datetime.now() - datetime.timedelta(hours=1)).isoformat(timespec="seconds")
+        alerts = []
+
+        with _db() as conn:
+            # Fallos de login en la última hora
+            row = conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE event_type='login_failed' AND created_at >= ?",
+                (since,)
+            ).fetchone()
+            n_failed = row[0] if row else 0
+            if n_failed >= 5:
+                alerts.append(f"⚠️ {n_failed} intentos de login fallidos en la última hora.")
+
+            # Eventos críticos recientes
+            critical = conn.execute(
+                "SELECT event_type, ip_address, created_at FROM audit_log "
+                "WHERE event_type IN ('gdpr_delete','totp_disabled','credentials_changed') "
+                "AND created_at >= ?",
+                (since,)
+            ).fetchall()
+            for ev_type, ev_ip, ev_ts in critical:
+                alerts.append(f"🔐 Evento crítico: {ev_type} desde {ev_ip or '?'} a las {ev_ts[-8:]}")
+
+        if alerts:
+            body = "\n".join(alerts)
+            logging.warning("Eventos de seguridad detectados:\n%s", body)
+            _send_push("Alerta de seguridad", body, "/audit-log")
+        else:
+            logging.debug("job_check_security_events: sin anomalías.")
+    except Exception:
+        logging.exception("Error en job_check_security_events")
+
+
+def job_vacuum_with_integrity():
+    """ISO 27001 A.12: ejecuta PRAGMA integrity_check antes del VACUUM semanal."""
+    try:
+        with _db() as conn:
+            result = conn.execute("PRAGMA integrity_check").fetchone()
+            if result and result[0] != "ok":
+                logging.error("SQLite integrity_check FAILED: %s", result[0])
+                _send_push(
+                    "Alerta de integridad de BD",
+                    f"PRAGMA integrity_check devolvió: {result[0]}. Restaura desde backup inmediatamente.",
+                    "/health",
+                )
+            else:
+                logging.info("SQLite integrity_check: OK")
+    except Exception:
+        logging.exception("Error en integrity_check de BD")
+
+
+def job_cleanup_sessions():
+    """ISO 27001 A.9.4: limpia sesiones expiradas de la BD diariamente."""
+    try:
+        n = delete_expired_sessions_db()
+        if n:
+            logging.info("Sesiones expiradas eliminadas: %d", n)
+    except Exception:
+        logging.exception("Error limpiando sesiones expiradas")
+
+
 def job_check_claude_health():
     """Comprueba semanalmente que la API de Claude responde."""
     ok = check_api_health()
@@ -624,6 +691,21 @@ def main():
     scheduler.add_job(
         job_vacuum_db, CronTrigger(day_of_week="sun", hour=2, minute=0, timezone=tz),
         id="vacuum_db", name="Vacuum DB",
+    )
+    # ISO 27001 A.12: integridad de BD antes del VACUUM
+    scheduler.add_job(
+        job_vacuum_with_integrity, CronTrigger(day_of_week="sun", hour=1, minute=50, timezone=tz),
+        id="integrity_check", name="SQLite integrity check",
+    )
+    # ISO 27001 A.12.4: monitoreo de eventos de seguridad (cada hora)
+    scheduler.add_job(
+        job_check_security_events, IntervalTrigger(hours=1),
+        id="security_events", name="Security events monitor",
+    )
+    # ISO 27001 A.9.4: limpieza de sesiones expiradas (diario)
+    scheduler.add_job(
+        job_cleanup_sessions, CronTrigger(hour=3, minute=0, timezone=tz),
+        id="cleanup_sessions", name="Cleanup expired sessions",
     )
     scheduler.add_job(
         job_check_claude_health, CronTrigger(day_of_week="mon", hour=9, minute=0, timezone=tz),

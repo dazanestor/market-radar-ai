@@ -3,6 +3,17 @@
 
 {% block content %}
 
+{% for warn in security_warnings %}
+<div style="background:{% if warn.level == 'danger' %}rgba(248,81,73,0.1){% else %}rgba(210,153,34,0.12){% endif %};border:1px solid {% if warn.level == 'danger' %}rgba(248,81,73,0.4){% else %}rgba(210,153,34,0.4){% endif %};border-radius:6px;padding:10px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+  <span style="font-size:13px;color:{% if warn.level == 'danger' %}#f85149{% else %}#d29922{% endif %}">
+    Seguridad: {{ warn.msg }}
+  </span>
+  {% if warn.link %}
+  <a href="{{ warn.link }}" style="font-size:12px;color:#58a6ff;white-space:nowrap;">Revisar →</a>
+  {% endif %}
+</div>
+{% endfor %}
+
 {% if data_age is not none %}
   {% if data_age > 2 %}
   <div style="background:rgba(210,153,34,0.12);border:1px solid rgba(210,153,34,0.4);border-radius:6px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">

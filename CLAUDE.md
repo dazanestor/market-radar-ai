@@ -437,9 +437,27 @@ Descubrimiento automático de oportunidades fuera de la cartera/watchlist.
 - Tickers ya en cartera/watchlist se excluyen del análisis
 - `refresh_universe()` fuerza regeneración borrando caché de BD
 
+## Tests automatizados
+
+Suite de tests en `tests/` ejecutable con `python -m pytest tests/ -v`.
+
+**138 tests, 0.6 s.** Sin dependencias externas (yfinance, anthropic, etc.): se mockean con `MagicMock` en `conftest.py`. La BD se redirige a un SQLite temporal por test.
+
+| Fichero | Módulo | Cobertura |
+|---------|--------|-----------|
+| `test_scoring.py` | `scoring.py` | `_has_data`, `_compute_score`, `_opportunity_label`, `suggest_horizon`, `get_weights`, `score_watchlist`, `score_by_horizon` |
+| `test_database.py` | `database.py` | Settings, posiciones, tickers, alertas, historial de alertas, informes, operaciones, valor de cartera, caché de noticias, suscripciones push, discoveries, price_history |
+| `test_push_utils.py` | `push_utils.py` | `_b64url_encode/decode`, `_make_vapid_jwt`, comportamiento `send_push_to_all` (mocked) |
+| `test_discovery.py` | `discovery.py` | `_calc_rsi`, `_infer_region`, `_score_and_classify` |
+
+Para ejecutar:
+```bash
+python -m pytest tests/ -v
+```
+
 ## Trabajo pendiente / próximas funcionalidades
 
-- **Tests automatizados**: no hay suite de tests. Validación manual via scheduler/web.
+- **Tests automatizados**: ✅ implementado — 138 tests en `tests/`.
 - **CSRF no en formularios de login/setup**: los endpoints de login no necesitan CSRF (no requieren sesión previa); el CSRF token global cubre todos los formularios de usuario autenticado.
 - **Web Push require HTTPS en producción**: los Service Workers solo se registran en orígenes seguros. En `localhost` funciona sin TLS. En producción se necesita reverse proxy con TLS (Cloudflare Tunnel, Caddy, nginx).
 ## CI/CD

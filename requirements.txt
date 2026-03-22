@@ -16,3 +16,4 @@ requests==2.32.5
 uvicorn[standard]==0.34.0
 yfinance==1.2.0
 scipy>=1.13.0
+pytest>=8.0.0

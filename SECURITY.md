@@ -88,10 +88,11 @@ Esta política debe revisarse cada 12 meses o tras:
 | Control | Implementación | Referencia |
 |---------|----------------|------------|
 | Contraseña | bcrypt cost 12. Mínimo 10 chars, letras + números. | `web.py:_hash_password()` |
-| 2FA TOTP | RFC 6238 con `pyotp`. QR en primer acceso. | `web.py:_verify_totp()` |
+| 2FA TOTP | RFC 6238 con `pyotp`. QR en primer acceso. Secret validado como base32. | `web.py:_verify_totp()` |
 | Expiración | 90 días. Aviso a 15 días. Forzado al expirar. | `web.py:_PASSWORD_EXPIRY_DAYS` |
 | Bloqueo IP | 5 intentos fallidos → 15 min de bloqueo | `web.py:_LOCKOUT_MAX, _LOCKOUT_DURATION` |
 | Bloqueo cuenta | 10 intentos fallidos (cualquier IP) → 30 min. Defiende contra rotación de IPs. | `web.py:_ACCOUNT_LOCKOUT_MAX, _ACCOUNT_LOCKOUT_DURATION` |
+| Cambio credenciales | Requiere contraseña actual. Rechaza sin verificación previa. | `web.py:credentials_update()` |
 | Sesiones | UUID aleatorio 32B. TTL 30 días. Persistentes en BD. Restauradas tras reinicio. | `database.py:create_session_db()` |
 | Sesiones concurrentes | Máximo 5 activas simultáneas. La más antigua se invalida al crear la nueva. | `web.py:_MAX_CONCURRENT_SESSIONS` |
 | Session fixation | Nueva sesión generada tras cambio de credenciales (privilege change). | `web.py:credentials_update()` |
@@ -104,6 +105,7 @@ Esta política debe revisarse cada 12 meses o tras:
 - Limpieza automática de expiradas: `job_cleanup_sessions()` (diario a las 03:00)
 - Invalidación inmediata en logout y tras borrado GDPR
 - Límite de 5 sesiones concurrentes: la más antigua se rota automáticamente
+- Cambio de credenciales requiere contraseña actual + genera nueva sesión (anti session fixation)
 
 ### 3.3 Política de contraseñas
 

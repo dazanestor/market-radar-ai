@@ -254,6 +254,12 @@ def _get_ticker_hist(ticker: str, period: str = "1y"):
 _USERNAME_RE = re.compile(r'^[a-zA-Z0-9_\-\.]{3,32}$')
 _TICKER_RE   = re.compile(r'^[A-Z0-9.\-]{1,12}$')
 
+# Longitudes máximas de campos de formulario (ISO 27001 A.14.2 — secure coding)
+_MAX_NAME_LEN   = 100
+_MAX_NOTES_LEN  = 500
+_MAX_BLOCK_LEN  = 80
+_MAX_REGION_LEN = 80
+
 
 def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
@@ -280,6 +286,17 @@ def _validate_password(password: str) -> Optional[str]:
 
 def _load_credentials() -> dict:
     try:
+        # Validar permisos del fichero de credenciales (ISO 27001 A.10)
+        try:
+            mode = oct(os.stat(CREDENTIALS_FILE).st_mode)[-3:]
+            if mode != "600":
+                logger.warning(
+                    "Permisos inseguros en %s: %s (debería ser 600). Corrigiendo...",
+                    CREDENTIALS_FILE, mode
+                )
+                os.chmod(CREDENTIALS_FILE, 0o600)
+        except OSError:
+            pass
         with open(CREDENTIALS_FILE) as f:
             return json.load(f)
     except FileNotFoundError:
@@ -1331,21 +1348,14 @@ async def _on_startup():
 
 @app.get("/health")
 async def health():
-    status = "ok"
-    snapshot_date = None
+    # ISO 27001 A.5: no exponer detalles internos en endpoint público (sin auth)
     try:
         with _db() as conn:
             conn.execute("SELECT 1")
-            _snap = conn.execute("SELECT MAX(date) FROM price_history").fetchone()
-            snapshot_date = _snap[0] if _snap and _snap[0] else None
+        return JSONResponse({"status": "ok"})
     except Exception as exc:
         logger.error("Health check DB error: %s", exc)
-        status = "db_error"
-    return JSONResponse({
-        "status":        status,
-        "snapshot_date": snapshot_date,
-        "timestamp":     datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    })
+        return JSONResponse({"status": "db_error"}, status_code=503)
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────
@@ -1615,6 +1625,7 @@ async def credentials_page(
 async def credentials_update(
     request: Request,
     username: str = Form(...),
+    current_password: str = Form(...),
     password: str = Form(...),
     password2: str = Form(...),
     session: Optional[str] = Cookie(default=None),
@@ -1625,6 +1636,11 @@ async def credentials_update(
     _require_csrf(request, csrf_token)
     creds = _load_credentials()
     errors = []
+    # Verificar contraseña actual antes de permitir el cambio (ISO 27001 A.9.2.1)
+    if not _verify_password(current_password, creds["password_hash"]):
+        ip = get_remote_address(request)
+        log_audit_event("credentials_change_rejected", ip_address=ip, details="wrong_current_password")
+        errors.append("Contraseña actual incorrecta.")
     if not _USERNAME_RE.match(username.strip()):
         errors.append("Usuario: solo letras, números, guión, punto o guión bajo (3-32 caracteres).")
     pwd_err = _validate_password(password)
@@ -2444,7 +2460,11 @@ async def tickers_add(
         return RedirectResponse("/tickers?error=ticker_invalido", status_code=303)
     tickers = _load_tickers()
     tickers.setdefault(categoria, {})
-    entry: dict = {"name": _sanitize_name(nombre), "block": bloque, "region": region}
+    entry: dict = {
+        "name":   _sanitize_name(nombre)[:_MAX_NAME_LEN],
+        "block":  bloque[:_MAX_BLOCK_LEN],
+        "region": region[:_MAX_REGION_LEN],
+    }
     if target_weight:
         try:
             entry["target_weight"] = float(target_weight)
@@ -2460,7 +2480,7 @@ async def tickers_add(
         except ValueError:
             pass
     if notes:
-        entry["notes"] = notes.strip()[:500]
+        entry["notes"] = notes.strip()[:_MAX_NOTES_LEN]
     tickers[categoria][t] = entry
     _save_tickers(tickers)
 
@@ -2508,9 +2528,9 @@ async def tickers_update(
     if ticker not in tickers.get(categoria, {}):
         return RedirectResponse("/tickers", status_code=303)
     meta = tickers[categoria][ticker]
-    if nombre:        meta["name"]          = _sanitize_name(nombre)
-    if bloque:        meta["block"]         = bloque
-    if region:        meta["region"]        = region
+    if nombre:        meta["name"]          = _sanitize_name(nombre)[:_MAX_NAME_LEN]
+    if bloque:        meta["block"]         = bloque[:_MAX_BLOCK_LEN]
+    if region:        meta["region"]        = region[:_MAX_REGION_LEN]
     if target_weight:
         try:
             meta["target_weight"] = float(target_weight)
@@ -2526,7 +2546,7 @@ async def tickers_update(
         except ValueError:
             pass
     if notes is not None:
-        meta["notes"] = notes.strip()[:500]
+        meta["notes"] = notes.strip()[:_MAX_NOTES_LEN]
     tickers.setdefault(categoria, {})[ticker] = meta
     _save_tickers(tickers)
 
@@ -2744,7 +2764,7 @@ async def operaciones_add(
         datetime.date.fromisoformat(date)
     except ValueError:
         return RedirectResponse("/operaciones", status_code=303)
-    add_operation(t, date, op_type, shares, price_eur, notes.strip()[:500], commission_eur=_commission_eur())
+    add_operation(t, date, op_type, shares, price_eur, notes.strip()[:_MAX_NOTES_LEN], commission_eur=_commission_eur())
 
     # Auto-sincronizar posición en cartera tras la operación
     try:

@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+# ISO 27001 A.12.6: imagen base pineada a versión específica para builds reproducibles
+FROM python:3.12.10-slim
 
 WORKDIR /app
 

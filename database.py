@@ -256,7 +256,8 @@ def _add_column_if_missing(conn, table: str, column: str, definition: str) -> No
 
 @contextmanager
 def _db():
-    conn = sqlite3.connect(DATABASE)
+    # timeout=10s: evita bloqueos indefinidos por contención WAL (ISO 27001 A.12 — disponibilidad)
+    conn = sqlite3.connect(DATABASE, timeout=10.0)
     conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
@@ -536,7 +537,7 @@ def purge_old_news_cache(days: int = 30) -> int:
 def vacuum_db() -> None:
     """Ejecuta VACUUM + WAL checkpoint para reducir tamaño del fichero SQLite."""
     with _vacuum_lock:
-        conn = sqlite3.connect(DATABASE)
+        conn = sqlite3.connect(DATABASE, timeout=30.0)  # VACUUM puede tardar más
         try:
             conn.isolation_level = None  # autocommit requerido para VACUUM
             conn.execute("VACUUM")

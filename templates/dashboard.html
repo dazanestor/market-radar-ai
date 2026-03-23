@@ -1,6 +1,13 @@
 {% extends 'base.html' %}
 {% block page_title %}Dashboard{% endblock %}
 
+{% block extra_head %}
+<style>
+  /* Alpine x-show usa removeProperty('display'); el display base viene de aquí, no del inline style */
+  #modal-add-position { display: flex; }
+</style>
+{% endblock %}
+
 {% block content %}
 
 {% for warn in security_warnings %}
@@ -218,7 +225,7 @@
 <!-- ── Modal: añadir posición desde watchlist ── -->
 <div x-data="{ open: false, ticker: '', tname: '' }" id="modal-add-position"
      x-show="open" x-cloak
-     style="position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)"
+     style="position:fixed;inset:0;z-index:1000;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)"
      @keydown.escape.window="open=false">
   <div class="card" style="min-width:320px;max-width:440px;width:100%;padding:20px;position:relative"
        @click.stop>

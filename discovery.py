@@ -508,7 +508,7 @@ def generate_discoveries() -> list:
     logger.info("Iniciando generación de descubrimientos de mercado...")
 
     # Tickers ya monitorizados (excluir)
-    monitored = {r[0].upper() for r in get_all_tickers()}
+    monitored = {r["ticker"].upper() for r in get_all_tickers()}
 
     # Universo
     universe = get_universe()

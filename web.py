@@ -432,7 +432,11 @@ def _verify_totp(code: str) -> bool:
     secret = _totp_secret()
     if not secret:
         return True
-    return pyotp.TOTP(secret).verify(code.strip(), valid_window=2)
+    code = code.strip()
+    # ISO 27001 A.9.4 — validar formato antes de verificar (previene timing attacks con entradas anómalas)
+    if not code.isdigit() or len(code) > 10:
+        return False
+    return pyotp.TOTP(secret).verify(code, valid_window=2)
 
 
 limiter      = Limiter(key_func=get_remote_address)
@@ -1701,6 +1705,7 @@ async def credentials_page(
 
 
 @app.post("/settings/credentials")
+@limiter.limit("3/minute")  # ISO 27001 A.9.4 — protección fuerza bruta cambio credenciales
 async def credentials_update(
     request: Request,
     username: str = Form(...),
@@ -1996,6 +2001,7 @@ async def settings_app_update(
 
 
 @app.post("/settings/benchmark-ticker")
+@limiter.limit("10/minute")  # ISO 27001 A.12.2
 async def settings_benchmark_ticker(
     request:    Request,
     session:    Optional[str] = Cookie(default=None),
@@ -3390,6 +3396,7 @@ async def alertas_reactivar(
 # ── Trade Republic ────────────────────────────────────────────────────────────
 
 @app.post("/tr/setup/start")
+@limiter.limit("5/minute")  # ISO 27001 A.12.2 — previene abuso del setup Trade Republic
 async def tr_setup_start(
     request: Request,
     session: Optional[str] = Cookie(default=None),
@@ -3412,6 +3419,7 @@ async def tr_setup_start(
 
 
 @app.post("/tr/setup/complete")
+@limiter.limit("5/minute")  # ISO 27001 A.12.2
 async def tr_setup_complete(
     request: Request,
     session: Optional[str] = Cookie(default=None),
@@ -3435,6 +3443,7 @@ async def tr_setup_complete(
 
 
 @app.post("/tr/sync")
+@limiter.limit("3/minute")  # ISO 27001 A.12.2 — sincronización TR costosa
 async def tr_sync(
     request: Request,
     session: Optional[str] = Cookie(default=None),
@@ -5185,6 +5194,7 @@ async def stress_test_page(request: Request, session: Optional[str] = Cookie(def
 # ── Mover ticker de watchlist a portfolio ─────────────────────────────────────
 
 @app.post("/tickers/move-to-portfolio")
+@limiter.limit("10/minute")  # ISO 27001 A.12.2
 async def move_to_portfolio(
     request:    Request,
     session:    Optional[str] = Cookie(default=None),
@@ -5628,6 +5638,7 @@ async def export_watchlist(session: Optional[str] = Cookie(default=None)):
 # ── Importación masiva de tickers ─────────────────────────────────────────────
 
 @app.post("/tickers/import")
+@limiter.limit("2/minute")  # ISO 27001 A.12.2 — importación masiva costosa
 async def tickers_import(
     request:    Request,
     session:    Optional[str] = Cookie(default=None),
@@ -5825,6 +5836,7 @@ async def push_subscribe(
 
 
 @app.post("/push/unsubscribe")
+@limiter.limit("10/minute")  # ISO 27001 A.12.2
 async def push_unsubscribe(
     request: Request,
     session: Optional[str] = Cookie(default=None),
@@ -5934,6 +5946,7 @@ async def recomendaciones_refresh(request: Request, session: Optional[str] = Coo
 
 
 @app.post("/recomendaciones/add-to-watchlist")
+@limiter.limit("10/minute")  # ISO 27001 A.12.2
 async def recomendaciones_add_watchlist(
     request: Request,
     session: Optional[str] = Cookie(default=None),

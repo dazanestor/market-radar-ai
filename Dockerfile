@@ -23,5 +23,9 @@ RUN chmod 555 /entrypoint.sh
 
 USER appuser
 
+# ISO 27001 A.12.1 — disponibilidad: el orquestador detecta el proceso caído automáticamente
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+  CMD python -c "import sqlite3, sys; conn = sqlite3.connect('/app/data/radar.db', timeout=5); conn.execute('SELECT 1'); conn.close()" || exit 1
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python", "scheduler.py"]

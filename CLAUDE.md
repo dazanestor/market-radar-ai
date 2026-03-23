@@ -489,6 +489,9 @@ Cada ticker admite los siguientes campos en su metadata:
 - **`PRAGMA foreign_keys=ON` en `_db()` (ISO 27001 A.12.1 — integridad)**: activada la comprobación de integridad referencial en SQLite; antes las restricciones FK estaban definidas en el schema pero SQLite las ignoraba silenciosamente.
 - **Mensaje push de integrity_check sanitizado (ISO 27001 A.5)**: `job_vacuum_with_integrity()` ya no incluye el resultado literal del `PRAGMA integrity_check` en el cuerpo del push; usa mensaje genérico e imprime el detalle solo en logs internos.
 - **Timeout Claude en `discovery.py` reducido a 30s (ISO 27001 A.12 — disponibilidad)**: `anthropic.Anthropic(timeout=30)` en lugar de 90s; alineado con el timeout del resto del sistema; evita bloquear el job semanal de descubrimientos si Claude tarda.
+- **Rate limits en 9 POST endpoints sin cobertura (ISO 27001 A.12.2 / OWASP A04)**: añadido `@limiter.limit` a `/settings/credentials` (3/min), `/settings/benchmark-ticker` (10/min), `/tr/setup/start` (5/min), `/tr/setup/complete` (5/min), `/tr/sync` (3/min), `/tickers/move-to-portfolio` (10/min), `/tickers/import` (2/min), `/push/unsubscribe` (10/min), `/recomendaciones/add-to-watchlist` (10/min); ninguno tenía protección anti-abuso.
+- **Validación de formato TOTP antes de verificar (ISO 27001 A.9.4)**: `_verify_totp()` comprueba que el código es solo dígitos y no supera 10 caracteres antes de pasarlo a pyotp; previene timing attacks y bypass con entradas anómalas.
+- **HEALTHCHECK en Dockerfile (ISO 27001 A.12.1 — disponibilidad)**: instrucción `HEALTHCHECK` añadida; verifica conexión SQLite cada 60s con timeout de 10s y start-period de 30s; el orquestador detecta el proceso caído automáticamente sin necesidad de polling externo.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

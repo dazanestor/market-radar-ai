@@ -3744,7 +3744,11 @@ async def dividendos_page(request: Request, session: Optional[str] = Cookie(defa
                     pass
                 currency = info.get("currency", "USD")
 
-                divs = stock.dividends
+                try:
+                    divs = stock.dividends
+                except Exception:
+                    logger.warning("Error calculando dividendos de %s", ticker)
+                    continue
                 if divs is None or divs.empty:
                     continue
 

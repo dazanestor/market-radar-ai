@@ -552,11 +552,38 @@ def tg_to_html(text) -> Markup:
     if not text:
         return Markup("")
     text = str(escape(text))
+    # Inline formatting
     text = re.sub(r'`([^`\n]+)`',    r'<code class="tg-code">\1</code>', text)
+    text = re.sub(r'\*\*([^\*\n]+)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*([^\*\n]+)\*', r'<strong>\1</strong>', text)
     text = re.sub(r'_([^_\n]+)_',    r'<em>\1</em>', text)
-    text = text.replace('\n', '<br>')
-    return Markup(text)
+    # Section titles: lines that start with an emoji or are ALL-CAPS (≥4 chars, no digits)
+    _SECTION_RE = re.compile(
+        r'^([\U0001F300-\U0001FFFF\U00002600-\U000027BF].*|[A-ZÁÉÍÓÚÑ\s]{4,})$',
+        re.MULTILINE | re.UNICODE,
+    )
+    lines = text.split('\n')
+    out = []
+    buf = []  # lines accumulating into a paragraph
+
+    def flush():
+        if buf:
+            content = ' '.join(l for l in buf if l)
+            if content:
+                out.append(f'<p>{content}</p>')
+            buf.clear()
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            flush()
+        elif _SECTION_RE.match(stripped):
+            flush()
+            out.append(f'<div class="report-section-title">{stripped}</div>')
+        else:
+            buf.append(stripped)
+    flush()
+    return Markup(''.join(out))
 
 
 def _tojson_filter(v) -> str:

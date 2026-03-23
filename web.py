@@ -4393,6 +4393,7 @@ def _compute_optimization(df_portfolio, positions_map: dict) -> Optional[dict]:
             valid.append(t)
 
     if len(valid) < 2:
+        logger.warning("_compute_optimization: menos de 2 tickers válidos con precio (%d)", len(valid))
         return None
 
     # ─── 2. Histórico de precios 1 año ────────────────────────────────────────
@@ -4404,14 +4405,16 @@ def _compute_optimization(df_portfolio, positions_map: dict) -> Optional[dict]:
                 hist.index = pd.to_datetime(hist.index.date)
                 price_data[t] = hist
         except Exception:
-            pass
+            logger.warning("_compute_optimization: error obteniendo histórico de %s", t)
 
     valid = [t for t in valid if t in price_data]
     if len(valid) < 2:
+        logger.warning("_compute_optimization: menos de 2 tickers con histórico suficiente (%d)", len(valid))
         return None
 
     df_prices = pd.DataFrame({t: price_data[t] for t in valid}).dropna()
     if len(df_prices) < 30:
+        logger.warning("_compute_optimization: df_prices tiene solo %d filas tras dropna", len(df_prices))
         return None
 
     rets = df_prices.pct_change().dropna()
@@ -4646,6 +4649,7 @@ async def chart_frontera_eficiente(request: Request, session: Optional[str] = Co
     def _make():
         opt = _get_opt_cached(df_port, positions)
         if not opt:
+            logger.warning("chart/frontera-eficiente: _get_opt_cached devolvió None")
             return None
 
         with _chart_lock:

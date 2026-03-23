@@ -287,6 +287,9 @@ def _validate_password(password: str) -> Optional[str]:
         return "La contraseña debe contener al menos una letra."
     if not re.search(r'[0-9]', password):
         return "La contraseña debe contener al menos un número."
+    # ISO 27001 A.9.4.3 — complejidad: al menos un carácter especial
+    if not re.search(r'[^A-Za-z0-9]', password):
+        return "La contraseña debe contener al menos un carácter especial (!@#$%^&* etc.)."
     return None
 
 

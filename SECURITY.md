@@ -141,7 +141,7 @@ Esta política debe revisarse cada 12 meses o tras:
 | TOTP secret | `data/totp_secret.key` (0o600) | Manual en `/2fa/setup` |
 | API Key Anthropic | `.env` o tabla `settings` | Manual. Recomendar cada 90 días. |
 | Claves VAPID | `data/vapid_private.pem` (chmod 600, excluido de imagen Docker) | Sin rotación automática (mejora futura) |
-| BACKUP_PASSPHRASE | Variable de entorno `.env` | Manual |
+| BACKUP_PASSPHRASE | Variable de entorno `.env` (≥16 chars, aleatorio) | Manual. Rotar anualmente o tras incidente. Al rotar: detener servicio backup, cambiar en `.env`, reanudar. Los backups cifrados con la clave anterior requieren la clave antigua para restaurarse — conservarla hasta que todos los backups afectados hayan expirado (7 días). |
 
 ### 4.3 Cifrado en tránsito
 

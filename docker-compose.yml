@@ -1,8 +1,16 @@
+# ISO 27001 A.13.1 / A.5.7 — red bridge privada para aislamiento entre servicios
+networks:
+  radar-net:
+    driver: bridge
+    internal: false   # false: market-radar-web necesita salida a internet (push notifications)
+
 services:
   market-radar:
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-ai
     restart: unless-stopped
+    networks:
+      - radar-net
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -40,6 +48,8 @@ services:
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-web
     restart: unless-stopped
+    networks:
+      - radar-net
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -84,6 +94,8 @@ services:
   backup:
     image: alpine:3.21
     restart: unless-stopped
+    # backup no necesita red — solo acceso al volumen de datos
+    network_mode: none
     security_opt:
       - no-new-privileges:true
     cap_drop:

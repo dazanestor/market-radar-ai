@@ -506,6 +506,9 @@ Cada ticker admite los siguientes campos en su metadata:
 - **TTL de suscripciones Web Push en política de privacidad (ISO 27701 Art. 5 / RGPD Art. 13)**: añadida fila «Suscripciones Web Push: 90 días» a la tabla de plazos de conservación en `privacy.html`; el plazo ya se aplicaba via `purge_old_push_subscriptions()` pero no estaba declarado al usuario.
 - **Validación de formato TOTP en `/setup/first-login` (ISO 27001 A.9.4)**: el handler de primer login llamaba a `pyotp.TOTP.verify()` directamente sin validar que el código sea solo dígitos y ≤10 chars; ahora usa la misma validación que `_verify_totp()`.
 - **Digest de imagen publicada en CI/CD (ISO 27001 A.12.6)**: paso `docker inspect --format RepoDigests` tras el build registra el digest SHA256 en el log de CI; proporciona traza de auditoría de supply chain para cada imagen publicada en GHCR.
+- **Red Docker personalizada `radar-net` (ISO 27001 A.13.1 — segmentación de red)**: `market-radar` y `market-radar-web` se conectan a una red bridge privada `radar-net`; el servicio `backup` usa `network_mode: none` (sin acceso a red — solo al volumen de datos); aislamiento respecto a contenedores de otros stacks en el mismo host.
+- **Complejidad de contraseña — carácter especial obligatorio (ISO 27001 A.9.4.3)**: `_validate_password()` exige ahora al menos un carácter no alfanumérico además de letra y dígito; contraseñas existentes no se ven afectadas hasta el próximo cambio.
+- **Procedimiento de rotación de `BACKUP_PASSPHRASE` (ISO 27001 A.10.1.2)**: documentado en `SECURITY.md` sección 4.2: longitud mínima ≥16 chars, rotación anual o tras incidente, instrucciones para preservar la clave antigua hasta que expiren los backups afectados (7 días).
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

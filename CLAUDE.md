@@ -509,6 +509,11 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Red Docker personalizada `radar-net` (ISO 27001 A.13.1 — segmentación de red)**: `market-radar` y `market-radar-web` se conectan a una red bridge privada `radar-net`; el servicio `backup` usa `network_mode: none` (sin acceso a red — solo al volumen de datos); aislamiento respecto a contenedores de otros stacks en el mismo host.
 - **Complejidad de contraseña — carácter especial obligatorio (ISO 27001 A.9.4.3)**: `_validate_password()` exige ahora al menos un carácter no alfanumérico además de letra y dígito; contraseñas existentes no se ven afectadas hasta el próximo cambio.
 - **Procedimiento de rotación de `BACKUP_PASSPHRASE` (ISO 27001 A.10.1.2)**: documentado en `SECURITY.md` sección 4.2: longitud mínima ≥16 chars, rotación anual o tras incidente, instrucciones para preservar la clave antigua hasta que expiren los backups afectados (7 días).
+- **Detalle de excepción TR sanitizado en HTTPException (ISO 27001 A.5 / OWASP A05)**: `/chart/tr/*` ya no incluye `str(e)` en el `detail` de HTTPException 503; el error se registra en log interno y el cliente recibe mensaje genérico.
+- **NOT NULL en columnas críticas de schema (ISO 27001 A.12.1 — integridad)**: `price_history.ticker`, `price_history.date`, `price_alerts.ticker`, `price_alerts.direction`, `price_alerts.condition_type`, `alert_history.ticker`, `alert_history.triggered_at` declaradas NOT NULL en CREATE TABLE; previene inserción de NULLs que romperían constraints UNIQUE y lógica de alertas.
+- **Mensajes de error sanitizados en `generate_csv.py` (ISO 27001 A.5)**: `str(e)` eliminado de mensajes de error que se propagan al scheduler y logs de usuario; la excepción completa se registra internamente con `logger.exception()`.
+- **`/robots.txt` (ISO 27001 A.5 — minimización de información)**: endpoint sin autenticación que devuelve `Disallow: /`; previene indexación del dashboard privado por motores de búsqueda.
+- **Shutdown handler para `_executor` (ISO 27001 A.12 — disponibilidad)**: `@app.on_event("shutdown")` llama a `_executor.shutdown(wait=True)`; garantiza cierre ordenado de tareas pendientes (gráficos, yfinance) antes de terminar el proceso, evitando posible corrupción de datos.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

@@ -158,14 +158,16 @@ def _process_ticker(ticker, category, meta, today, portfolio_positions,
 
     except Exception as e:
         logger.exception("Error procesando ticker %s", ticker)
-        return None, f"{ticker}: {e}"
+        # ISO 27001 A.5 — no exponer detalles de excepción en mensajes de error
+        return None, f"{ticker}: error al procesar datos"
 
 
 def generate():
     try:
         tickers = get_tickers_as_yaml_dict()
     except Exception as e:
-        return pd.DataFrame(), [f"Error leyendo tickers de BD: {e}"]
+        logger.exception("Error leyendo tickers de BD")
+        return pd.DataFrame(), ["Error leyendo tickers de BD"]
 
     today = date.today().isoformat()
 
@@ -204,7 +206,7 @@ def generate():
             except Exception as e:
                 ticker = futures[fut]
                 logger.exception("Error inesperado procesando %s", ticker)
-                errors.append(f"{ticker}: {e}")
+                errors.append(f"{ticker}: error inesperado al procesar")
 
     df = pd.DataFrame(rows)
     return df, errors

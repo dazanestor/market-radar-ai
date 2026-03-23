@@ -43,8 +43,8 @@ def init_db():
         c.execute("""
         CREATE TABLE IF NOT EXISTS price_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticker TEXT,
-            date TEXT,
+            ticker TEXT NOT NULL,
+            date TEXT NOT NULL,
             price REAL,
             drawdown_52w REAL,
             momentum_3m REAL,
@@ -60,10 +60,10 @@ def init_db():
         c.execute("""
         CREATE TABLE IF NOT EXISTS price_alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticker TEXT,
+            ticker TEXT NOT NULL,
             target_price REAL,
-            direction TEXT,
-            condition_type TEXT DEFAULT 'price',
+            direction TEXT NOT NULL,
+            condition_type TEXT NOT NULL DEFAULT 'price',
             condition_value REAL,
             active INTEGER DEFAULT 1,
             created TEXT
@@ -72,12 +72,12 @@ def init_db():
         c.execute("""
         CREATE TABLE IF NOT EXISTS alert_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticker TEXT,
+            ticker TEXT NOT NULL,
             target_price REAL,
             direction TEXT,
             condition_type TEXT DEFAULT 'price',
             condition_value REAL,
-            triggered_at TEXT,
+            triggered_at TEXT NOT NULL,
             price_at_trigger REAL,
             notified INTEGER DEFAULT 0
         )

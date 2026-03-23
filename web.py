@@ -1436,6 +1436,12 @@ async def _on_startup():
     _load_sessions_from_db()
 
 
+@app.on_event("shutdown")
+async def _on_shutdown():
+    """ISO 27001 A.12 — cierre ordenado del executor; evita corrupción de datos en tareas pendientes."""
+    _executor.shutdown(wait=True)
+
+
 @app.get("/health")
 async def health():
     # ISO 27001 A.5: no exponer detalles internos en endpoint público (sin auth)
@@ -3701,7 +3707,8 @@ async def chart_tr_historial(
     try:
         fig = await asyncio.get_running_loop().run_in_executor(_executor, _fetch_and_draw)
     except Exception as e:
-        raise HTTPException(503, f"Error TR: {e}")
+        logger.error("Error obteniendo gráfico TR: %s", e)
+        raise HTTPException(503, "Error al obtener datos de Trade Republic")
 
     if fig is None:
         raise HTTPException(404, "Sin datos")
@@ -5773,6 +5780,16 @@ def _generate_icon_png(size: int) -> bytes:
             plt.close(fig)
     _ICON_PNG_CACHE[size] = buf.getvalue()
     return _ICON_PNG_CACHE[size]
+
+
+@app.get("/robots.txt")
+async def robots_txt():
+    """ISO 27001 A.5 — evita indexación del dashboard privado por motores de búsqueda."""
+    return Response(
+        content="User-agent: *\nDisallow: /\n",
+        media_type="text/plain",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/sw.js")

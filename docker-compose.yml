@@ -51,8 +51,9 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+    # ISO 27001 A.9.2 — restringir IPs de confianza para X-Forwarded-For; "*" permite spoofing del rate limiter
     command: ["python", "-m", "uvicorn", "web:app", "--host", "0.0.0.0", "--port", "8589",
-              "--proxy-headers", "--forwarded-allow-ips", "*"]
+              "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
 
     environment:
       ANTHROPIC_API_KEY:  ${ANTHROPIC_API_KEY:-}

@@ -586,7 +586,9 @@ async def _refresh_csrf_global(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     # HSTS: solo cuando el servicio está detrás de HTTPS (COOKIE_SECURE=1)
     if COOKIE_SECURE:
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    # Bloquea políticas cross-domain de Flash/Silverlight (OWASP A05)
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     # Previene leaks de memoria entre ventanas/tabs (COOP)
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     # CSP: permite recursos propios + inline styles/scripts necesarios por Alpine.js
@@ -1032,7 +1034,7 @@ def _fig_to_response(fig) -> Response:
             plt.close(fig)
     buf.seek(0)
     return Response(content=buf.read(), media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=300"})
+                    headers={"Cache-Control": "private, max-age=300"})
 
 
 def _make_price_chart(ticker: str, hist: pd.DataFrame) -> Optional[plt.Figure]:
@@ -1985,15 +1987,23 @@ async def settings_app_update(
             return len(value) <= 500  # evita DoS por valores enormes
         return len(value) <= 2000  # límite genérico para todos los demás campos
 
+    ip = get_remote_address(request)
     valid_keys = {s["key"] for s in _APP_SETTINGS}
     for key in valid_keys:
         value = (form.get(key) or "").strip()
         clear = form.get(f"clear_{key}")
         if clear:
             delete_setting(key)
+            # ISO 27001 A.12.4 — auditoría de cambios de configuración
+            log_audit_event("setting_deleted", ip_address=ip, details=f"key={key}")
         elif value:
             if _valid_setting(key, value):
-                set_setting(key, value)
+                old_val = get_setting(key)
+                if old_val != value:
+                    set_setting(key, value)
+                    # Enmascarar claves sensibles en el log de auditoría
+                    masked = "***" if "KEY" in key or "PASSWORD" in key or "SECRET" in key else value[:80]
+                    log_audit_event("setting_changed", ip_address=ip, details=f"key={key},new={masked}")
             else:
                 logger.warning("Valor inválido para %s ignorado en /settings/app", key)
         # Empty + no clear → leave unchanged

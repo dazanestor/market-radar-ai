@@ -13,7 +13,23 @@ logger = logging.getLogger("database")
 _vacuum_lock = threading.Lock()
 
 
+def _check_db_integrity() -> None:
+    """ISO 27001 A.12.1 — verifica integridad de la BD al arrancar; aborta si está corrupta."""
+    if not os.path.exists(DATABASE):
+        return  # BD nueva, nada que verificar
+    try:
+        with _db() as conn:
+            result = conn.execute("PRAGMA integrity_check(1)").fetchone()
+            if result and result[0] != "ok":
+                logger.critical("SQLite integrity_check falló al arrancar: %s", result[0])
+                raise RuntimeError("Base de datos corrupta; restaura desde backup.")
+    except sqlite3.DatabaseError as exc:
+        logger.critical("Error al verificar integridad de la BD: %s", exc)
+        raise RuntimeError("No se puede abrir la base de datos.") from exc
+
+
 def init_db():
+    _check_db_integrity()
     os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
     with _db() as conn:
         c = conn.cursor()

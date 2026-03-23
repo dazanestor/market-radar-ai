@@ -509,8 +509,13 @@ Ejecutar anualmente (o tras incidente significativo):
 
 ### ISO 27701
 - [ ] Revisar política de privacidad en `/privacy` (vigente y correcta)
-- [ ] Verificar que el endpoint `/gdpr/export` genera el JSON correctamente
+- [ ] Verificar que el endpoint `/gdpr/export` genera el JSON correctamente (incluye push_subscriptions con endpoint_hash)
 - [ ] Comprobar que la retención automática elimina datos según los plazos definidos
+
+### A.12 Disponibilidad — Resiliencia
+- [ ] Verificar que `_fetch_price` con retry (`tenacity`) no genera warning excesivos en logs
+- [ ] Comprobar que `entrypoint.sh` corrige permisos de `vapid_private.pem` en cada arranque
+- [ ] Revisar que `_cleanup_expired_state()` está purgando `_failed_logins` y `_account_failed` (sin acumulación indefinida)
 
 ---
 

@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -176,20 +177,30 @@ def job_check_price_alerts():
         except Exception:
             logging.exception("Error leyendo snapshot para alertas avanzadas")
 
+    @retry(
+        retry=retry_if_exception_type(Exception),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=False,
+    )
+    def _fetch_price_with_retry(ticker):
+        t = yf.Ticker(ticker)
+        hist = t.history(period="2d")
+        if hist.empty:
+            raise ValueError(f"Historial vacío para {ticker}")
+        price_raw = hist["Close"].iloc[-1]
+        try:
+            currency = t.fast_info.get("currency") or "USD"
+        except Exception:
+            currency = "USD"
+        return to_eur(price_raw, currency)
+
     def _fetch_price(ticker):
         try:
-            t = yf.Ticker(ticker)
-            hist = t.history(period="2d")
-            if not hist.empty:
-                price_raw = hist["Close"].iloc[-1]
-                try:
-                    currency = t.fast_info.get("currency") or "USD"
-                except Exception:
-                    currency = "USD"
-                return ticker, to_eur(price_raw, currency)
+            return ticker, _fetch_price_with_retry(ticker)
         except Exception as e:
-            logging.warning("Error obteniendo precio de %s: %s", ticker, e)
-        return ticker, None
+            logging.warning("Error obteniendo precio de %s tras reintentos: %s", ticker, e)
+            return ticker, None
 
     with ThreadPoolExecutor(max_workers=min(len(tickers_needed), 10)) as pool:
         for ticker, price_eur in pool.map(_fetch_price, tickers_needed):

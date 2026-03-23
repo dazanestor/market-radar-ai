@@ -6,6 +6,7 @@ Uso: uvicorn web:app --host 0.0.0.0 --port 8589
 import asyncio
 import csv
 import datetime
+import hashlib
 import io
 import json
 import logging
@@ -108,6 +109,7 @@ from database import (
     count_active_sessions_db,
     get_oldest_session_id_db,
     purge_old_push_subscriptions,
+    get_all_push_subscriptions,
     gdpr_delete_personal_data,
 )
 from fetch_data import get_macro_context, get_news, to_eur
@@ -640,6 +642,10 @@ def _is_auth(session: Optional[str]) -> bool:
                 except Exception:
                     pass
                 return False
+            try:
+                touch_session_db(session)  # Actualiza last_seen para monitoreo de sesiones (A.12.4)
+            except Exception:
+                pass
             return True
     # No está en memoria → buscar en BD (sesión restaurada tras reinicio)
     try:
@@ -670,7 +676,7 @@ def _invalidate_session(session: Optional[str]) -> None:
             pass
 
 def _cleanup_expired_state() -> None:
-    """Elimina sesiones y tokens pendientes expirados para evitar crecimiento ilimitado."""
+    """Elimina sesiones, tokens y registros de bloqueo expirados para evitar crecimiento ilimitado."""
     now = _time.monotonic()
     expired_sessions = [sid for sid, exp in list(_active_sessions.items()) if now > exp]
     for sid in expired_sessions:
@@ -678,6 +684,20 @@ def _cleanup_expired_state() -> None:
     expired_tokens = [tok for tok, exp in list(_pending_tokens.items()) if now > exp]
     for tok in expired_tokens:
         _pending_tokens.pop(tok, None)
+    # Limpiar IPs sin intentos fallidos activos (ISO 27001 A.12 — prevenir memory leak)
+    expired_ips = [
+        ip for ip, attempts in list(_failed_logins.items())
+        if not any(now - t < _LOCKOUT_DURATION for t in attempts)
+    ]
+    for ip in expired_ips:
+        _failed_logins.pop(ip, None)
+    # Limpiar usernames sin intentos fallidos activos
+    expired_users = [
+        u for u, attempts in list(_account_failed.items())
+        if not any(now - t < _ACCOUNT_LOCKOUT_DURATION for t in attempts)
+    ]
+    for u in expired_users:
+        _account_failed.pop(u, None)
     # Limpiar sesiones expiradas de BD (throttleado — ya viene del lock de 60s)
     try:
         delete_expired_sessions_db()
@@ -1300,6 +1320,14 @@ async def gdpr_export(request: Request, session: Optional[str] = Cookie(default=
             for r in alerts
         ],
         "tickers": tickers,
+        "push_subscriptions": [
+            {
+                "endpoint_hash": hashlib.sha256(r[0].encode()).hexdigest()[:16],
+                "user_agent": r[3] if len(r) > 3 else None,
+                "created": r[4] if len(r) > 4 else None,
+            }
+            for r in get_all_push_subscriptions()
+        ],
     }
 
     log_audit_event("gdpr_export", ip_address=ip, details="full_data_export")
@@ -1398,8 +1426,7 @@ async def login(
 ):
     ip = get_remote_address(request)
     ua = request.headers.get("user-agent", "")
-    import hashlib as _hashlib
-    _uname_hash = _hashlib.sha256(username.encode()).hexdigest()[:16]
+    _uname_hash = hashlib.sha256(username.encode()).hexdigest()[:16]
     if _check_lockout(ip):
         log_audit_event("login_locked", ip_address=ip, details=f"reason=ip_lockout,uname_hash={_uname_hash}")
         return templates.TemplateResponse("login.html", {

@@ -342,7 +342,8 @@ Cada ticker admite los siguientes campos en su metadata:
 
 - **Matplotlib thread-safety**: `_chart_lock = threading.Lock()` en bot.py y web.py; usado en todas las funciones que generan gráficos.
 - **Race condition CSV cache**: `_csv_cache_lock = threading.RLock()` en web.py protege lecturas/invalidaciones concurrentes.
-- **Memory leak sesiones**: `_cleanup_expired_state()` elimina sesiones y tokens expirados; se llama desde `_is_auth()` con throttle de 60s.
+- **Memory leak sesiones y lockout dicts**: `_cleanup_expired_state()` elimina sesiones, tokens expirados y entradas caducadas de `_failed_logins` / `_account_failed`; se llama desde `_is_auth()` con throttle de 60s (ISO 27001 A.12).
+- **`touch_session_db()` en `_is_auth()`**: actualiza `last_seen` en BD para sesiones en memoria, permitiendo auditoría de actividad (ISO 27001 A.12.4).
 - **VACUUM SQLite**: `_vacuum_lock = threading.Lock()` en database.py evita bloqueos concurrentes.
 - **Inyección YAML**: `_sanitize_name()` en web.py limpia caracteres de control del campo nombre antes de guardar en tickers.yaml.
 - **Contraseña inicial**: se escribe en `data/initial-password.txt` (chmod 600) en lugar de logs; el archivo se elimina tras cambiar credenciales.
@@ -460,6 +461,11 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Validación de contenido SVG en QR (ISO 27001 A.14.2)**: `_make_qr_svg()` valida con `_SVG_DANGEROUS_RE` que el SVG generado no contiene `<script>`, `javascript:` ni handlers `on*=` antes de marcarlo como `Markup` seguro.
 - **Límite de tamaño en informes Claude (ISO 27001 A.12.2)**: `save_report()` trunca contenido si supera 200 KB (`_MAX_REPORT_LEN = 200_000`) para prevenir crecimiento ilimitado de BD.
 - **`job_check_security_events` ampliado (ISO 27001 A.12.4)**: añadidos `login_locked` y `unhandled_exception` a los eventos críticos monitorizados; antes solo incluía `gdpr_delete`, `totp_disabled` y `credentials_changed`.
+- **`_cleanup_expired_state()` purga lockout dicts (ISO 27001 A.12)**: además de sesiones y pending_tokens, limpia entradas expiradas de `_failed_logins` y `_account_failed`; previene memory leak en dicts de bloqueo de IP y cuenta en sesiones largas.
+- **`touch_session_db()` en `_is_auth()` (ISO 27001 A.12.4)**: actualiza `last_seen` en BD para sesiones activas en memoria; permite auditoría de actividad de sesión y detección de sesiones inactivas.
+- **`push_subscriptions` en `/gdpr/export` (ISO 27701 Art. 20 — portabilidad)**: la exportación de datos personales incluye suscripciones push con `endpoint_hash` (SHA-256 16 chars) y `user_agent`; el endpoint completo no se exporta para minimizar exposición de datos de terceros.
+- **`entrypoint.sh` con `set -e` y permisos VAPID (ISO 27001 A.10.1.2)**: el script de entrypoint Docker falla rápido (`set -e`) y corrige permisos de `vapid_private.pem` a 0o600 al arrancar si el fichero existe.
+- **Retry con backoff exponencial en `_fetch_price` (ISO 27001 A.12 — disponibilidad)**: `tenacity` aplica 3 intentos con espera exponencial (2–10s) antes de marcar el precio como no disponible; reduce falsos negativos en alertas por fallos transitorios de yfinance.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

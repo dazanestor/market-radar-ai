@@ -501,6 +501,11 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Jinja2 auto-escaping explícito (ISO 27001 A.14.2 — XSS prevention)**: `Jinja2Templates` inicializado con `autoescape=select_autoescape(["html", "xml"])`; no depende de los defaults del framework, garantizando protección XSS estable ante futuros upgrades de Jinja2/FastAPI.
 - **Content-Type validation en `/push/unsubscribe` (ISO 27001 A.14.2 — input validation)**: verifica `Content-Type: application/json` antes de llamar a `request.json()`; devuelve HTTP 415 si no coincide; previene ataques de content-type confusion.
 - **Restricción instancia única documentada en SECURITY.md (ISO 27001 A.12.2)**: el rate limiter `slowapi` usa almacenamiento en memoria; añadida advertencia explícita en SECURITY.md indicando que la aplicación no debe escalarse horizontalmente (multi-réplica anularía rate limiting e IP lockout).
+- **`audit_log` incluido en `/gdpr/export` (ISO 27701 Art. 9 / RGPD Art. 20)**: los eventos de auditoría (logins, cambios de credenciales, etc.) contienen datos personales (IP, timestamp, tipo de evento) y ahora se exportan en la descarga de portabilidad; antes solo se exportaban cartera, operaciones, alertas, tickers y suscripciones push.
+- **`SECURITY.md` excluido de la imagen Docker (ISO 27001 A.5)**: añadido a `.dockerignore`; el documento contiene análisis de riesgos, matrices de amenazas y procedimientos de respuesta a incidentes que no deben distribuirse en la imagen de producción.
+- **TTL de suscripciones Web Push en política de privacidad (ISO 27701 Art. 5 / RGPD Art. 13)**: añadida fila «Suscripciones Web Push: 90 días» a la tabla de plazos de conservación en `privacy.html`; el plazo ya se aplicaba via `purge_old_push_subscriptions()` pero no estaba declarado al usuario.
+- **Validación de formato TOTP en `/setup/first-login` (ISO 27001 A.9.4)**: el handler de primer login llamaba a `pyotp.TOTP.verify()` directamente sin validar que el código sea solo dígitos y ≤10 chars; ahora usa la misma validación que `_verify_totp()`.
+- **Digest de imagen publicada en CI/CD (ISO 27001 A.12.6)**: paso `docker inspect --format RepoDigests` tras el build registra el digest SHA256 en el log de CI; proporciona traza de auditoría de supply chain para cada imagen publicada en GHCR.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

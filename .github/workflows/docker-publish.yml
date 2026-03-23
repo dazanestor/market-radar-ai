@@ -121,6 +121,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ISO 27001 A.12.6 — trazabilidad de supply chain: registrar digest de la imagen publicada
+      - name: Registrar digest de imagen publicada
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          docker pull "$IMAGE"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+          echo "IMAGE_DIGEST=$DIGEST" >> "$GITHUB_ENV"
+          echo "Digest publicado: $DIGEST"
+
       # ISO 27001 A.12.6: escaneo de vulnerabilidades en imagen Docker publicada
       - name: Trivy — escaneo de imagen Docker
         uses: aquasecurity/trivy-action@master

@@ -9,9 +9,10 @@
 .github/
 .claude/
 
-# Documentación (no necesaria en runtime)
+# Documentación (no necesaria en runtime; SECURITY.md contiene análisis de riesgos sensibles)
 README.md
 CLAUDE.md
+SECURITY.md
 
 # Tests
 tests/

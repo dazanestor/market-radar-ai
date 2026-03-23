@@ -1356,6 +1356,11 @@ async def gdpr_export(request: Request, session: Optional[str] = Cookie(default=
             }
             for r in get_all_push_subscriptions()
         ],
+        # ISO 27701 Art. 9 / RGPD Art. 20 — los eventos de auditoría son datos personales
+        "audit_log": [
+            {"event_type": row[0], "ip_address": row[1], "details": row[2], "created_at": row[3]}
+            for row in get_audit_log(limit=10000)
+        ],
     }
 
     log_audit_event("gdpr_export", ip_address=ip, details="full_data_export")
@@ -1591,7 +1596,9 @@ async def first_login_submit(
         errors.append(pwd_err)
     if password != password2:
         errors.append("Las contraseñas no coinciden.")
-    if not pyotp.TOTP(totp_secret).verify(totp_code.strip(), valid_window=2):
+    _tc = totp_code.strip()
+    # ISO 27001 A.9.4 — validar formato antes de verificar (consistente con _verify_totp)
+    if not _tc.isdigit() or len(_tc) > 10 or not pyotp.TOTP(totp_secret).verify(_tc, valid_window=2):
         errors.append("Código 2FA incorrecto. Vuelve a escanear el QR e inténtalo.")
 
     if errors:

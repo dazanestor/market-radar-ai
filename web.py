@@ -1100,7 +1100,7 @@ def _make_history_chart(ticker: str, rows: list) -> Optional[plt.Figure]:
 
 @app.get("/api/upcoming-events")
 @limiter.limit("60/minute")
-async def upcoming_events(session: Optional[str] = Cookie(default=None)):
+async def upcoming_events(request: Request, session: Optional[str] = Cookie(default=None)):
     """Devuelve ex-dividendos y earnings próximos en los próximos 7 días (desde caché BD)."""
     if not _is_auth(session):
         raise HTTPException(401)
@@ -1129,7 +1129,7 @@ async def upcoming_events(session: Optional[str] = Cookie(default=None)):
 
 @app.get("/chart/precio/{ticker}")
 @limiter.limit("20/minute")
-async def chart_precio(ticker: str, session: Optional[str] = Cookie(default=None)):
+async def chart_precio(request: Request, ticker: str, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
     ticker = ticker.upper()
@@ -1154,7 +1154,7 @@ async def chart_precio(ticker: str, session: Optional[str] = Cookie(default=None
 
 @app.get("/chart/historial/{ticker}")
 @limiter.limit("20/minute")
-async def chart_historial(ticker: str, session: Optional[str] = Cookie(default=None)):
+async def chart_historial(request: Request, ticker: str, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
     ticker = ticker.upper()
@@ -1171,7 +1171,7 @@ async def chart_historial(ticker: str, session: Optional[str] = Cookie(default=N
 
 @app.get("/chart/valor-cartera")
 @limiter.limit("20/minute")
-async def chart_valor_cartera(session: Optional[str] = Cookie(default=None)):
+async def chart_valor_cartera(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
     rows = get_portfolio_value_history(days=365)
@@ -1202,7 +1202,7 @@ async def chart_valor_cartera(session: Optional[str] = Cookie(default=None)):
 
 @app.get("/cartera/valor-historico")
 @limiter.limit("30/minute")
-async def valor_historico(session: Optional[str] = Cookie(default=None)):
+async def valor_historico(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
     rows = get_portfolio_value_history(days=90)
@@ -1211,7 +1211,7 @@ async def valor_historico(session: Optional[str] = Cookie(default=None)):
 
 @app.get("/chart/benchmark")
 @limiter.limit("20/minute")
-async def chart_benchmark(session: Optional[str] = Cookie(default=None)):
+async def chart_benchmark(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(401)
 
@@ -4074,6 +4074,7 @@ async def correlacion_page(
 @app.get("/chart/correlacion")
 @limiter.limit("10/minute")
 async def chart_correlacion(
+    request: Request,
     include_watchlist: bool = False,
     session: Optional[str] = Cookie(default=None),
 ):
@@ -4281,7 +4282,7 @@ async def riesgo_page(request: Request, session: Optional[str] = Cookie(default=
 
 @app.get("/chart/riesgo/returns")
 @limiter.limit("10/minute")
-async def chart_riesgo_returns(session: Optional[str] = Cookie(default=None)):
+async def chart_riesgo_returns(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
 
@@ -4622,7 +4623,7 @@ async def optimizacion_page(request: Request, session: Optional[str] = Cookie(de
 
 @app.get("/chart/frontera-eficiente")
 @limiter.limit("10/minute")
-async def chart_frontera_eficiente(session: Optional[str] = Cookie(default=None)):
+async def chart_frontera_eficiente(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
 
@@ -5043,7 +5044,7 @@ async def montecarlo_page(request: Request, session: Optional[str] = Cookie(defa
 
 @app.get("/chart/montecarlo")
 @limiter.limit("10/minute")
-async def chart_montecarlo(session: Optional[str] = Cookie(default=None)):
+async def chart_montecarlo(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         raise HTTPException(403)
 
@@ -5392,6 +5393,7 @@ async def chart_treemap(session: Optional[str] = Cookie(default=None)):
 @app.get("/ticker/{ticker}/analizar")
 @limiter.limit("5/minute")
 async def ticker_analizar(
+    request: Request,
     ticker: str,
     session: Optional[str] = Cookie(default=None),
 ):
@@ -5442,7 +5444,7 @@ async def ticker_analizar(
 
 @app.get("/rebalanceo/sugerencia")
 @limiter.limit("5/minute")
-async def rebalanceo_sugerencia(session: Optional[str] = Cookie(default=None)):
+async def rebalanceo_sugerencia(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return JSONResponse({"error": "No autenticado"}, status_code=401)
 
@@ -5491,7 +5493,7 @@ async def rebalanceo_sugerencia(session: Optional[str] = Cookie(default=None)):
 
 @app.get("/noticias/analizar")
 @limiter.limit("5/minute")
-async def noticias_analizar(session: Optional[str] = Cookie(default=None)):
+async def noticias_analizar(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return JSONResponse({"error": "No autenticado"}, status_code=401)
 

@@ -79,12 +79,19 @@
 {% else %}
 
 {% if has_value_history %}
-<div class="section" style="margin-top:20px;margin-bottom:20px">
+<div class="section" x-data="{ open: true }" style="margin-top:20px;margin-bottom:20px">
   <div class="section-header">
     <h2 class="section-title">Evolución de la cartera</h2>
+    <button type="button" @click="open=!open"
+            style="background:none;border:none;cursor:pointer;color:#8b949e;font-size:12px;padding:4px 8px;border-radius:4px"
+            :style="open ? 'color:#58a6ff' : ''">
+      <span x-text="open ? '▲ Contraer' : '▼ Expandir'"></span>
+    </button>
   </div>
-  <div class="card" style="padding:0;overflow:hidden">
-    <img src="/chart/valor-cartera" alt="Evolución cartera" style="width:100%;display:block" loading="lazy">
+  <div x-show="open" x-transition>
+    <div class="card" style="padding:0;overflow:hidden">
+      <img src="/chart/valor-cartera" alt="Evolución cartera" style="width:100%;display:block" loading="lazy">
+    </div>
   </div>
 </div>
 {% endif %}

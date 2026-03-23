@@ -357,7 +357,8 @@
       <span style="font-size:13px;font-weight:600">
         Reporte #{{ last_report[0] }} — <span class="text-muted" style="font-weight:400">{{ last_report[1] }}</span>
       </span>
-      <svg :style="'width:12px;height:12px;color:#8b949e;flex-shrink:0;transition:transform 0.2s;' + (open ? 'transform:rotate(180deg)' : '')"
+      <svg width="12" height="12" style="color:#8b949e;flex-shrink:0;transition:transform 0.2s"
+           :style="open ? 'transform:rotate(180deg)' : ''"
            fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
         <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
       </svg>

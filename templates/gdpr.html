@@ -85,7 +85,9 @@
       </button>
 
       <!-- Modal de confirmación -->
-      <div x-show="open" x-cloak style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;" @click.self="open=false">
+      <div style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center;"
+           :style="open ? 'display:flex' : 'display:none'"
+           @click.self="open=false">
         <div class="card" style="width:440px;max-width:95vw;border-color:#f85149;">
           <div class="card-header" style="border-color:#f85149;">
             <span class="card-title" style="color:#f85149;">Confirmar eliminación de datos</span>

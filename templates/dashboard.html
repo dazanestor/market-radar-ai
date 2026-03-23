@@ -1,12 +1,7 @@
 {% extends 'base.html' %}
 {% block page_title %}Dashboard{% endblock %}
 
-{% block extra_head %}
-<style>
-  /* Alpine x-show usa removeProperty('display'); el display base viene de aquí, no del inline style */
-  #modal-add-position { display: flex; }
-</style>
-{% endblock %}
+{% block extra_head %}{% endblock %}
 
 {% block content %}
 
@@ -224,14 +219,15 @@
 
 <!-- ── Modal: añadir posición desde watchlist ── -->
 <div x-data="{ open: false, ticker: '', tname: '' }" id="modal-add-position"
-     x-show="open" x-cloak
-     style="position:fixed;inset:0;z-index:1000;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)"
-     @keydown.escape.window="open=false">
+     style="display:none;position:fixed;inset:0;z-index:1000;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)"
+     :style="open ? 'display:flex' : 'display:none'"
+     @keydown.escape.window="open=false"
+     @click.self="open=false">
   <div class="card" style="min-width:320px;max-width:440px;width:100%;padding:20px;position:relative"
        @click.stop>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <span style="font-size:14px;font-weight:600;color:#e6edf3">Añadir posición — <span style="color:#58a6ff" x-text="ticker"></span></span>
-      <button @click="open=false" style="background:none;border:none;cursor:pointer;color:#8b949e;font-size:18px;line-height:1">✕</button>
+      <button type="button" @click="open=false" style="background:none;border:none;cursor:pointer;color:#8b949e;font-size:18px;line-height:1">✕</button>
     </div>
     <form method="post" action="/posiciones/add">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -247,19 +243,19 @@
       <button type="submit" class="btn btn-primary btn-full">Registrar posición</button>
     </form>
   </div>
-  <script>
-    // Expone la función para abrir el modal desde fuera de Alpine
-    window._openAddPositionModal = function(ticker, name) {
-      // Alpine.js: buscar el componente y cambiar su estado
-      var el = document.getElementById('modal-add-position');
-      if (el && el._x_dataStack) {
-        el._x_dataStack[0].ticker = ticker;
-        el._x_dataStack[0].tname = name;
-        el._x_dataStack[0].open = true;
-      }
-    };
-  </script>
 </div>
+<script>
+  // Abre el modal desde fuera de Alpine usando la API correcta de Alpine 3
+  window._openAddPositionModal = function(ticker, name) {
+    var el = document.getElementById('modal-add-position');
+    if (el) {
+      var data = Alpine.$data(el);
+      data.ticker = ticker;
+      data.tname = name;
+      data.open = true;
+    }
+  };
+</script>
 
 <!-- ── Watchlist ── -->
 <div class="section">

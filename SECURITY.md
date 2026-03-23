@@ -512,6 +512,7 @@ Ejecutar anualmente (o tras incidente significativo):
 - [ ] Realizar test de restauración de backup (documentar resultado arriba)
 - [ ] Verificar que hay al menos 7 backups recientes en `data/backups/`
 - [ ] Comprobar checksums: `sha256sum -c data/backups/radar_*.sha256`
+- [ ] Verificar que `PRAGMA foreign_keys=ON` está activo: `python3 -c "from database import _db; conn=next(_db().__enter__() for _ in [1])"` (debe ejecutarse sin error)
 
 ### ISO 27701
 - [ ] Revisar política de privacidad en `/privacy` (vigente y correcta)

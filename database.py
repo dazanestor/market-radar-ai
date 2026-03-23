@@ -259,6 +259,7 @@ def _db():
     # timeout=10s: evita bloqueos indefinidos por contención WAL (ISO 27001 A.12 — disponibilidad)
     conn = sqlite3.connect(DATABASE, timeout=10.0)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")  # ISO 27001 A.12.1: integridad referencial activa
     try:
         yield conn
         conn.commit()

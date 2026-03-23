@@ -571,11 +571,14 @@ def job_vacuum_with_integrity():
             result = conn.execute("PRAGMA integrity_check").fetchone()
             if result and result[0] != "ok":
                 logging.error("SQLite integrity_check FAILED: %s", result[0])
+                # Truncar resultado para evitar payloads excesivos en push (ISO 27001 A.5)
+                result_safe = str(result[0])[:100]
                 _send_push(
                     "Alerta de integridad de BD",
-                    f"PRAGMA integrity_check devolvió: {result[0]}. Restaura desde backup inmediatamente.",
+                    f"integrity_check falló. Restaura desde backup inmediatamente.",
                     "/health",
                 )
+                logging.error("SQLite integrity_check resultado: %s", result_safe)
             else:
                 logging.info("SQLite integrity_check: OK")
     except Exception:

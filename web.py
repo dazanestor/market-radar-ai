@@ -5348,6 +5348,7 @@ async def chart_treemap(session: Optional[str] = Cookie(default=None)):
 # ── Endpoints de análisis IA on-demand ────────────────────────────────────────
 
 @app.get("/ticker/{ticker}/analizar")
+@limiter.limit("5/minute")
 async def ticker_analizar(
     ticker: str,
     session: Optional[str] = Cookie(default=None),
@@ -5398,6 +5399,7 @@ async def ticker_analizar(
 
 
 @app.get("/rebalanceo/sugerencia")
+@limiter.limit("5/minute")
 async def rebalanceo_sugerencia(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return JSONResponse({"error": "No autenticado"}, status_code=401)
@@ -5446,6 +5448,7 @@ async def rebalanceo_sugerencia(session: Optional[str] = Cookie(default=None)):
 
 
 @app.get("/noticias/analizar")
+@limiter.limit("5/minute")
 async def noticias_analizar(session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return JSONResponse({"error": "No autenticado"}, status_code=401)

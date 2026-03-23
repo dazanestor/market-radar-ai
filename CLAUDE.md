@@ -485,6 +485,10 @@ Cada ticker admite los siguientes campos en su metadata:
 - **`_safe_for_prompt()` en `ai_analysis.py` (ISO 27001 A.14.2 — prompt injection)**: función `_safe_for_prompt()` elimina caracteres de control (U+0000–U+001F, U+007F) de campos de usuario (`notes`, tesis) antes de incluirlos en prompts Claude; previene inyección de instrucciones en el LLM.
 - **`_safe()` en `discovery.py` (ISO 27001 A.14.2 — prompt injection)**: función local `_safe()` sanitiza nombres y sectores procedentes de yfinance antes de incluirlos en prompts Claude; datos de terceros (yfinance) pueden contener caracteres de control si la fuente es comprometida.
 - **Timeout 30s en `get_macro_context()` (ISO 27001 A.12 — disponibilidad)**: `as_completed(..., timeout=30)` evita bloqueo indefinido si SPY/VIX/TNX no responden; el job_daily_report completa con datos parciales en lugar de colgarse.
+- **Rate limit 5/minute en endpoints Claude on-demand (ISO 27001 A.12.2)**: `@limiter.limit("5/minute")` añadido a `/ticker/{ticker}/analizar`, `/rebalanceo/sugerencia` y `/noticias/analizar`; los tres invocan Claude API y carecían de protección anti-DoS/quota-drain.
+- **`PRAGMA foreign_keys=ON` en `_db()` (ISO 27001 A.12.1 — integridad)**: activada la comprobación de integridad referencial en SQLite; antes las restricciones FK estaban definidas en el schema pero SQLite las ignoraba silenciosamente.
+- **Mensaje push de integrity_check sanitizado (ISO 27001 A.5)**: `job_vacuum_with_integrity()` ya no incluye el resultado literal del `PRAGMA integrity_check` en el cuerpo del push; usa mensaje genérico e imprime el detalle solo en logs internos.
+- **Timeout Claude en `discovery.py` reducido a 30s (ISO 27001 A.12 — disponibilidad)**: `anthropic.Anthropic(timeout=30)` en lugar de 90s; alineado con el timeout del resto del sistema; evita bloquear el job semanal de descubrimientos si Claude tarda.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

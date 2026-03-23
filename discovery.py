@@ -460,7 +460,7 @@ def _claude_analysis(candidates: list) -> dict:
             + "\n\n".join(lines)
         )
 
-        client = anthropic.Anthropic(api_key=api_key, timeout=90)
+        client = anthropic.Anthropic(api_key=api_key, timeout=30)  # ISO 27001 A.12 — disponibilidad
         resp   = client.messages.create(
             model=model, max_tokens=1500, temperature=0.3,
             messages=[{"role": "user", "content": prompt}],

@@ -466,6 +466,14 @@ Cada ticker admite los siguientes campos en su metadata:
 - **`push_subscriptions` en `/gdpr/export` (ISO 27701 Art. 20 — portabilidad)**: la exportación de datos personales incluye suscripciones push con `endpoint_hash` (SHA-256 16 chars) y `user_agent`; el endpoint completo no se exporta para minimizar exposición de datos de terceros.
 - **`entrypoint.sh` con `set -e` y permisos VAPID (ISO 27001 A.10.1.2)**: el script de entrypoint Docker falla rápido (`set -e`) y corrige permisos de `vapid_private.pem` a 0o600 al arrancar si el fichero existe.
 - **Retry con backoff exponencial en `_fetch_price` (ISO 27001 A.12 — disponibilidad)**: `tenacity` aplica 3 intentos con espera exponencial (2–10s) antes de marcar el precio como no disponible; reduce falsos negativos en alertas por fallos transitorios de yfinance.
+- **Docker `cap_drop: ALL` en todos los servicios (ISO 27001 A.5.7 — mínimo privilegio)**: `market-radar`, `market-radar-web` y `backup` eliminan todas las capabilities Linux; previene escalada de privilegios incluso si el proceso es comprometido.
+- **Docker `mem_limit` y `cpus` en servicios principales (ISO 27001 A.5.7)**: `market-radar` limitado a 768MB/1 CPU; `market-radar-web` a 512MB/0.5 CPU; previene DoS por agotamiento de recursos del host.
+- **Rate limit en `/gdpr/delete` (1/minute) y `/settings/app` POST (5/minute) (ISO 27001 A.12.2)**: endpoints mutantes sin rate limit quedan cubiertos; previene abuso de operaciones costosas o destructivas.
+- **TOTP brute-force counter (ISO 27001 A.9.2.2)**: `_totp_failed_attempts` dict cuenta fallos por pending token; tras `_TOTP_MAX_ATTEMPTS = 3` intentos fallidos se revoca el token y se fuerza re-login completo; `_cleanup_expired_state()` purga contadores de tokens expirados.
+- **`pytr` pineado a commit específico en requirements.txt (ISO 27001 A.12.6)**: dependencia de GitHub pineada a SHA `afdfeef` para builds reproducibles y seguros; evita supply chain compromise si se sube código malicioso a la rama main de pytr.
+- **Dockerfile `chmod 555` en entrypoint.sh (ISO 27001 A.5.7)**: entrypoint es ejecutable pero no modificable por ningún usuario tras el build; previene modificaciones del script de arranque en tiempo de ejecución.
+- **`pool.map(..., timeout=120)` en jobs paralelos del scheduler (ISO 27001 A.12 — disponibilidad)**: `job_check_price_alerts`, `job_check_exdividend` y `job_check_earnings` ahora tienen timeout de 120s en el `pool.map`; si yfinance se bloquea en un ticker, el job completa con datos parciales en lugar de colgar indefinidamente.
+- **TruffleHog secret scanning en CI/CD (ISO 27001 A.12.6)**: step `trufflesecurity/trufflehog@main` detecta secretos verificados en commits antes de Bandit SAST; artefactos de todos los scans retenidos ≥90 días.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

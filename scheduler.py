@@ -203,9 +203,12 @@ def job_check_price_alerts():
             return ticker, None
 
     with ThreadPoolExecutor(max_workers=min(len(tickers_needed), 10)) as pool:
-        for ticker, price_eur in pool.map(_fetch_price, tickers_needed):
-            if price_eur is not None:
-                prices[ticker] = price_eur
+        try:
+            for ticker, price_eur in pool.map(_fetch_price, tickers_needed, timeout=120):
+                if price_eur is not None:
+                    prices[ticker] = price_eur
+        except Exception:
+            logging.warning("Timeout o error en fetch de precios para alertas; usando precios parciales")
 
     for row in alerts:
         alert_id, ticker, target, direction = row[0], row[1], row[2], row[3]
@@ -355,7 +358,11 @@ def job_check_exdividend():
         return None
 
     with ThreadPoolExecutor(max_workers=min(len(all_tickers), 10)) as pool:
-        results = [r for r in pool.map(_check_exdiv, all_tickers) if r]
+        try:
+            results = [r for r in pool.map(_check_exdiv, all_tickers, timeout=120) if r]
+        except Exception:
+            logging.warning("Timeout o error en fetch ex-dividend; resultados parciales")
+            results = []
 
     for r in results:
         cache_7d.append({"ticker": r["ticker"], "date": r["date"]})
@@ -432,7 +439,11 @@ def job_check_earnings():
         return None
 
     with ThreadPoolExecutor(max_workers=min(len(all_tickers), 10)) as pool:
-        results = [r for r in pool.map(_check_earnings, all_tickers) if r]
+        try:
+            results = [r for r in pool.map(_check_earnings, all_tickers, timeout=120) if r]
+        except Exception:
+            logging.warning("Timeout o error en fetch earnings; resultados parciales")
+            results = []
 
     alerts = []
     for r in results:

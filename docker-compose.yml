@@ -5,6 +5,10 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 768m
+    cpus: 1.0
     logging:
       driver: "json-file"
       options:
@@ -38,6 +42,10 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 0.5
     logging:
       driver: "json-file"
       options:
@@ -77,6 +85,8 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     mem_limit: 256m
     cpus: 0.25
     # ISO 27001 A.10.2 / A.12.3: backups cifrados con AES-256-CBC.

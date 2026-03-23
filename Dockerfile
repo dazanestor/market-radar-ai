@@ -18,7 +18,8 @@ RUN mkdir -p static \
 RUN useradd -m appuser && chown -R appuser /app
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# chmod 555: ejecutable pero no modificable por ningún usuario (ISO 27001 A.5.7)
+RUN chmod 555 /entrypoint.sh
 
 USER appuser
 

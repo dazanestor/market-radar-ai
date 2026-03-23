@@ -64,7 +64,7 @@ Esta política debe revisarse cada 12 meses o tras:
 | R07 | Pérdida de datos | Disco lleno / corrupción SQLite | 2 | 4 | **Medio** | WAL mode. Backups diarios. integrity_check dominical. | Bajo |
 | R08 | Sesión secuestrada | Cookie sin Secure flag (HTTP) | 2 | 4 | **Medio** | COOKIE_SECURE=1 en producción + HSTS. SameSite=strict. | Bajo (con HTTPS) |
 | R09 | Transferencia datos a Anthropic | Datos de cartera en prompts Claude | 3 | 3 | **Medio** | DPA Anthropic referenciado. Datos no incluyen PII directa. | Medio |
-| R10 | Ataques de fuerza bruta | Endpoint login sin límites | 1 | 4 | **Bajo** | Rate limit 3/min + bloqueo IP 15min (5 fallos) + bloqueo cuenta 30min (10 fallos multi-IP) | Muy bajo |
+| R10 | Ataques de fuerza bruta | Endpoint login sin límites | 1 | 4 | **Bajo** | Rate limit 3/min + bloqueo IP 15min (5 fallos) + bloqueo cuenta 30min (10 fallos multi-IP) + límite 3 intentos TOTP por sesión | Muy bajo |
 | R11 | Backup sin cifrar accesible | BACKUP_PASSPHRASE no configurado | 3 | 4 | **Alto** | Advertencia en consola. Instruir configuración en producción. | Medio |
 | R12 | Dependencias con CVE | Bibliotecas desactualizadas | 2 | 3 | **Medio** | pip-audit + Trivy en CI/CD (GitHub Actions) | Bajo |
 
@@ -92,6 +92,7 @@ Esta política debe revisarse cada 12 meses o tras:
 | Expiración | 90 días. Aviso a 15 días. Forzado al expirar. | `web.py:_PASSWORD_EXPIRY_DAYS` |
 | Bloqueo IP | 5 intentos fallidos → 15 min de bloqueo | `web.py:_LOCKOUT_MAX, _LOCKOUT_DURATION` |
 | Bloqueo cuenta | 10 intentos fallidos (cualquier IP) → 30 min. Defiende contra rotación de IPs. | `web.py:_ACCOUNT_LOCKOUT_MAX, _ACCOUNT_LOCKOUT_DURATION` |
+| Brute-force TOTP | Máx. 3 intentos TOTP fallidos por sesión pendiente → forzar re-login completo (A.9.2.2). | `web.py:_totp_failed_attempts, _TOTP_MAX_ATTEMPTS` |
 | Cambio credenciales | Requiere contraseña actual. Rechaza sin verificación previa. | `web.py:credentials_update()` |
 | Sesiones | UUID aleatorio 32B. TTL 30 días. Persistentes en BD. Restauradas tras reinicio. | `database.py:create_session_db()` |
 | Sesiones concurrentes | Máximo 5 activas simultáneas. La más antigua se invalida al crear la nueva. | `web.py:_MAX_CONCURRENT_SESSIONS` |

@@ -29,6 +29,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      # ISO 27001 A.12.6: detección de secretos en código fuente e historial de commits
+      - name: TruffleHog — Secret scanning
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.before || '' }}
+          head: HEAD
+          extra_args: --only-verified
+        continue-on-error: true
+
       - name: Bandit — SAST Python (ISO 27001 A.14.2)
         run: |
           pip install bandit[toml] --quiet

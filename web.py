@@ -153,6 +153,9 @@ _csrf_lock = threading.Lock()
 
 # Tokens temporales en memoria: token → timestamp de expiración
 _pending_tokens: dict = {}
+# Contadores de intentos TOTP fallidos por pending token (ISO 27001 A.9.2.2)
+_totp_failed_attempts: dict = {}
+_TOTP_MAX_ATTEMPTS = 3
 
 # Límite de sesiones concurrentes (ISO 27001 A.9.2.3)
 _MAX_CONCURRENT_SESSIONS = 5
@@ -684,6 +687,7 @@ def _cleanup_expired_state() -> None:
     expired_tokens = [tok for tok, exp in list(_pending_tokens.items()) if now > exp]
     for tok in expired_tokens:
         _pending_tokens.pop(tok, None)
+        _totp_failed_attempts.pop(tok, None)  # limpia contadores asociados
     # Limpiar IPs sin intentos fallidos activos (ISO 27001 A.12 — prevenir memory leak)
     expired_ips = [
         ip for ip, attempts in list(_failed_logins.items())
@@ -1344,6 +1348,7 @@ async def gdpr_export(request: Request, session: Optional[str] = Cookie(default=
 
 
 @app.post("/gdpr/delete")
+@limiter.limit("1/minute")
 async def gdpr_delete(
     request: Request,
     session: Optional[str] = Cookie(default=None),
@@ -1501,7 +1506,14 @@ async def totp_verify(
         return RedirectResponse("/login", status_code=303)
     if not _verify_totp(code):
         log_audit_event("totp_failed", ip_address=ip)
+        # Contar intentos fallidos (ISO 27001 A.9.2.2 — protección fuerza bruta TOTP)
+        prev_count = _totp_failed_attempts.pop(totp_pending, 0)
+        new_count  = prev_count + 1
+        if new_count >= _TOTP_MAX_ATTEMPTS:
+            log_audit_event("totp_brute_force", ip_address=ip, details="max_totp_attempts_exceeded")
+            return RedirectResponse("/login?error=totp_locked", status_code=303)
         new_token = _create_pending_token(300)
+        _totp_failed_attempts[new_token] = new_count
         resp = templates.TemplateResponse(
             "login_totp.html", {"request": request, "error": "1"}, status_code=200
         )
@@ -1925,6 +1937,7 @@ async def settings_app_page(
 
 
 @app.post("/settings/app")
+@limiter.limit("5/minute")
 async def settings_app_update(
     request:    Request,
     session:    Optional[str] = Cookie(default=None),

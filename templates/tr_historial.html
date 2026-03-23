@@ -30,14 +30,19 @@
     </div>
   </div>
   <div class="card" style="padding:16px">
-    <img src="/chart/tr/historial/{{ timeframe }}"
+    <img id="img-tr-hist" src="/chart/tr/historial/{{ timeframe }}"
          class="chart-img"
          style="min-height:220px"
-         alt="Historial depósito TR"
-         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-    <div style="display:none;text-align:center;padding:40px 20px;color:#8b949e;font-size:13px">
+         alt="Historial depósito TR">
+    <div id="err-tr-hist" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;font-size:13px">
       No hay datos disponibles para este periodo o error al conectar con Trade Republic.
     </div>
+<script>
+(function(){
+  var img=document.getElementById('img-tr-hist'),err=document.getElementById('err-tr-hist');
+  img.addEventListener('error',function(){img.style.display='none';err.style.display='block';});
+})();
+</script>
   </div>
   <p style="font-size:11px;color:#484f58;margin-top:6px">
     El gráfico se obtiene en tiempo real desde Trade Republic al cargar la página.

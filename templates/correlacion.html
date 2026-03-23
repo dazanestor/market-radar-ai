@@ -38,13 +38,18 @@
     <span style="font-size:11px;color:#8b949e">Actualización: 5 min</span>
   </div>
   <div class="chart-loading" id="shimmer-corr" style="min-height:320px;background:linear-gradient(90deg,#21262d 25%,#2d333b 50%,#21262d 75%);background-size:200% 100%;animation:chart-shimmer 1.4s infinite;border-radius:6px"></div>
-  <img src="{{ chart_url }}" id="img-corr" style="display:none;max-width:100%;border-radius:6px"
-       onload="this.style.display='block';document.getElementById('shimmer-corr').style.display='none'"
-       onerror="document.getElementById('shimmer-corr').style.display='none';document.getElementById('err-corr').style.display='block'">
+  <img src="{{ chart_url }}" id="img-corr" style="display:none;max-width:100%;border-radius:6px">
   <div id="err-corr" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">
     No hay suficientes datos de precio para calcular correlaciones.
   </div>
 </div>
+<script>
+(function(){
+  var img=document.getElementById('img-corr'),sh=document.getElementById('shimmer-corr'),err=document.getElementById('err-corr');
+  img.addEventListener('load',function(){img.style.display='block';sh.style.display='none';});
+  img.addEventListener('error',function(){sh.style.display='none';err.style.display='block';});
+})();
+</script>
 
 <div style="margin-top:14px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
   <p style="font-size:12px;color:#8b949e;margin:0">

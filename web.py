@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 from fastapi import Cookie, FastAPI, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -2413,12 +2413,14 @@ async def ticker_detalle(ticker: str, request: Request,
 
 # ── Tickers ───────────────────────────────────────────────────────────────────
 
+_SEARCH_RE = re.compile(r'^[A-Za-z0-9 .\-]{2,50}$')
+
 @app.get("/tickers/search")
 @limiter.limit("10/minute")
 async def tickers_search(request: Request, q: str = "", session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return JSONResponse([])
-    if len(q) < 2 or len(q) > 50:
+    if not _SEARCH_RE.match(q):
         return JSONResponse([])
     def _do_search():
         import yfinance as yf
@@ -2457,7 +2459,8 @@ async def tickers_search(request: Request, q: str = "", session: Optional[str] =
 
 
 @app.get("/tickers/info")
-async def tickers_info(ticker: str = "", session: Optional[str] = Cookie(default=None)):
+@limiter.limit("30/minute")
+async def tickers_info(request: Request, ticker: str = "", session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session) or not ticker:
         return JSONResponse({})
     def _do_info():
@@ -2794,9 +2797,9 @@ async def posiciones_page(
         return RedirectResponse("/login", status_code=302)
     qs = ""
     if saved:
-        qs = f"?saved={saved}"
+        qs = f"?saved={quote(saved, safe='')}"
     elif error:
-        qs = f"?error={error}"
+        qs = f"?error={quote(error, safe='')}"
     return RedirectResponse(f"/tickers{qs}", status_code=302)
 
 
@@ -2814,11 +2817,13 @@ async def posiciones_add(
         return RedirectResponse("/login", status_code=302)
     _require_csrf(request, csrf_token)
     t = ticker.strip().upper()
+    if not _TICKER_RE.match(t):
+        return RedirectResponse("/tickers?error=ticker_invalido", status_code=303)
     if 0 < shares < 1_000_000 and 0 < avg_price < 1_000_000:
         upsert_position(t, shares, avg_price)
         _invalidate_positions_cache()
         log_audit_event("position_upserted", ip_address=get_remote_address(request), details=f"ticker={t},shares={shares},avg_price={avg_price}")
-        return RedirectResponse(f"/tickers?saved={t}", status_code=303)
+        return RedirectResponse(f"/tickers?saved={quote(t, safe='')}", status_code=303)
     return RedirectResponse("/tickers?error=datos_invalidos", status_code=303)
 
 
@@ -2947,7 +2952,7 @@ async def operaciones_add(
     except Exception:
         logger.exception("Error sincronizando posición tras operación de %s", t)
 
-    return RedirectResponse(f"/operaciones?saved={t}", status_code=303)
+    return RedirectResponse(f"/operaciones?saved={quote(t, safe='')}", status_code=303)
 
 
 @app.post("/operaciones/delete")

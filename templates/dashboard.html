@@ -187,10 +187,9 @@
                   <span x-text="chartOpen ? '▲ Ocultar gráfico' : '▼ Ver gráfico'"></span>
                 </button>
                 <div x-show="chartOpen" x-transition x-cloak style="padding:12px 16px;border-top:1px solid #21262d">
-                  <img src="/chart/precio/{{ row.ticker }}" class="chart-img" loading="lazy"
-                       alt="Gráfico {{ row.ticker }}"
-                       onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-                  <p style="display:none;color:#8b949e;font-size:12px">No hay datos de precio disponibles.</p>
+                  <img src="/chart/precio/{{ row.ticker }}" class="chart-img chart-fallback-img" loading="lazy"
+                       alt="Gráfico {{ row.ticker }}">
+                  <p class="chart-fallback-msg" style="display:none;color:#8b949e;font-size:12px">No hay datos de precio disponibles.</p>
                 </div>
               </div>
             </td>
@@ -319,10 +318,9 @@
                   <span x-text="chartOpen ? '▲ Ocultar gráfico' : '▼ Ver gráfico'"></span>
                 </button>
                 <div x-show="chartOpen" x-transition x-cloak style="padding:12px 16px;border-top:1px solid #21262d">
-                  <img src="/chart/precio/{{ row.ticker }}" class="chart-img" loading="lazy"
-                       alt="Gráfico {{ row.ticker }}"
-                       onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-                  <p style="display:none;color:#8b949e;font-size:12px">No hay datos de precio disponibles.</p>
+                  <img src="/chart/precio/{{ row.ticker }}" class="chart-img chart-fallback-img" loading="lazy"
+                       alt="Gráfico {{ row.ticker }}">
+                  <p class="chart-fallback-msg" style="display:none;color:#8b949e;font-size:12px">No hay datos de precio disponibles.</p>
                 </div>
               </div>
             </td>
@@ -362,4 +360,16 @@
 {% endif %}
 
 {% endif %}
+
+<script>
+(function(){
+  document.querySelectorAll('.chart-fallback-img').forEach(function(img){
+    img.addEventListener('error',function(){
+      img.style.display='none';
+      var msg=img.nextElementSibling;
+      if(msg&&msg.classList.contains('chart-fallback-msg'))msg.style.display='block';
+    });
+  });
+})();
+</script>
 {% endblock %}

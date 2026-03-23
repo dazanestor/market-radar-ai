@@ -92,13 +92,18 @@
   </div>
   <div class="card" style="padding:16px">
     <div class="chart-loading" id="shimmer-ef"></div>
-    <img src="/chart/frontera-eficiente" style="display:none;max-width:100%;border-radius:4px"
-         onload="this.style.display='block';document.getElementById('shimmer-ef').style.display='none'"
-         onerror="document.getElementById('shimmer-ef').style.display='none';document.getElementById('err-ef').style.display='block'">
+    <img id="img-ef" src="/chart/frontera-eficiente" style="display:none;max-width:100%;border-radius:4px">
     <div id="err-ef" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">
       No se pudo generar el gráfico de frontera eficiente.
     </div>
   </div>
+<script>
+(function(){
+  var img=document.getElementById('img-ef'),sh=document.getElementById('shimmer-ef'),err=document.getElementById('err-ef');
+  img.addEventListener('load',function(){img.style.display='block';sh.style.display='none';});
+  img.addEventListener('error',function(){sh.style.display='none';err.style.display='block';});
+})();
+</script>
 </div>
 
 <!-- ── Tabla de pesos por cartera ─────────────────────────────────────────── -->

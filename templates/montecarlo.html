@@ -54,12 +54,17 @@
     <span class="card-title">Simulación 500 paths — 3 años vista</span>
   </div>
   <div class="card-body" style="padding:16px">
-    <img src="/chart/montecarlo" class="chart-img"
+    <img id="img-mc" src="/chart/montecarlo" class="chart-img"
          style="min-height:220px"
-         loading="lazy"
-         onerror="this.style.display='none'">
+         loading="lazy">
   </div>
 </div>
+<script>
+(function(){
+  var img=document.getElementById('img-mc');
+  img.addEventListener('error',function(){img.style.display='none';});
+})();
+</script>
 
 <!-- ── Percentiles detallados ── -->
 <div class="card">

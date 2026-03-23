@@ -67,12 +67,10 @@
     </div>
     <div style="padding:16px">
       <div class="chart-loading" id="shimmer-precio"></div>
-      <img src="/chart/precio/{{ ticker }}" class="chart-img" loading="lazy"
+      <img id="img-precio" src="/chart/precio/{{ ticker }}" class="chart-img" loading="lazy"
            alt="Gráfico de precio {{ ticker }}"
-           style="display:none"
-           onload="this.style.display='block';document.getElementById('shimmer-precio').style.display='none'"
-           onerror="document.getElementById('shimmer-precio').style.display='none';this.nextElementSibling.style.display='block'">
-      <div style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">
+           style="display:none">
+      <div id="err-precio" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">
         No hay datos de precio disponibles para {{ ticker }}.
       </div>
     </div>
@@ -197,12 +195,10 @@
     </div>
     <div style="padding:16px">
       <div class="chart-loading" id="shimmer-hist"></div>
-      <img src="/chart/historial/{{ ticker }}" class="chart-img" loading="lazy"
+      <img id="img-hist" src="/chart/historial/{{ ticker }}" class="chart-img" loading="lazy"
            alt="Historial drawdown {{ ticker }}"
-           style="display:none"
-           onload="this.style.display='block';document.getElementById('shimmer-hist').style.display='none'"
-           onerror="document.getElementById('shimmer-hist').style.display='none';this.nextElementSibling.style.display='block'">
-      <div style="display:none;padding:20px;text-align:center;color:#8b949e;font-size:13px">
+           style="display:none">
+      <div id="err-hist" style="display:none;padding:20px;text-align:center;color:#8b949e;font-size:13px">
         No hay suficientes datos históricos aún.
       </div>
     </div>
@@ -273,4 +269,16 @@
   </div>
 </div>
 
+<script>
+(function(){
+  function shimmerChart(imgId,shId,errId){
+    var img=document.getElementById(imgId),sh=document.getElementById(shId),err=document.getElementById(errId);
+    if(!img)return;
+    img.addEventListener('load',function(){img.style.display='block';if(sh)sh.style.display='none';});
+    img.addEventListener('error',function(){if(sh)sh.style.display='none';if(err)err.style.display='block';});
+  }
+  shimmerChart('img-precio','shimmer-precio','err-precio');
+  shimmerChart('img-hist','shimmer-hist','err-hist');
+})();
+</script>
 {% endblock %}

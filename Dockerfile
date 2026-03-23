@@ -12,8 +12,10 @@ RUN pip install --no-cache-dir --root-user-action=ignore --upgrade pip \
 COPY . .
 
 # Descargar Alpine.js 3 para servir localmente (elimina dependencia de CDN externo)
+# SHA-256 fijado para verificar integridad del supply chain (OWASP A08 / ISO 27001 A.12.6)
 RUN mkdir -p static \
- && curl -fsSL https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js -o static/alpine.min.js
+ && curl -fsSL https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js -o static/alpine.min.js \
+ && echo "3ed1eed252488921df65e363d6715deb04d7f92aaedb9e52199fdf73cb1e0ad3  static/alpine.min.js" | sha256sum -c -
 
 RUN useradd -m appuser && chown -R appuser /app
 

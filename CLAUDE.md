@@ -498,6 +498,9 @@ Cada ticker admite los siguientes campos en su metadata:
 - **`--forwarded-allow-ips` restringido a `127.0.0.1` (ISO 27001 A.9.2 — anti-spoofing)**: uvicorn ya no acepta cualquier IP en `X-Forwarded-For`; solo confía en `127.0.0.1` como fuente de la IP real del cliente; previene elusión del rate limiter e IP-based lockout via header spoofing.
 - **Audit log en `/settings/app` POST (ISO 27001 A.12.4)**: cada cambio de configuración genera evento `setting_changed` o `setting_deleted` en audit_log; valores de `API_KEY`/`PASSWORD`/`SECRET` se enmascaran como `***`; antes no había traza de cambios de configuración.
 - **`_check_db_integrity()` al arrancar (ISO 27001 A.12.1 — integridad)**: `init_db()` ejecuta `PRAGMA integrity_check(1)` antes de crear tablas; si la BD está corrupta, el proceso aborta con error claro en lugar de continuar silenciosamente sobre datos inválidos.
+- **Jinja2 auto-escaping explícito (ISO 27001 A.14.2 — XSS prevention)**: `Jinja2Templates` inicializado con `autoescape=select_autoescape(["html", "xml"])`; no depende de los defaults del framework, garantizando protección XSS estable ante futuros upgrades de Jinja2/FastAPI.
+- **Content-Type validation en `/push/unsubscribe` (ISO 27001 A.14.2 — input validation)**: verifica `Content-Type: application/json` antes de llamar a `request.json()`; devuelve HTTP 415 si no coincide; previene ataques de content-type confusion.
+- **Restricción instancia única documentada en SECURITY.md (ISO 27001 A.12.2)**: el rate limiter `slowapi` usa almacenamiento en memoria; añadida advertencia explícita en SECURITY.md indicando que la aplicación no debe escalarse horizontalmente (multi-réplica anularía rate limiting e IP lockout).
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

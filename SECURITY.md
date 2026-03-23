@@ -317,6 +317,11 @@ PASO D: Registrar en este fichero (sección 7.4)
 | **RTO** (Recovery Time Objective) | ≤ 4 horas |
 | **RPO** (Recovery Point Objective) | ≤ 24 horas (frecuencia de backup diaria) |
 
+> **⚠️ Restricción de despliegue — Instancia única (ISO 27001 A.12.2):**
+> El rate limiter (`slowapi`) utiliza almacenamiento **en memoria** por diseño.
+> Esta aplicación **no debe escalarse horizontalmente** (múltiples réplicas, Docker Swarm, Kubernetes).
+> En un despliegue multi-instancia, cada réplica mantendría contadores independientes, anulando los controles de rate limiting e IP lockout. Si se requiere escalado horizontal, debe migrarse a un backend compartido (Redis) antes del despliegue.
+
 ### 8.2 Procedimiento de restauración desde backup cifrado
 
 ```bash

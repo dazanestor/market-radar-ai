@@ -37,6 +37,7 @@ from fastapi import Cookie, FastAPI, Form, HTTPException, Request, UploadFile, F
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from jinja2 import select_autoescape
 from markupsafe import Markup, escape
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -461,7 +462,11 @@ init_db()  # Asegura migraciones de BD tanto en uvicorn directo como vía __main
 # Ficheros estáticos (Alpine.js auto-alojado, etc.)
 if os.path.isdir("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
-templates    = Jinja2Templates(directory="templates")
+# ISO 27001 A.14.2 — auto-escaping explícito; no depende de defaults del framework (XSS prevention)
+templates    = Jinja2Templates(
+    directory="templates",
+    autoescape=select_autoescape(enabled_extensions=("html", "xml")),
+)
 _executor    = ThreadPoolExecutor(max_workers=4)
 _chart_lock  = threading.Lock()  # matplotlib no es thread-safe
 
@@ -5853,6 +5858,10 @@ async def push_unsubscribe(
 ):
     if not _is_auth(session):
         raise HTTPException(status_code=401)
+    # ISO 27001 A.14.2 — validar Content-Type antes de parsear JSON (evita content-type confusion)
+    ct = request.headers.get("content-type", "")
+    if not ct.startswith("application/json"):
+        raise HTTPException(status_code=415, detail="Content-Type debe ser application/json")
     try:
         body = await request.json()
     except Exception:

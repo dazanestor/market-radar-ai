@@ -548,40 +548,47 @@ def opp_class(v) -> str:
     return "badge badge-red"
 
 
+_TG_SECTION_RE = re.compile(
+    r'^[\U0001F300-\U0001FFFF\U00002600-\U000027BF\u2600-\u27BF]',
+    re.UNICODE,
+)
+_TG_ALLCAPS_RE = re.compile(r'^[*_\s]*[A-ZÁÉÍÓÚÑ\s\-—]{4,}[*_\s]*$')
+
+
+def _tg_inline(line: str) -> str:
+    """Aplica formato inline (negrita, cursiva, código) a una línea ya escapada."""
+    line = re.sub(r'`([^`]+)`',       r'<code class="tg-code">\1</code>', line)
+    line = re.sub(r'\*\*([^\*]+)\*\*', r'<strong>\1</strong>', line)
+    line = re.sub(r'\*([^\*]+)\*',     r'<strong>\1</strong>', line)
+    line = re.sub(r'_([^_]+)_',        r'<em>\1</em>', line)
+    return line
+
+
 def tg_to_html(text) -> Markup:
     if not text:
         return Markup("")
-    text = str(escape(text))
-    # Inline formatting
-    text = re.sub(r'`([^`\n]+)`',    r'<code class="tg-code">\1</code>', text)
-    text = re.sub(r'\*\*([^\*\n]+)\*\*', r'<strong>\1</strong>', text)
-    text = re.sub(r'\*([^\*\n]+)\*', r'<strong>\1</strong>', text)
-    text = re.sub(r'_([^_\n]+)_',    r'<em>\1</em>', text)
-    # Section titles: lines that start with an emoji or are ALL-CAPS (≥4 chars, no digits)
-    _SECTION_RE = re.compile(
-        r'^([\U0001F300-\U0001FFFF\U00002600-\U000027BF].*|[A-ZÁÉÍÓÚÑ\s]{4,})$',
-        re.MULTILINE | re.UNICODE,
-    )
     lines = text.split('\n')
     out = []
-    buf = []  # lines accumulating into a paragraph
+    buf: list[str] = []
 
     def flush():
         if buf:
             content = ' '.join(l for l in buf if l)
             if content:
                 out.append(f'<p>{content}</p>')
-            buf.clear()
+        buf.clear()
 
     for line in lines:
         stripped = line.strip()
         if not stripped:
             flush()
-        elif _SECTION_RE.match(stripped):
+        elif _TG_SECTION_RE.search(stripped) or _TG_ALLCAPS_RE.match(stripped):
+            # Cabecera de sección: limpiar asteriscos/guiones y escapar
             flush()
-            out.append(f'<div class="report-section-title">{stripped}</div>')
+            clean = str(escape(stripped.strip('*_ ')))
+            out.append(f'<div class="report-section-title">{clean}</div>')
         else:
-            buf.append(stripped)
+            buf.append(_tg_inline(str(escape(stripped))))
     flush()
     return Markup(''.join(out))
 

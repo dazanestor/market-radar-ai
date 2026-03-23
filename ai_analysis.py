@@ -225,36 +225,36 @@ def analyze(portfolio_df, watchlist_df, macro=None, news_by_ticker=None):
     news_str = _format_news(news_by_ticker)
 
     prompt = f"""Eres un analista de inversiones disciplinado. Sé breve, concreto y estructurado.
-IMPORTANTE: Texto para Telegram. NO uses tablas markdown (|), NO uses ## o ###, NO uses **negrita**. Usa *negrita* con asterisco simple, guiones para listas.
+IMPORTANTE: Usa *negrita* con asterisco simple para enfatizar. NO uses tablas markdown (|), NO uses ## o ###, NO uses **doble asterisco**. Guiones para listas. Cada sección empieza con su emoji en la primera línea.
 
 {macro_str}{portfolio_total_str}
-*INSTRUCCIONES DE ANÁLISIS POR HORIZONTE*
+INSTRUCCIONES DE ANÁLISIS POR HORIZONTE
 Para cada activo, el campo "Enfoque" indica la metodología a aplicar:
 - Horizonte CORTO (⚡): Prioriza RSI, momentum y drawdown. No exijas fundamentales sólidos. Busca rebotes técnicos.
 - Horizonte MEDIO (📈): Equilibra técnico y fundamental. Considera momentum, PER y ROE. Identifica catalizadores.
 - Horizonte LARGO (🏦): Prioriza calidad del negocio, dividendo y ventaja competitiva. ROE, margen, D/E. Ignora ruido diario.
 - Sin horizonte (❓): Aplica criterio equilibrado, menciona que sería útil definir el horizonte.
 
-*CARTERA ACTUAL* (ordenada por horizonte: corto → medio → largo)
+CARTERA ACTUAL (ordenada por horizonte: corto → medio → largo)
 {portfolio_str}
 
-*WATCHLIST* (ordenada por score, mayor primero)
+WATCHLIST (ordenada por score, mayor primero)
 {watchlist_str}
 
 {news_str}
 
 Responde en este formato exacto (sin añadir secciones extra):
 
-*RESUMEN EJECUTIVO*
+📊 RESUMEN EJECUTIVO
 1-2 frases: estado general de la cartera hoy en relación al contexto macro.
 
-*CARTERA*
+💼 CARTERA
 Para cada posición: acción recomendada (mantener / recortar X% / añadir X%), motivo adaptado estrictamente al horizonte del activo. Si hay precio objetivo de analistas, indica el potencial implícito (precio actual vs target). Máximo 2 líneas por posición.
 
-*WATCHLIST — TOP OPORTUNIDADES*
+👀 WATCHLIST — TOP OPORTUNIDADES
 Los 3 activos con mejor relación calidad/precio considerando su horizonte específico. Para cada uno: por qué es atractivo ahora y qué nivel/condición lo haría más interesante aún. Si el consenso de analistas está disponible, menciónalo.
 
-*ALERTAS*
+⚠️ ALERTAS
 Señales de riesgo relevantes (noticias negativas, deterioro de fundamentales, drawdown acelerado, RSI sobrecomprado en corto plazo, consenso negativo) o "Sin alertas." si no hay ninguna.
 """
 

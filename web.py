@@ -614,6 +614,14 @@ def _create_session(ip: Optional[str] = None, user_agent: Optional[str] = None) 
                 _active_sessions.pop(oldest, None)
                 delete_session_db(oldest)
                 logger.info("Sesión más antigua rotada por límite de concurrencia (max=%d)", _MAX_CONCURRENT_SESSIONS)
+                try:
+                    log_audit_event(
+                        "session_rotated_max_concurrent",
+                        ip_address=ip,
+                        details=f"max={_MAX_CONCURRENT_SESSIONS}",
+                    )
+                except Exception:
+                    pass
     except Exception:
         pass
     sid = secrets.token_urlsafe(32)
@@ -721,6 +729,10 @@ def _load_sessions_from_db() -> None:
                 _active_sessions[sid] = _time.monotonic() + remaining
         if rows:
             logger.info("Sesiones restauradas desde BD: %d", len(rows))
+            try:
+                log_audit_event("sessions_restored_from_db", details=f"count={len(rows)}")
+            except Exception:
+                pass
     except Exception:
         logger.exception("Error cargando sesiones desde BD")
 
@@ -1285,6 +1297,7 @@ async def privacy_page(request: Request, session: Optional[str] = Cookie(default
 
 
 @app.get("/gdpr", response_class=HTMLResponse)
+@limiter.limit("10/minute")
 async def gdpr_page(request: Request, session: Optional[str] = Cookie(default=None), deleted: str = ""):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
@@ -1374,6 +1387,7 @@ async def gdpr_delete(
 # ── Audit log (ISO 27001 A.12.4.1) ───────────────────────────────────────────
 
 @app.get("/audit-log", response_class=HTMLResponse)
+@limiter.limit("10/minute")
 async def audit_log_page(
     request: Request,
     session: Optional[str] = Cookie(default=None),
@@ -3241,14 +3255,19 @@ async def alertas_add(
     _require_csrf(request, csrf_token)
     t = ticker.strip().upper()
 
-    # Validate and sanitize expires_at
+    # Validate and sanitize expires_at (ISO 27001 A.14.2 — validación de fechas)
     _expires_at = None
     if expires_at and expires_at.strip():
         try:
-            datetime.date.fromisoformat(expires_at.strip())
+            exp_date = datetime.date.fromisoformat(expires_at.strip())
+            today = datetime.date.today()
+            if exp_date < today:
+                return RedirectResponse("/alertas?error=fecha_pasada", status_code=303)
+            if (exp_date - today).days > 3650:  # máx. 10 años
+                return RedirectResponse("/alertas?error=fecha_lejana", status_code=303)
             _expires_at = expires_at.strip()
         except ValueError:
-            pass
+            return RedirectResponse("/alertas?error=fecha_invalida", status_code=303)
 
     if condition_type == "price_pct":
         # Alerta por % desde precio actual

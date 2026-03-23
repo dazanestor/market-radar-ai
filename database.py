@@ -1121,3 +1121,16 @@ def purge_old_push_subscriptions(days: int = 90) -> int:
             (f"-{days} days",),
         )
         return cur.rowcount
+
+
+# ── Limpieza de market_discoveries (ISO 27701 Art. 5 — minimización) ───────────
+
+def purge_old_market_discoveries(days: int = 7) -> int:
+    """Elimina descubrimientos de mercado más antiguos que `days` días (TTL 7d)."""
+    with _db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM market_discoveries WHERE generated_at < datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        return cur.rowcount

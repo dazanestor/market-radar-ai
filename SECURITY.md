@@ -462,6 +462,7 @@ git push origin v1.2.0
 | Registro de auditoría | 365 días | `purge_old_audit_log()` — domingos |
 | Sesiones | 30 días | `job_cleanup_sessions()` — diario 03:00 |
 | Suscripciones push | 90 días | `purge_old_push_subscriptions()` — domingos |
+| Descubrimientos de mercado | 7 días | `purge_old_market_discoveries()` — domingos |
 | Backups | 7 copias rotantes | Servicio `backup` — diario |
 | Datos de cartera | Hasta borrado manual / GDPR | `/gdpr/delete` |
 
@@ -511,12 +512,14 @@ Ejecutar anualmente (o tras incidente significativo):
 ### ISO 27701
 - [ ] Revisar política de privacidad en `/privacy` (vigente y correcta)
 - [ ] Verificar que el endpoint `/gdpr/export` genera el JSON correctamente (incluye push_subscriptions con endpoint_hash)
-- [ ] Comprobar que la retención automática elimina datos según los plazos definidos
+- [ ] Comprobar que la retención automática elimina datos según los plazos definidos (incluye market_discoveries ≤7d)
+- [ ] Verificar que los mensajes Web Push de error no exponen detalles técnicos (tipo de excepción, paths, etc.)
 
 ### A.12 Disponibilidad — Resiliencia
 - [ ] Verificar que `_fetch_price` con retry (`tenacity`) no genera warning excesivos en logs
 - [ ] Comprobar que `entrypoint.sh` corrige permisos de `vapid_private.pem` en cada arranque
-- [ ] Revisar que `_cleanup_expired_state()` está purgando `_failed_logins` y `_account_failed` (sin acumulación indefinida)
+- [ ] Revisar que `_cleanup_expired_state()` está purgando `_failed_logins`, `_account_failed` y `_totp_failed_attempts` (sin acumulación indefinida)
+- [ ] Comprobar en `/audit-log` que aparecen eventos `sessions_restored_from_db` tras reinicio del contenedor
 
 ---
 

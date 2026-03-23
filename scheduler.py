@@ -26,6 +26,7 @@ from database import (
     get_unnotified_alerts, mark_alert_notified, vacuum_db,
     purge_old_price_history, purge_old_news_cache, purge_old_audit_log, effective,
     purge_old_push_subscriptions,
+    purge_old_market_discoveries,
     get_all_positions,
     get_tickers_as_yaml_dict,
     get_latest_snapshot_as_df,
@@ -74,8 +75,8 @@ def job_daily_report():
         df, errors = generate()
 
         if df.empty:
-            detail = f": {', '.join(errors)}" if errors else ""
-            _send_push("Error en reporte diario", f"No se pudo obtener datos de ningún ticker{detail}", "/reportes")
+            # No incluir detalles técnicos en push (ISO 27001 A.5 — evitar divulgación de info interna)
+            _send_push("Error en reporte diario", "No se pudo obtener datos. Revisa los logs en el servidor.", "/reportes")
             return
 
         df = score_by_horizon(df)
@@ -130,7 +131,8 @@ def job_daily_report():
             ai_report = analyze(portfolio_df, watchlist_df, macro=macro, news_by_ticker=news_by_ticker)
         except Exception as e:
             logging.error("Error en Claude API: %s", e)
-            _send_push("Error en reporte diario", f"Error al generar análisis con IA: {e}", "/reportes")
+            # No exponer detalles de error de API en push (ISO 27001 A.5)
+            _send_push("Error en reporte diario", "No fue posible generar el análisis. Revisa /reportes.", "/reportes")
             return
 
         save_report(ai_report)
@@ -153,7 +155,8 @@ def job_daily_report():
 
     except Exception as e:
         logging.exception("Error en el reporte diario")
-        _send_push("Error en reporte diario", f"{type(e).__name__}: {str(e)[:150]}", "/reportes")
+        # No exponer tipo/mensaje de excepción en push (ISO 27001 A.5 — info disclosure)
+        _send_push("Error en reporte diario", "Error inesperado al generar el informe. Revisa los logs.", "/reportes")
 
 
 def job_check_price_alerts():
@@ -512,9 +515,11 @@ def job_vacuum_db():
         nc = purge_old_news_cache(days=30)
         al = purge_old_audit_log(days=365)
         ps = purge_old_push_subscriptions(days=90)
+        md = purge_old_market_discoveries(days=7)  # ISO 27701 Art. 5 — minimización
         logging.info(
-            "Purga: %d snapshots >1 año, %d traducciones >30 días, %d eventos auditoría >1 año, %d push subscriptions >90 días.",
-            ph, nc, al, ps
+            "Purga: %d snapshots >1 año, %d traducciones >30 días, %d eventos auditoría >1 año, "
+            "%d push subscriptions >90 días, %d descubrimientos >7 días.",
+            ph, nc, al, ps, md
         )
         vacuum_db()
         logging.info("VACUUM semanal completado.")

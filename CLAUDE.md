@@ -474,6 +474,12 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Dockerfile `chmod 555` en entrypoint.sh (ISO 27001 A.5.7)**: entrypoint es ejecutable pero no modificable por ningún usuario tras el build; previene modificaciones del script de arranque en tiempo de ejecución.
 - **`pool.map(..., timeout=120)` en jobs paralelos del scheduler (ISO 27001 A.12 — disponibilidad)**: `job_check_price_alerts`, `job_check_exdividend` y `job_check_earnings` ahora tienen timeout de 120s en el `pool.map`; si yfinance se bloquea en un ticker, el job completa con datos parciales en lugar de colgar indefinidamente.
 - **TruffleHog secret scanning en CI/CD (ISO 27001 A.12.6)**: step `trufflesecurity/trufflehog@main` detecta secretos verificados en commits antes de Bandit SAST; artefactos de todos los scans retenidos ≥90 días.
+- **Sanitización de errores en push notifications (ISO 27001 A.5 — minimización de info)**: scheduler.py ya no incluye `type(e).__name__` ni `str(e)` en mensajes Web Push; todos los errores del reporte diario usan mensajes genéricos para evitar fuga de detalles técnicos al servicio de push externo.
+- **`purge_old_market_discoveries(days=7)` (ISO 27701 Art. 5 — minimización)**: función añadida en `database.py`; llamada desde `job_vacuum_db()` cada domingo; elimina descubrimientos de mercado con más de 7 días, alineando el ciclo de vida con el TTL declarado.
+- **Rate limit en `/gdpr` GET (10/min) y `/audit-log` GET (10/min) (ISO 27001 A.12.4 / A.12.2)**: evita enumeración del log de auditoría y abuso del formulario GDPR.
+- **Audit log en rotación de sesión concurrente (ISO 27001 A.9.2.3)**: `_create_session()` registra evento `session_rotated_max_concurrent` cuando invalida la sesión más antigua por superar `_MAX_CONCURRENT_SESSIONS`.
+- **Audit log en restauración de sesiones (ISO 27001 A.12.4)**: `_load_sessions_from_db()` registra evento `sessions_restored_from_db` con contador al arrancar; permite detectar si sesiones fueron manipuladas en BD entre reinicios.
+- **Validación completa de `expires_at` en alertas (ISO 27001 A.14.2)**: rechaza fechas pasadas (`error=fecha_pasada`), fechas >10 años en el futuro (`error=fecha_lejana`) y formatos inválidos (`error=fecha_invalida`); antes solo se ignoraban silenciosamente.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

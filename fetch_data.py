@@ -2,7 +2,7 @@ import anthropic
 import logging
 import math
 import yfinance as yf
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -226,7 +226,14 @@ def get_macro_context():
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         futs = [pool.submit(f) for f in (_fetch_spy, _fetch_vix, _fetch_tnx)]
-        for fut in futs:
-            result.update(fut.result())
+        # ISO 27001 A.12 — disponibilidad: timeout de 30s para evitar bloqueo indefinido
+        try:
+            for fut in as_completed(futs, timeout=30):
+                try:
+                    result.update(fut.result())
+                except Exception:
+                    pass
+        except Exception:
+            logging.warning("Timeout obteniendo contexto macro; datos parciales")
 
     return result

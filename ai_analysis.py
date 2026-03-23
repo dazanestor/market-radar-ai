@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import re
 
 import anthropic
 from tenacity import retry, stop_after_attempt, wait_exponential, before_sleep_log
@@ -8,6 +9,13 @@ from tenacity import retry, stop_after_attempt, wait_exponential, before_sleep_l
 from config import ANTHROPIC_API_KEY, MODEL
 
 logger = logging.getLogger("ai_analysis")
+
+# ISO 27001 A.14.2: limpiar texto de usuario antes de incluirlo en prompts Claude
+def _safe_for_prompt(text: str, max_len: int = 500) -> str:
+    """Elimina caracteres de control para prevenir prompt injection."""
+    if not text:
+        return ""
+    return re.sub(r"[\x00-\x1f\x7f]", " ", str(text).strip())[:max_len]
 
 
 def _effective_api_key() -> str:
@@ -320,7 +328,7 @@ def explain_ticker(ticker: str, notes: str, csv_row: dict, fundamentals: dict) -
     if fund:
         parts.append("Fundamentales: " + ", ".join(str(f) for f in fund))
     if notes:
-        parts.append(f"Tesis del inversor: {notes}")
+        parts.append(f"Tesis del inversor: {_safe_for_prompt(notes)}")
 
     data_str = "\n".join(parts) if parts else "Sin datos suficientes."
 

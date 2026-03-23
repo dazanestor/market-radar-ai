@@ -2540,6 +2540,7 @@ async def tickers_page(
 
 
 @app.post("/tickers/add")
+@limiter.limit("20/minute")
 async def tickers_add(
     request:       Request,
     session:       Optional[str] = Cookie(default=None),
@@ -2610,6 +2611,7 @@ async def tickers_add(
 
 
 @app.post("/tickers/update")
+@limiter.limit("20/minute")
 async def tickers_update(
     request:       Request,
     session:       Optional[str] = Cookie(default=None),
@@ -2721,6 +2723,7 @@ async def tickers_enrich(
 
 
 @app.post("/tickers/delete")
+@limiter.limit("10/minute")
 async def tickers_delete(
     request:    Request,
     session:   Optional[str] = Cookie(default=None),
@@ -2761,6 +2764,7 @@ async def posiciones_page(
 
 
 @app.post("/posiciones/add")
+@limiter.limit("20/minute")
 async def posiciones_add(
     request:    Request,
     session:   Optional[str] = Cookie(default=None),
@@ -2782,6 +2786,7 @@ async def posiciones_add(
 
 
 @app.post("/posiciones/delete")
+@limiter.limit("10/minute")
 async def posiciones_delete(
     request:    Request,
     session: Optional[str] = Cookie(default=None),
@@ -2854,6 +2859,7 @@ async def operaciones_page(
 
 
 @app.post("/operaciones/add")
+@limiter.limit("20/minute")
 async def operaciones_add(
     request:    Request,
     session:    Optional[str] = Cookie(default=None),
@@ -2908,6 +2914,7 @@ async def operaciones_add(
 
 
 @app.post("/operaciones/delete")
+@limiter.limit("10/minute")
 async def operaciones_delete(
     request:    Request,
     session:    Optional[str] = Cookie(default=None),
@@ -3241,6 +3248,7 @@ async def alertas_page(request: Request, session: Optional[str] = Cookie(default
 
 
 @app.post("/alertas/add")
+@limiter.limit("20/minute")
 async def alertas_add(
     request:        Request,
     session:        Optional[str] = Cookie(default=None),
@@ -3334,6 +3342,7 @@ async def alertas_add(
 
 
 @app.post("/alertas/delete")
+@limiter.limit("10/minute")
 async def alertas_delete(
     request:  Request,
     session:  Optional[str] = Cookie(default=None),
@@ -3349,6 +3358,7 @@ async def alertas_delete(
 
 
 @app.post("/alertas/reactivar")
+@limiter.limit("10/minute")
 async def alertas_reactivar(
     request:         Request,
     session:         Optional[str] = Cookie(default=None),
@@ -5784,6 +5794,7 @@ async def push_vapid_public_key():
 
 
 @app.post("/push/subscribe")
+@limiter.limit("10/minute")
 async def push_subscribe(
     request:    Request,
     session:    Optional[str] = Cookie(default=None),
@@ -5795,6 +5806,9 @@ async def push_subscribe(
     if not _is_auth(session):
         raise HTTPException(status_code=401)
     _require_csrf(request, csrf_token)
+    # Validar longitudes (ISO 27001 A.14.2 — prevenir payloads excesivos)
+    if len(endpoint) > 500 or len(p256dh) > 500 or len(auth) > 500:
+        raise HTTPException(status_code=400, detail="payload demasiado grande")
     try:
         _parsed = urlparse(endpoint)
         if _parsed.scheme != "https" or not _parsed.netloc:

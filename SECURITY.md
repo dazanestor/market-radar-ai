@@ -58,6 +58,7 @@ Esta política debe revisarse cada 12 meses o tras:
 | R01 | Acceso no autorizado | Contraseña débil / sin 2FA | 3 | 5 | **Alto** | bcrypt + TOTP + bloqueo IP + expiración 90d | Bajo |
 | R02 | Robo de BD SQLite | Acceso físico al servidor | 2 | 5 | **Alto** | Backups cifrados AES-256. BD sin cifrado adicional. | Medio |
 | R03 | Inyección SQL | Queries no parametrizadas | 1 | 5 | **Medio** | Todos los queries usan placeholders `?` | Muy bajo |
+| R03b | Prompt injection | Datos de usuario/yfinance en prompts Claude | 2 | 3 | **Medio** | `_safe_for_prompt()` elimina control chars en `ai_analysis.py` y `discovery.py` | Bajo |
 | R04 | XSS / CSRF | Formularios web sin protección | 2 | 4 | **Medio** | CSP strict + CSRF token rotatorio + escape Jinja2 | Bajo |
 | R05 | Fuga de API Key | `.env` expuesto en logs o repositorio | 2 | 4 | **Medio** | `.gitignore`, `.dockerignore`. Sin hardcode. | Bajo |
 | R06 | Fallo de disponibilidad | Caída de servicio yfinance / Anthropic | 3 | 3 | **Medio** | Timeouts (120s Claude). Retries en fetch. Job de health check. | Bajo |
@@ -189,6 +190,9 @@ Esta política debe revisarse cada 12 meses o tras:
 | `unhandled_exception` | Excepción no capturada en un endpoint | ERROR |
 | `gdpr_export` | Exportación de datos personales | INFO |
 | `gdpr_delete` | Borrado de datos personales | WARNING |
+| `session_rotated_max_concurrent` | Sesión más antigua invalidada al superar límite concurrente | INFO |
+| `sessions_restored_from_db` | Sesiones activas restauradas desde BD al arrancar | INFO |
+| `totp_brute_force` | Superado límite de intentos TOTP — forzar re-login | WARNING |
 
 > **Privacidad en logs**: ningún evento registra el nombre de usuario en texto plano. Se usa `uname_hash` = SHA-256(username) hexdigest truncado a 16 caracteres (ISO 27701 Art. 5 — minimización de datos).
 

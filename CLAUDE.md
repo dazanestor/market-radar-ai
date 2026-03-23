@@ -480,6 +480,11 @@ Cada ticker admite los siguientes campos en su metadata:
 - **Audit log en rotación de sesión concurrente (ISO 27001 A.9.2.3)**: `_create_session()` registra evento `session_rotated_max_concurrent` cuando invalida la sesión más antigua por superar `_MAX_CONCURRENT_SESSIONS`.
 - **Audit log en restauración de sesiones (ISO 27001 A.12.4)**: `_load_sessions_from_db()` registra evento `sessions_restored_from_db` con contador al arrancar; permite detectar si sesiones fueron manipuladas en BD entre reinicios.
 - **Validación completa de `expires_at` en alertas (ISO 27001 A.14.2)**: rechaza fechas pasadas (`error=fecha_pasada`), fechas >10 años en el futuro (`error=fecha_lejana`) y formatos inválidos (`error=fecha_invalida`); antes solo se ignoraban silenciosamente.
+- **Rate limits en todos los POST mutantes (ISO 27001 A.12.2 / OWASP A04)**: añadido `@limiter.limit` a 11 endpoints que carecían de él: `/tickers/add` (20/min), `/tickers/update` (20/min), `/tickers/delete` (10/min), `/posiciones/add` (20/min), `/posiciones/delete` (10/min), `/operaciones/add` (20/min), `/operaciones/delete` (10/min), `/alertas/add` (20/min), `/alertas/delete` (10/min), `/alertas/reactivar` (10/min), `/push/subscribe` (10/min).
+- **Validación de longitud en `/push/subscribe` (ISO 27001 A.14.2)**: `endpoint`, `p256dh` y `auth` limitados a 500 chars cada uno; HTTP 400 si se supera el límite.
+- **`_safe_for_prompt()` en `ai_analysis.py` (ISO 27001 A.14.2 — prompt injection)**: función `_safe_for_prompt()` elimina caracteres de control (U+0000–U+001F, U+007F) de campos de usuario (`notes`, tesis) antes de incluirlos en prompts Claude; previene inyección de instrucciones en el LLM.
+- **`_safe()` en `discovery.py` (ISO 27001 A.14.2 — prompt injection)**: función local `_safe()` sanitiza nombres y sectores procedentes de yfinance antes de incluirlos en prompts Claude; datos de terceros (yfinance) pueden contener caracteres de control si la fuente es comprometida.
+- **Timeout 30s en `get_macro_context()` (ISO 27001 A.12 — disponibilidad)**: `as_completed(..., timeout=30)` evita bloqueo indefinido si SPY/VIX/TNX no responden; el job_daily_report completa con datos parciales en lugar de colgarse.
 
 ## Módulo de Recomendaciones (`discovery.py`)
 

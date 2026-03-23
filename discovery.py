@@ -14,6 +14,7 @@ Función principal: generate_discoveries()
 import json
 import logging
 import math
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -416,11 +417,15 @@ def _claude_analysis(candidates: list) -> dict:
         if not api_key:
             return {}
 
+        def _safe(v: str, n: int = 200) -> str:
+            """Elimina caracteres de control para prevenir prompt injection (ISO 27001 A.14.2)."""
+            return re.sub(r"[\x00-\x1f\x7f]", " ", str(v).strip())[:n]
+
         lines = []
         for c in candidates:
             h_label = {"largo": "largo plazo", "medio": "medio plazo", "corto": "corto plazo"}.get(c["horizon"], c["horizon"])
             parts = [
-                f"- {c['ticker']} ({c.get('name','')}), horizonte {h_label}",
+                f"- {c['ticker']} ({_safe(c.get('name',''))}), horizonte {h_label}",
                 f"  Score: {c['score']:.1f}, Oportunidad: {c['opportunity']}",
             ]
             if c.get("drawdown_52w") is not None:
@@ -440,7 +445,7 @@ def _claude_analysis(candidates: list) -> dict:
             if c.get("rsi") is not None:
                 parts.append(f"  RSI(14): {c['rsi']:.1f}")
             if c.get("sector"):
-                parts.append(f"  Sector: {c['sector']}")
+                parts.append(f"  Sector: {_safe(c['sector'])}")
             lines.append("\n".join(parts))
 
         prompt = (

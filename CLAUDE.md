@@ -33,7 +33,7 @@ config.py           # Parsing y validación de variables de entorno
 tickers.yaml        # Solo para migración inicial; se puede eliminar una vez arrancado por primera vez
 requirements.txt    # Dependencias Python
 Dockerfile          # python:3.12-slim, usuario no-root appuser
-docker-compose.yml  # Servicios: init, market-radar (scheduler), market-radar-web
+docker-compose.yml  # Servicios: init (permisos), market-radar (scheduler), market-radar-web (dashboard), backup (snapshots cifrados)
 .env.example        # Plantilla de variables de entorno requeridas
 SECURITY.md         # Documento formal SGSI: política, riesgos, activos, criptografía, incidentes, DPIA
 templates/          # Plantillas Jinja2 HTML para el dashboard web
@@ -48,7 +48,7 @@ templates/          # Plantillas Jinja2 HTML para el dashboard web
 - `MODEL` — modelo Claude a usar (default: `claude-haiku-4-5-20251001`)
 - `REPORT_HOUR` — hora del informe diario en formato 0-23 (default: `8`)
 - `TIMEZONE` — zona horaria IANA (default: `Europe/Madrid`)
-- `WEB_PASSWORD` — contraseña del dashboard web (si está vacío, sin autenticación)
+- `WEB_PASSWORD` — no usado actualmente; las credenciales se gestionan en `data/credentials.json` via el wizard de primer acceso
 - `WEB_PORT` — puerto del dashboard (default: `8589`)
 - `MPLCONFIGDIR` — directorio de caché de matplotlib; en Docker apunta a `/app/output/.matplotlib` para evitar fallos de permisos con el usuario `appuser`
 
@@ -233,6 +233,11 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 
 **Autenticación:**
 - Credenciales en `data/credentials.json` (bcrypt), TOTP en `data/totp_secret.key` (chmod 600)
+- **Primer arranque**: `_on_startup()` llama a `_load_credentials()` al arrancar el servidor. Si `credentials.json` no existe, genera una contraseña aleatoria (`secrets.token_urlsafe(12)`), la guarda en `data/credentials.json` y `data/initial-password.txt`, y la imprime en los logs:
+  ```
+  docker compose logs market-radar-web | grep -A5 "PRIMER ARRANQUE"
+  ```
+  También accesible en `./data/initial-password.txt` en el host. El archivo se elimina automáticamente al completar el wizard de primer acceso.
 - Primer acceso fuerza cambio de usuario/contraseña y configuración de 2FA TOTP
 - Sesiones por UUID en dict `_active_sessions` (expiran en 30 días, se invalidan al hacer logout)
 - Bloqueo de IP tras 5 intentos fallidos (15 min)
@@ -297,7 +302,9 @@ FastAPI app con autenticación por cookie de sesión. Todas las rutas verifican 
 - **NaN en Python es truthy**: `if cap_eur` pasa cuando `cap_eur` es NaN. Usar siempre `is not None` + `math.isnan()` o el helper `_is_nan()` de web.py.
 - **`avg_price` siempre en EUR**: el campo `portfolio.avg_price` debe introducirse en EUR independientemente de la bolsa del ticker. El sistema convierte el precio actual a EUR para calcular P&L.
 - **Sufijos de bolsa en yfinance**: tickers europeos requieren sufijo (`.SW`, `.PA`, `.MC`, `.DE`, `.ST`, `.L`, `.AS`, `.MI`). Sin sufijo, yfinance devuelve el ticker americano homónimo si existe, o falla. Causa posiciones duplicadas si se registran con y sin sufijo.
-- **MPLCONFIGDIR en Docker**: sin esta variable, matplotlib intenta crear `~/.config/matplotlib` dentro del contenedor como `appuser`, lo que falla si el disco está lleno o hay problemas de permisos. Configurado a `/app/output/.matplotlib` en docker-compose.yml.
+- **MPLCONFIGDIR en Docker**: sin esta variable, matplotlib intenta crear `~/.config/matplotlib` dentro del contenedor como `appuser`, lo que falla con Permission denied. Configurado a `/app/output/.matplotlib` en docker-compose.yml. El servicio `init` crea este directorio con `chmod 777` antes de que arranquen los servicios principales.
+- **Permisos de volúmenes montados**: el contenedor corre como `appuser` (UID 100999, sin privilegios). Los directorios `./data` y `./output` se crean con permisos correctos mediante el servicio `init` de docker-compose (alpine, `mkdir -p + chmod 777`). Sin el `init`, el contenedor falla al crear `data/backups` y `output/.matplotlib` al arrancar.
+- **Servicio `backup`**: crea `data/backups` al inicio (antes del bucle `sleep 86400`). Hace snapshot cifrado con AES-256-CBC si `BACKUP_PASSPHRASE` está configurado, o sin cifrar si no lo está. Conserva los últimos 7 snapshots. Para restaurar: `openssl enc -d -aes-256-cbc -pbkdf2 -in radar_YYYYMMDD.db.enc -out radar.db -pass env:BACKUP_PASSPHRASE`.
 - **Templates se reconstruyen con la imagen**: los templates están embebidos en la imagen Docker. Cambios en `templates/` requieren `docker compose pull && docker compose up -d` para que surtan efecto en producción.
 
 ## Mantenimiento de la base de datos

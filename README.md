@@ -123,7 +123,13 @@ ANTHROPIC_API_KEY=sk-ant-...
 docker compose up -d
 ```
 
-Docker descargará automáticamente la imagen de `ghcr.io/dazanestor/market-radar-ai:latest`. Arrancan dos servicios: `market-radar` (scheduler con jobs periódicos) y `market-radar-web` (dashboard web). El reporte diario se ejecuta a las 08:00 (Europe/Madrid por defecto) y llega al navegador via Web Push.
+Docker descargará automáticamente la imagen de `ghcr.io/dazanestor/market-radar-ai:latest`. Arrancan cuatro servicios:
+- `init` — crea los directorios necesarios con los permisos correctos y termina
+- `market-radar` — scheduler con los jobs periódicos (reporte, alertas, etc.)
+- `market-radar-web` — dashboard web en el puerto configurado
+- `backup` — snapshots diarios cifrados de la base de datos
+
+El reporte diario se ejecuta a las 08:00 (Europe/Madrid por defecto) y llega al navegador via Web Push.
 
 ### Parar
 
@@ -135,7 +141,7 @@ docker compose down
 
 ### Despliegue con Portainer (Stacks)
 
-El init container crea automáticamente `tickers.yaml` (vacío), `data/` y `output/` con los permisos correctos para que el bot pueda escribir en ellos.
+El servicio `init` crea automáticamente los directorios `data/backups` y `output/.matplotlib` con `chmod 777` para que los contenedores principales puedan escribir en los volúmenes montados.
 
 **1. En Portainer → Stacks → Add stack:**
 
@@ -400,11 +406,13 @@ El dashboard es una Progressive Web App (PWA) instalable. Soporta notificaciones
 
 El dashboard usa autenticación segura basada en credenciales almacenadas en `data/credentials.json` (bcrypt):
 
-- **Primer acceso**: en el primer arranque se genera automáticamente una contraseña aleatoria para el usuario `admin`. La contraseña se guarda en `data/initial-password.txt` (en el host). Consúltala con:
+- **Primer acceso**: en el primer arranque se genera automáticamente una contraseña aleatoria para el usuario `admin`. La contraseña aparece en los logs del contenedor web y se guarda en `data/initial-password.txt` (en el host):
   ```bash
+  docker compose logs market-radar-web | grep -A5 "PRIMER ARRANQUE"
+  # o bien:
   cat ./data/initial-password.txt
   ```
-  Al completar el asistente de primer acceso (cambio de credenciales + configuración de 2FA), el archivo se elimina automáticamente. Tras iniciar sesión se fuerza un asistente de configuración para establecer usuario y contraseña, seguido de la configuración de 2FA TOTP (compatible con Google Authenticator, Authy, etc.)
+  Al completar el asistente de primer acceso (cambio de credenciales + configuración de 2FA TOTP), el archivo se elimina automáticamente. Se fuerza un asistente de configuración para establecer usuario y contraseña, seguido de la configuración de 2FA TOTP (compatible con Google Authenticator, Authy, etc.)
 - **2FA TOTP**: obligatorio tras el primer acceso; se puede deshabilitar desde `Ajustes → 2FA`
 - **Bloqueo por IP**: tras 5 intentos fallidos, la IP queda bloqueada 15 minutos
 - **CSRF**: token global en todos los formularios POST

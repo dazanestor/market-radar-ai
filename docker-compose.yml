@@ -5,7 +5,23 @@ networks:
     internal: false   # false: market-radar-web necesita salida a internet (push notifications)
 
 services:
+  init:
+    image: alpine:3.21
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /data/backups /output/.matplotlib
+        chmod -R 777 /data /output
+    volumes:
+      - ./data:/data
+      - ./output:/output
+
   market-radar:
+    depends_on:
+      init:
+        condition: service_completed_successfully
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-ai
     restart: unless-stopped
@@ -45,6 +61,9 @@ services:
       - ./data:/app/data
 
   market-radar-web:
+    depends_on:
+      init:
+        condition: service_completed_successfully
     image: ghcr.io/dazanestor/market-radar-ai:latest
     container_name: market-radar-web
     restart: unless-stopped
@@ -92,6 +111,9 @@ services:
       - ./data:/app/data
 
   backup:
+    depends_on:
+      init:
+        condition: service_completed_successfully
     image: alpine:3.21
     restart: unless-stopped
     # backup no necesita red — solo acceso al volumen de datos
@@ -109,6 +131,7 @@ services:
       BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
     entrypoint: >
       sh -c "
+        mkdir -p /data/backups;
         apk add --no-cache openssl 2>/dev/null;
         while true; do
           sleep 86400;

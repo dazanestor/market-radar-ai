@@ -400,7 +400,11 @@ El dashboard es una Progressive Web App (PWA) instalable. Soporta notificaciones
 
 El dashboard usa autenticación segura basada en credenciales almacenadas en `data/credentials.json` (bcrypt):
 
-- **Primer acceso**: se fuerza un asistente de configuración para establecer usuario y contraseña, seguido de la configuración de 2FA TOTP (compatible con Google Authenticator, Authy, etc.)
+- **Primer acceso**: en el primer arranque se genera automáticamente una contraseña aleatoria para el usuario `admin`. La contraseña se guarda en `data/initial-password.txt` (en el host). Consúltala con:
+  ```bash
+  cat ./data/initial-password.txt
+  ```
+  Al completar el asistente de primer acceso (cambio de credenciales + configuración de 2FA), el archivo se elimina automáticamente. Tras iniciar sesión se fuerza un asistente de configuración para establecer usuario y contraseña, seguido de la configuración de 2FA TOTP (compatible con Google Authenticator, Authy, etc.)
 - **2FA TOTP**: obligatorio tras el primer acceso; se puede deshabilitar desde `Ajustes → 2FA`
 - **Bloqueo por IP**: tras 5 intentos fallidos, la IP queda bloqueada 15 minutos
 - **CSRF**: token global en todos los formularios POST

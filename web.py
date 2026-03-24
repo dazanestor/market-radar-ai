@@ -332,7 +332,14 @@ def _load_credentials() -> dict:
         with open(INITIAL_PASSWORD_FILE, "w") as f:
             f.write(initial_content)
         os.chmod(INITIAL_PASSWORD_FILE, 0o600)
-        logger.warning("Credenciales iniciales escritas. Accede al dashboard para completar la configuración.")
+        logger.warning(
+            "\n" + "=" * 52 +
+            "\n  PRIMER ARRANQUE — Credenciales iniciales" +
+            f"\n  Usuario:     {DEFAULT_USERNAME}" +
+            f"\n  Contraseña:  {initial_password}" +
+            "\n  Cambia estas credenciales en el primer acceso." +
+            "\n" + "=" * 52
+        )
         return creds
 
 
@@ -1466,8 +1473,10 @@ async def audit_log_page(
 
 @app.on_event("startup")
 async def _on_startup():
-    """Restaura sesiones activas desde BD tras reinicio (ISO 27001 A.9.4)."""
+    """Restaura sesiones activas desde BD tras reinicio (ISO 27001 A.9.4).
+    Genera credenciales iniciales si no existen (primer arranque)."""
     _load_sessions_from_db()
+    _load_credentials()
 
 
 @app.on_event("shutdown")

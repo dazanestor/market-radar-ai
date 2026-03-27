@@ -345,9 +345,16 @@ def _fetch_ticker(ticker: str) -> dict | None:
             except Exception:
                 pass
 
-        # Capitalización
-        market_cap   = info.get("marketCap")
-        market_cap_b = float(market_cap) / 1e9 if market_cap else None
+        # Capitalización (convertida a EUR para comparabilidad entre regiones)
+        market_cap = info.get("marketCap")
+        market_cap_b = None
+        if market_cap:
+            try:
+                mc_eur = to_eur(float(market_cap), currency)
+                if mc_eur and not math.isnan(mc_eur):
+                    market_cap_b = mc_eur / 1e9
+            except Exception:
+                pass
 
         name   = info.get("shortName") or info.get("longName") or ticker
         sector = info.get("sector") or ""
@@ -560,7 +567,8 @@ def generate_discoveries() -> list:
     for item in sorted(scored, key=lambda x: x["score"], reverse=True):
         h = item["horizon"]
         if h in by_horizon and len(by_horizon[h]) < _TOP_PER_HORIZON:
-            by_horizon[h].append(item)
+            if item.get("opportunity") in ("ALTA", "MEDIA"):
+                by_horizon[h].append(item)
 
     candidates = []
     for h in ("largo", "medio", "corto"):

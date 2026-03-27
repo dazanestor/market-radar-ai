@@ -321,7 +321,7 @@ def _fetch_ticker(ticker: str) -> dict | None:
 
         raw_pe  = info.get("trailingPE") or info.get("forwardPE")
         pe_ratio = None
-        if raw_pe:
+        if raw_pe is not None:
             try:
                 v = float(raw_pe)
                 if 0 < v < 200 and not math.isnan(v):

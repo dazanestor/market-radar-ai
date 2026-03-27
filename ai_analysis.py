@@ -478,10 +478,10 @@ def suggest_ticker_meta(ticker: str, info: dict) -> dict:
 
     data_parts = [f"Empresa: {name}", f"Sector: {sector}", f"País: {country}"]
     # yfinance siempre devuelve ROE y dividendYield como fracción decimal
-    if pe  and not _nan(float(pe)):  data_parts.append(f"PER: {float(pe):.1f}")
-    if roe and not _nan(float(roe)) and abs(float(roe)) <= 5.0:
+    if pe is not None and not _nan(float(pe)):  data_parts.append(f"PER: {float(pe):.1f}")
+    if roe is not None and not _nan(float(roe)) and abs(float(roe)) <= 5.0:
         data_parts.append(f"ROE: {float(roe)*100:.1f}%")
-    if div and not _nan(float(div)) and 0.0 <= float(div) <= 0.15:
+    if div is not None and not _nan(float(div)) and 0.0 <= float(div) <= 0.15:
         data_parts.append(f"Dividend Yield: {float(div)*100:.1f}%")
     if description:
         data_parts.append(f"Descripción: {description}")

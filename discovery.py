@@ -356,10 +356,10 @@ def _fetch_ticker(ticker: str) -> dict | None:
             except Exception:
                 pass
 
-        name   = info.get("shortName") or info.get("longName") or ticker
-        sector = info.get("sector") or ""
-        # Region por sufijo del ticker
-        region = _infer_region(ticker)
+        name    = info.get("longName") or info.get("shortName") or ticker
+        sector  = _SECTOR_TO_BLOCK.get(info.get("sector", ""), info.get("sector") or "")
+        country = info.get("country", "")
+        region  = _infer_region(ticker, country)
 
         return {
             "ticker":            ticker,
@@ -393,12 +393,43 @@ _SUFFIX_REGION = {
     ".AX": "Asia-Pacífico", ".KS": "Asia-Pacífico", ".SS": "Asia-Pacífico",
 }
 
+_COUNTRY_TO_REGION = {
+    "United States": "USA", "Switzerland": "Europa", "Denmark": "Europa",
+    "United Kingdom": "Europa", "France": "Europa", "Germany": "Europa",
+    "Netherlands": "Europa", "Sweden": "Europa", "Spain": "Europa",
+    "Italy": "Europa", "Belgium": "Europa", "Finland": "Europa",
+    "Norway": "Europa", "Portugal": "Europa", "Ireland": "Europa",
+    "Australia": "Asia-Pacífico", "Japan": "Asia-Pacífico",
+    "China": "Asia-Pacífico", "Hong Kong": "Asia-Pacífico",
+    "South Korea": "Asia-Pacífico", "India": "Asia-Pacífico",
+    "Canada": "América", "Brazil": "América", "Mexico": "América",
+}
+
+_SECTOR_TO_BLOCK = {
+    "Technology":             "Tecnología",
+    "Financial Services":     "Financiero",
+    "Healthcare":             "Salud",
+    "Consumer Defensive":     "Consumo básico",
+    "Consumer Cyclical":      "Consumo cíclico",
+    "Communication Services": "Comunicaciones",
+    "Industrials":            "Industrial",
+    "Basic Materials":        "Materiales",
+    "Energy":                 "Energía",
+    "Real Estate":            "Inmobiliario",
+    "Utilities":              "Utilities",
+}
+
 _METAL_TICKERS = set(_BASE_METALES)
 
 
-def _infer_region(ticker: str) -> str:
+def _infer_region(ticker: str, country: str = "") -> str:
     if ticker in _METAL_TICKERS:
         return "Metales preciosos"
+    # Prefer country from yfinance info over suffix-based inference
+    if country:
+        mapped = _COUNTRY_TO_REGION.get(country)
+        if mapped:
+            return mapped
     for suffix, region in _SUFFIX_REGION.items():
         if ticker.endswith(suffix):
             return region

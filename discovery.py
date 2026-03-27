@@ -296,26 +296,26 @@ def _fetch_ticker(ticker: str) -> dict | None:
         # Fundamentales
         raw_div = info.get("dividendYield")
         div_yield = None
-        if raw_div:
+        if raw_div is not None:
             try:
                 v = float(raw_div)
-                if not math.isnan(v) and v >= 0:
-                    # yfinance devuelve fracción (0.034 = 3.4%) o a veces ya en %
-                    div_yield = v * 100 if v < 1.0 else v
-                    if div_yield > 50:   # >50% casi seguro es dato corrupto
-                        div_yield = None
+                # yfinance SIEMPRE devuelve fracción decimal (0.034 = 3.4%).
+                # Ningún yield legítimo supera 1.0 en formato fracción (= 100%).
+                # Si v >= 1.0 es dato corrupto. Cap conservador en 0.15 (15%).
+                if not math.isnan(v) and 0.0 <= v <= 0.15:
+                    div_yield = round(v * 100, 2)
             except (ValueError, TypeError):
                 pass
 
         raw_roe = info.get("returnOnEquity")
         roe = None
-        if raw_roe:
+        if raw_roe is not None:
             try:
                 v = float(raw_roe)
-                if not math.isnan(v):
-                    roe = v * 100 if abs(v) < 20 else v   # fracción si |v|<20, ya en % si mayor
-                    if abs(roe) > 500:                     # >500% ROE es dato corrupto
-                        roe = None
+                # yfinance SIEMPRE devuelve fracción decimal (1.5 = 150%).
+                # Cap en 5.0 fracción (= 500% ROE); más allá es dato corrupto.
+                if not math.isnan(v) and abs(v) <= 5.0:
+                    roe = round(v * 100, 2)
             except (ValueError, TypeError):
                 pass
 

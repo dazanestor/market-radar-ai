@@ -725,23 +725,43 @@ def get_cached_translation(headline: str, max_age_hours: int = 24) -> Optional[s
 # ── snapshots (reemplaza CSV) ──────────────────────────────────────────────────
 
 def get_latest_snapshot_as_df():
-    """Devuelve el snapshot más reciente de price_history para todos los tickers como DataFrame."""
+    """Devuelve el snapshot más reciente de price_history para todos los tickers como DataFrame.
+
+    Usa COALESCE con la tabla tickers para rellenar name/block/region/horizon/category
+    en filas antiguas que tenían NULL (antes de que se añadieran estas columnas vía migración).
+    """
     try:
         import pandas as pd
     except ImportError:
         return None
     with _db() as conn:
         df = pd.read_sql_query("""
-            SELECT * FROM (
+            SELECT
+                ph.id, ph.ticker, ph.date, ph.price,
+                ph.drawdown_52w, ph.momentum_3m, ph.momentum_6m,
+                ph.volatility, ph.dividend_yield, ph.rsi, ph.score, ph.opportunity,
+                COALESCE(ph.category, t.category)         AS category,
+                COALESCE(ph.name, t.name, ph.ticker)      AS name,
+                COALESCE(ph.block, t.block, '—')          AS block,
+                COALESCE(ph.region, t.region, '—')        AS region,
+                COALESCE(ph.horizon, t.horizon)           AS horizon,
+                COALESCE(ph.target_weight, t.target_weight) AS target_weight,
+                COALESCE(ph.target_price, t.target_price) AS target_price,
+                ph.pe_ratio, ph.pb_ratio, ph.profit_margin, ph.roe,
+                ph.debt_equity, ph.revenue_growth, ph.market_cap_b,
+                ph.analyst_rec, ph.analyst_target, ph.analyst_n,
+                ph.trend, ph.pnl
+            FROM (
                 SELECT ph.*,
                        ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS _rn
                 FROM price_history ph
-            ) WHERE _rn = 1
-            ORDER BY category, ticker
+            ) ph
+            LEFT JOIN tickers t ON ph.ticker = t.ticker
+            WHERE ph._rn = 1
+            ORDER BY ph.category, ph.ticker
         """, conn)
     if df.empty:
         return None
-    df.drop(columns=["_rn"], inplace=True)
     return df
 
 

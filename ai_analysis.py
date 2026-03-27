@@ -479,7 +479,10 @@ def suggest_ticker_meta(ticker: str, info: dict) -> dict:
     data_parts = [f"Empresa: {name}", f"Sector: {sector}", f"País: {country}"]
     if pe  and not _nan(float(pe)):  data_parts.append(f"PER: {float(pe):.1f}")
     if roe and not _nan(float(roe)): data_parts.append(f"ROE: {float(roe)*100:.1f}%")
-    if div and not _nan(float(div)): data_parts.append(f"Dividend Yield: {float(div)*100:.1f}%")
+    if div and not _nan(float(div)):
+        _d = float(div) * 100 if abs(float(div)) < 1.0 else float(div)
+        if _d <= 50:
+            data_parts.append(f"Dividend Yield: {_d:.1f}%")
     if description:
         data_parts.append(f"Descripción: {description}")
 

@@ -953,7 +953,10 @@ def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
             except Exception:
                 pass
             roe_pct = round(roe * 100, 1) if roe and not math.isnan(roe) else None
-            div_pct = round(div * 100, 1) if div and not math.isnan(div) else None
+            div_pct = None
+            if div and not math.isnan(div):
+                _d = float(div) * 100 if abs(float(div)) < 1.0 else float(div)
+                div_pct = round(_d, 1) if _d <= 50 else None
             pe_val  = round(pe,  1)       if pe  and not math.isnan(pe)  else None
             horizon = suggest_horizon(roe_pct, pe_val, div_pct, vol, None)
             if horizon:
@@ -2527,7 +2530,10 @@ async def tickers_info(request: Request, ticker: str = "", session: Optional[str
             except Exception:
                 pass
             roe_pct  = round(roe * 100, 1)  if roe  and not _math.isnan(roe)  else None
-            div_pct  = round(div * 100, 1)  if div  and not _math.isnan(div)  else None
+            div_pct  = None
+            if div and not _math.isnan(div):
+                _d = float(div) * 100 if abs(float(div)) < 1.0 else float(div)
+                div_pct = round(_d, 1) if _d <= 50 else None
             pe_val   = round(pe, 1)         if pe   and not _math.isnan(pe)   else None
             mom3m    = None  # no disponible en este endpoint rápido
             horizon  = suggest_horizon(roe_pct, pe_val, div_pct, vol, mom3m)

@@ -111,7 +111,7 @@ def translate_headlines(headlines: list) -> list:
                 _model   = _gs("MODEL") or MODEL
             except Exception:
                 _api_key, _model = ANTHROPIC_API_KEY, MODEL
-            client   = anthropic.Anthropic(api_key=_api_key)
+            client   = anthropic.Anthropic(api_key=_api_key, timeout=120)
             numbered = "\n".join(f"{i + 1}. {h}" for i, h in enumerate(to_translate))
             prompt   = (
                 "Traduce al español solo el titular de cada noticia financiera. "

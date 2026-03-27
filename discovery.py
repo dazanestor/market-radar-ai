@@ -294,11 +294,30 @@ def _fetch_ticker(ticker: str) -> dict | None:
         rsi = _calc_rsi(closes)
 
         # Fundamentales
-        raw_div   = info.get("dividendYield")
-        div_yield = float(raw_div) * 100 if raw_div and not math.isnan(float(raw_div)) else None
+        raw_div = info.get("dividendYield")
+        div_yield = None
+        if raw_div:
+            try:
+                v = float(raw_div)
+                if not math.isnan(v) and v >= 0:
+                    # yfinance devuelve fracción (0.034 = 3.4%) o a veces ya en %
+                    div_yield = v * 100 if v < 1.0 else v
+                    if div_yield > 50:   # >50% casi seguro es dato corrupto
+                        div_yield = None
+            except (ValueError, TypeError):
+                pass
 
         raw_roe = info.get("returnOnEquity")
-        roe     = float(raw_roe) * 100 if raw_roe and not math.isnan(float(raw_roe)) else None
+        roe = None
+        if raw_roe:
+            try:
+                v = float(raw_roe)
+                if not math.isnan(v):
+                    roe = v * 100 if abs(v) < 20 else v   # fracción si |v|<20, ya en % si mayor
+                    if abs(roe) > 500:                     # >500% ROE es dato corrupto
+                        roe = None
+            except (ValueError, TypeError):
+                pass
 
         raw_pe  = info.get("trailingPE") or info.get("forwardPE")
         pe_ratio = None

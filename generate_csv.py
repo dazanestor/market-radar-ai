@@ -8,7 +8,32 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 from fetch_data import fetch_stock_data, to_eur
-from database import get_all_positions, get_tickers_as_yaml_dict, get_all_trends, get_all_recent_tickers
+from database import get_all_positions, get_tickers_as_yaml_dict, get_all_trends, get_all_recent_tickers, update_ticker_fields
+
+_SECTOR_TO_BLOCK = {
+    "Technology":             "Tecnología",
+    "Financial Services":     "Financiero",
+    "Healthcare":             "Salud",
+    "Consumer Defensive":     "Consumo básico",
+    "Consumer Cyclical":      "Consumo cíclico",
+    "Communication Services": "Comunicaciones",
+    "Industrials":            "Industrial",
+    "Basic Materials":        "Materiales",
+    "Energy":                 "Energía",
+    "Real Estate":            "Inmobiliario",
+    "Utilities":              "Utilities",
+}
+_COUNTRY_TO_REGION = {
+    "United States": "USA", "Switzerland": "Europa", "Denmark": "Europa",
+    "United Kingdom": "Europa", "France": "Europa", "Germany": "Europa",
+    "Netherlands": "Europa", "Sweden": "Europa", "Spain": "Europa",
+    "Italy": "Europa", "Belgium": "Europa", "Finland": "Europa",
+    "Norway": "Europa", "Portugal": "Europa",
+    "Australia": "Asia-Pacífico", "Japan": "Asia-Pacífico",
+    "China": "Asia-Pacífico", "Hong Kong": "Asia-Pacífico",
+    "South Korea": "Asia-Pacífico", "India": "Asia-Pacífico",
+    "Canada": "América", "Brazil": "América", "Mexico": "América",
+}
 
 _MAX_WORKERS = int(os.environ.get("FETCH_WORKERS", "10"))
 
@@ -134,12 +159,33 @@ def _process_ticker(ticker, category, meta, today, portfolio_positions,
                 if avg_price:
                     pnl = (price - avg_price) / avg_price * 100
 
+        yf_name   = info.get("longName") or info.get("shortName")
+        yf_sector = info.get("sector", "")
+        yf_country = info.get("country", "")
+        yf_block  = _SECTOR_TO_BLOCK.get(yf_sector, yf_sector or None)
+        yf_region = _COUNTRY_TO_REGION.get(yf_country, yf_country or None)
+
+        name   = meta.get("name")   or yf_name   or ticker
+        block  = meta.get("block")  or yf_block  or "—"
+        region = meta.get("region") or yf_region or "—"
+
+        # Persistir en tickers si faltaban (enriquecimiento automático)
+        updates = {}
+        if not meta.get("name")   and yf_name:   updates["name"]   = yf_name
+        if not meta.get("block")  and yf_block:  updates["block"]  = yf_block
+        if not meta.get("region") and yf_region: updates["region"] = yf_region
+        if updates:
+            try:
+                update_ticker_fields(ticker, **updates)
+            except Exception:
+                pass  # no crítico: solo enriquecimiento
+
         return {
             "category": category,
             "ticker": ticker,
-            "name": meta.get("name", ticker),
-            "block": meta.get("block", "—"),
-            "region": meta.get("region", "—"),
+            "name":   name,
+            "block":  block,
+            "region": region,
             "target_weight": meta.get("target_weight"),
             "target_price": meta.get("target_price"),
             "horizon": meta.get("horizon"),

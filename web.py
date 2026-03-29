@@ -2467,7 +2467,7 @@ async def ticker_detalle(ticker: str, request: Request,
 
 # ── Tickers ───────────────────────────────────────────────────────────────────
 
-_SEARCH_RE = re.compile(r'^[A-Za-z0-9 .\-]{2,50}$')
+_SEARCH_RE = re.compile(r'^[\w\s.\-&\'()]{2,50}$', re.UNICODE)
 
 @app.get("/tickers/search")
 @limiter.limit("10/minute")

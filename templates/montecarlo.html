@@ -55,14 +55,14 @@
   </div>
   <div class="card-body" style="padding:16px">
     <img id="img-mc" src="/chart/montecarlo" class="chart-img"
-         style="min-height:220px"
-         loading="lazy">
+         style="min-height:220px">
+    <div id="err-mc" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">No se pudo generar la simulación Monte Carlo.</div>
   </div>
 </div>
 <script>
 (function(){
-  var img=document.getElementById('img-mc');
-  img.addEventListener('error',function(){img.style.display='none';});
+  var img=document.getElementById('img-mc'),err=document.getElementById('err-mc');
+  img.addEventListener('error',function(){img.style.display='none';if(err)err.style.display='block';});
 })();
 </script>
 

@@ -1081,7 +1081,7 @@ def _fig_to_response(fig) -> Response:
     with _chart_lock:
         buf = io.BytesIO()
         try:
-            plt.savefig(buf, format="png", dpi=110, facecolor=_C_BG, bbox_inches="tight")
+            fig.savefig(buf, format="png", dpi=110, facecolor=_C_BG, bbox_inches="tight")
         finally:
             plt.close(fig)
     buf.seek(0)

@@ -46,6 +46,7 @@
   <div class="card" style="padding:16px">
     <div class="chart-loading" id="shimmer-ret"></div>
     <img src="/chart/riesgo/returns" id="img-ret" style="display:none;max-width:100%;border-radius:4px">
+    <div id="err-ret" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">No se pudo generar el gráfico de distribución de retornos.</div>
   </div>
 </div>
 
@@ -58,6 +59,7 @@
   <div class="card" style="padding:16px">
     <div class="chart-loading" id="shimmer-mc"></div>
     <img src="/chart/montecarlo" id="img-mc2" style="display:none;max-width:100%;border-radius:4px">
+    <div id="err-mc" style="display:none;padding:24px;text-align:center;color:#8b949e;font-size:13px">No se pudo generar la simulación Monte Carlo.</div>
   </div>
   <div style="margin-top:10px;padding:10px 14px;background:#161b22;border:1px solid #30363d;border-radius:6px;font-size:12px;color:#8b949e">
     La zona azul muestra el rango entre percentil 5% y 95% de los 1000 escenarios simulados.
@@ -161,14 +163,14 @@
 
 <script>
 (function(){
-  function shimmerLoad(imgId,shId){
-    var img=document.getElementById(imgId),sh=document.getElementById(shId);
+  function shimmerLoad(imgId,shId,errId){
+    var img=document.getElementById(imgId),sh=document.getElementById(shId),err=errId?document.getElementById(errId):null;
     if(!img||!sh)return;
     img.addEventListener('load',function(){img.style.display='block';sh.style.display='none';});
-    img.addEventListener('error',function(){sh.style.display='none';});
+    img.addEventListener('error',function(){sh.style.display='none';if(err)err.style.display='block';});
   }
-  shimmerLoad('img-ret','shimmer-ret');
-  shimmerLoad('img-mc2','shimmer-mc');
+  shimmerLoad('img-ret','shimmer-ret','err-ret');
+  shimmerLoad('img-mc2','shimmer-mc','err-mc');
 })();
 </script>
 

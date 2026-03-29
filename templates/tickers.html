@@ -241,7 +241,7 @@
           <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:16px;height:16px;transition:transform 0.15s" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
           Añadir a {{ cat_key }}
         </button>
-        <div x-show="open" x-transition x-cloak style="margin-top:16px">
+        <div x-show="open" x-cloak style="margin-top:16px">
           <div style="position:relative;margin-bottom:14px">
             <label class="form-label">Buscar empresa o ticker</label>
             <input type="text" x-model="query" @input.debounce.400ms="search()"
@@ -357,7 +357,7 @@
           <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:13px;height:13px;transition:transform 0.15s;flex-shrink:0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
           Añadir / actualizar posición
         </button>
-        <div x-show="open" x-transition x-cloak style="margin-top:16px">
+        <div x-show="open" x-cloak style="margin-top:16px">
           <p style="font-size:12px;color:#8b949e;margin-bottom:14px">Introduce el precio en euros. Si el ticker ya existe, se actualiza.</p>
           <form method="post" action="/posiciones/add">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

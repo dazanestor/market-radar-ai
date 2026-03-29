@@ -2477,36 +2477,54 @@ async def tickers_search(request: Request, q: str = "", session: Optional[str] =
     if not _SEARCH_RE.match(q):
         return JSONResponse([])
     def _do_search():
-        import yfinance as yf
-        try:
-            search  = yf.Search(q, max_results=10)
-            quotes  = search.quotes
-            # quotes puede ser lista de dicts o DataFrame
-            if hasattr(quotes, "to_dict"):
-                quotes = quotes.to_dict("records")
-            results = []
-            for item in (quotes or []):
+        import requests as _req
+        _EXCLUDED = {"Currency", "Future", "Option"}
+        _HEADERS = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            "Accept": "application/json",
+        }
+
+        def _parse_quotes(raw_quotes) -> list:
+            if hasattr(raw_quotes, "to_dict"):
+                raw_quotes = raw_quotes.to_dict("records")
+            out = []
+            for item in (raw_quotes or []):
                 if not isinstance(item, dict):
                     continue
                 symbol = item.get("symbol") or item.get("Symbol", "")
-                name   = (item.get("longname") or item.get("shortname")
-                          or item.get("longName") or item.get("shortName", symbol))
-                type_  = item.get("typeDisp") or item.get("quoteType", "")
-                exch   = item.get("exchDisp") or item.get("exchange", "")
                 if not symbol:
                     continue
-                # Excluir solo derivados y divisas
-                if type_ in ("Currency", "Future", "Option"):
+                name = (item.get("longname") or item.get("shortname")
+                        or item.get("longName") or item.get("shortName", symbol))
+                type_ = item.get("typeDisp") or item.get("quoteType", "")
+                exch  = item.get("exchDisp") or item.get("exchange", "")
+                if type_ in _EXCLUDED:
                     continue
-                results.append({
-                    "ticker":   symbol,
-                    "name":     name,
-                    "type":     type_,
-                    "exchange": exch,
-                })
-            return results
+                out.append({"ticker": symbol, "name": name, "type": type_, "exchange": exch})
+            return out
+
+        # 1) Intento directo a Yahoo Finance API (más fiable que yf.Search)
+        try:
+            url = "https://query2.finance.yahoo.com/v1/finance/search"
+            params = {"q": q, "quotesCount": 10, "newsCount": 0, "enableFuzzyQuery": "false"}
+            resp = _req.get(url, params=params, headers=_HEADERS, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw = data.get("finance", {}).get("result", [{}])[0].get("quotes", []) \
+                      if "finance" in data else data.get("quotes", [])
+                results = _parse_quotes(raw)
+                if results:
+                    return results
         except Exception:
-            logger.exception("Error en búsqueda de tickers")
+            logger.warning("Yahoo search directo falló para %r, probando yf.Search", q)
+
+        # 2) Fallback: yf.Search
+        try:
+            import yfinance as yf
+            search = yf.Search(q, max_results=10, news_count=0, raise_errors=False)
+            return _parse_quotes(search.quotes)
+        except Exception:
+            logger.exception("Error en búsqueda de tickers (yf.Search) para %r", q)
             return []
     results = await asyncio.get_running_loop().run_in_executor(_executor, _do_search)
     return JSONResponse(results)

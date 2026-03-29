@@ -199,6 +199,11 @@ _hist_cache: dict = {}   # {ticker: (df, monotonic_ts)}
 _HIST_CACHE_TTL = 3600.0  # 1 hora
 _hist_cache_lock = threading.RLock()
 
+# Caché de parámetros Monte Carlo (descarga 2y yfinance + covarianza)
+_mc_cache: dict = {"data": None, "ts": 0.0}
+_MC_CACHE_TTL  = 300.0   # 5 minutos
+_mc_cache_lock = threading.RLock()
+
 
 def _get_positions():
     """get_all_positions() con caché de 60 s para evitar N queries idénticas."""
@@ -988,6 +993,9 @@ def _invalidate_csv_cache() -> None:
         _scored_cache["csv_ts"] = 0.0
     with _hist_cache_lock:
         _hist_cache.clear()
+    with _mc_cache_lock:
+        _mc_cache["data"] = None
+        _mc_cache["ts"]   = 0.0
 
 
 def _safe_pct(v) -> Optional[float]:
@@ -5015,91 +5023,191 @@ async def fiscalidad_page(request: Request, session: Optional[str] = Cookie(defa
 
 # ── Monte Carlo ────────────────────────────────────────────────────────────────
 
+def _build_mc_params(df, positions_map: dict) -> Optional[dict]:
+    """
+    Calcula los parámetros de simulación Monte Carlo a partir de datos reales.
+
+    - Descarga 2 años de histórico diario por ticker (yfinance, caché 1h).
+    - Calcula la matriz de covarianza anualizada real: cov_annual = rets.cov() * 252.
+    - Usa retornos esperados multi-factor idénticos al módulo de optimización
+      (40% histórico anualizado + 20% score + 15% analistas + 15% momentum + 10% fundamentales).
+    - Calcula σ_cartera = sqrt(w' @ cov_annual @ w), respetando correlaciones.
+
+    Returns dict con claves: total, port_mu, port_sig, days_used, valid.
+    """
+    import warnings
+    warnings.filterwarnings("ignore")
+
+    valid = []
+    for t in positions_map:
+        row = df[df["ticker"] == t]
+        if row.empty:
+            continue
+        if _safe_float(row.iloc[0].get("price"), 0) > 0:
+            valid.append(t)
+
+    if not valid:
+        return None
+
+    # ── Descargar 2 años de precios diarios ──────────────────────────────────
+    price_data = {}
+    for t in valid:
+        try:
+            hist = _get_ticker_hist(t, period="2y")["Close"]
+            if len(hist) >= 60:
+                hist.index = pd.to_datetime(hist.index.date)
+                price_data[t] = hist
+        except Exception:
+            logger.warning("_build_mc_params: no se pudo obtener histórico de %s", t)
+
+    valid = [t for t in valid if t in price_data]
+    if not valid:
+        return None
+
+    df_prices = pd.DataFrame({t: price_data[t] for t in valid}).dropna()
+    if len(df_prices) < 60:
+        return None
+
+    # ── Retornos diarios y covarianza anualizada ──────────────────────────────
+    rets = df_prices.pct_change().dropna()
+    cov_annual = rets.cov().values * 252          # N×N, anualizada
+
+    # ── Pesos de cartera por valor de mercado ─────────────────────────────────
+    values = {}
+    for t in valid:
+        shares, _ = positions_map[t]
+        price = float(df[df["ticker"] == t].iloc[0]["price"])
+        values[t] = shares * price
+    total = sum(values.values())
+    w = np.array([values[t] / total for t in valid])
+
+    # ── Retornos esperados multi-factor (misma lógica que _compute_optimization) ─
+    mu_annual = np.zeros(len(valid))
+    for i, t in enumerate(valid):
+        row = df[df["ticker"] == t].iloc[0]
+
+        hist_ret   = float(rets[t].mean()) * 252
+
+        score      = _safe_float(row.get("score"))
+        score_adj  = ((score - 12) / 20) * 0.08 if score is not None else 0.0
+
+        atarget    = _safe_float(row.get("analyst_target"))
+        cprice     = _safe_float(row.get("price"))
+        an         = _safe_float(row.get("analyst_n"), 0)
+        if atarget and cprice and cprice > 0:
+            confidence = min(1.0, (an or 1) / 15.0)
+            analyst_mu = (atarget / cprice - 1) * confidence
+        else:
+            analyst_mu = 0.0
+
+        mom3       = _safe_float(row.get("momentum_3m"), 0.0) or 0.0
+        mom6       = _safe_float(row.get("momentum_6m"), 0.0) or 0.0
+        momentum   = (mom3 * 0.6 + mom6 * 0.4) / 100.0
+
+        roe        = _safe_float(row.get("roe"))
+        per        = _safe_float(row.get("pe_ratio"))
+        fund_adj   = 0.0
+        if roe is not None and roe > 0:
+            fund_adj += min(0.04, (roe - 10) / 100)
+        if per is not None and 0 < per < 40:
+            fund_adj -= (per - 15) / 500
+
+        horizon    = str(row.get("horizon") or "medio")
+        if horizon == "corto":
+            hw = (0.35, 0.20, 0.10, 0.25, 0.10)
+        elif horizon == "largo":
+            hw = (0.40, 0.20, 0.20, 0.05, 0.15)
+        else:
+            hw = (0.40, 0.20, 0.15, 0.15, 0.10)
+
+        mu_annual[i] = (hw[0]*hist_ret + hw[1]*score_adj + hw[2]*analyst_mu
+                        + hw[3]*momentum + hw[4]*fund_adj)
+
+    # ── Parámetros agregados de cartera ───────────────────────────────────────
+    port_mu  = float(w @ mu_annual)
+    port_sig = float(np.sqrt(max(float(w @ cov_annual @ w), 0.0)))
+
+    return {
+        "total":     total,
+        "port_mu":   port_mu,
+        "port_sig":  port_sig,
+        "days_used": len(df_prices),
+        "valid":     valid,
+    }
+
+
+def _get_mc_params_cached(df, positions_map: dict) -> Optional[dict]:
+    """Devuelve los parámetros MC cacheados (TTL 5 min) o los recalcula."""
+    with _mc_cache_lock:
+        if (_mc_cache["data"] is not None
+                and _time.monotonic() - _mc_cache["ts"] < _MC_CACHE_TTL):
+            return _mc_cache["data"]
+        result = _build_mc_params(df, positions_map)
+        _mc_cache["data"] = result
+        _mc_cache["ts"]   = _time.monotonic()
+        return result
+
+
+def _run_mc_simulation(total: float, port_mu: float, port_sig: float,
+                       n_paths: int = 1000, days: int = 757, seed: int = 42):
+    """
+    Simulación GBM vectorizada para el valor de cartera.
+
+    Usa la fórmula log-normal exacta con drift corregido (Itô):
+        V(t+1) = V(t) * exp((μ_d - ½σ_d²) + σ_d * Z)
+    donde Z ~ N(0,1) i.i.d., μ_d = port_mu/252, σ_d = port_sig/√252.
+
+    Retorna array (n_paths, days).
+    """
+    rng   = np.random.default_rng(seed)
+    mu_d  = port_mu / 252
+    sig_d = port_sig / np.sqrt(252)
+    z     = rng.standard_normal((n_paths, days - 1))
+    log_r = (mu_d - 0.5 * sig_d ** 2) + sig_d * z
+    paths = np.empty((n_paths, days))
+    paths[:, 0] = total
+    paths[:, 1:] = total * np.exp(np.cumsum(log_r, axis=1))
+    return paths
+
+
 @app.get("/montecarlo", response_class=HTMLResponse)
 async def montecarlo_page(request: Request, session: Optional[str] = Cookie(default=None)):
     if not _is_auth(session):
         return RedirectResponse("/login", status_code=302)
 
     def _compute():
-        import warnings
-        warnings.filterwarnings("ignore")
         df        = _read_csv()
         positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
         if df is None or not positions:
             return None
-
-        values = {}
-        vols   = {}
-        rets   = {}
-        for ticker, (shares, _) in positions.items():
-            row = df[df["ticker"] == ticker]
-            if row.empty:
-                continue
-            p = row.iloc[0].get("price")
-            if not p or _is_nan(p):
-                continue
-            values[ticker] = shares * float(p)
-            vol = row.iloc[0].get("volatility")
-            if vol and not _is_nan(vol):
-                vols[ticker] = float(vol) / 100.0
-            else:
-                vols[ticker] = 0.20
-            mom = row.iloc[0].get("momentum_3m")
-            if mom and not _is_nan(mom):
-                rets[ticker] = float(mom) / 100.0 * (252 / 63)
-            else:
-                rets[ticker] = 0.07
-
-        if not values:
+        params = _get_mc_params_cached(df, positions)
+        if params is None:
             return None
 
-        total    = sum(values.values())
-        weights  = {t: v / total for t, v in values.items()}
-        port_mu  = sum(weights[t] * rets.get(t, 0.07)  for t in weights)
-        port_sig = sum(weights[t] * vols.get(t, 0.20)  for t in weights)
+        paths = _run_mc_simulation(params["total"], params["port_mu"], params["port_sig"])
 
-        N_PATHS  = 500
-        rng      = np.random.default_rng(42)
-        paths_1y  = np.zeros((N_PATHS, 253))
-        paths_3y  = np.zeros((N_PATHS, 757))
-        paths_1y[:, 0]  = total
-        paths_3y[:, 0]  = total
-
-        mu_d  = port_mu / 252
-        sig_d = port_sig / np.sqrt(252)
-
-        for t in range(1, 253):
-            z = rng.standard_normal(N_PATHS)
-            paths_1y[:, t] = paths_1y[:, t-1] * np.exp((mu_d - 0.5 * sig_d**2) + sig_d * z)
-        for t in range(1, 757):
-            z = rng.standard_normal(N_PATHS)
-            paths_3y[:, t] = paths_3y[:, t-1] * np.exp((mu_d - 0.5 * sig_d**2) + sig_d * z)
-
-        final_1y = paths_1y[:, 252]
-        final_3y = paths_3y[:, 756]
-        p10_1y  = float(np.percentile(final_1y, 10))
-        p25_1y  = float(np.percentile(final_1y, 25))
-        p50_1y  = float(np.percentile(final_1y, 50))
-        p75_1y  = float(np.percentile(final_1y, 75))
-        p90_1y  = float(np.percentile(final_1y, 90))
-        p10_3y  = float(np.percentile(final_3y, 10))
-        p50_3y  = float(np.percentile(final_3y, 50))
-        p90_3y  = float(np.percentile(final_3y, 90))
-
-        stats = {
-            "total":   total,
-            "p10_1y":  p10_1y,  "p25_1y": p25_1y, "p50_1y": p50_1y,
-            "p75_1y":  p75_1y,  "p90_1y": p90_1y,
-            "p10_3y":  p10_3y,  "p50_3y": p50_3y, "p90_3y": p90_3y,
-            "port_mu": round(port_mu * 100, 2),
-            "port_sig": round(port_sig * 100, 2),
+        final_1y = paths[:, 252]
+        final_3y = paths[:, 756]
+        return {
+            "total":    params["total"],
+            "p10_1y":   float(np.percentile(final_1y, 10)),
+            "p25_1y":   float(np.percentile(final_1y, 25)),
+            "p50_1y":   float(np.percentile(final_1y, 50)),
+            "p75_1y":   float(np.percentile(final_1y, 75)),
+            "p90_1y":   float(np.percentile(final_1y, 90)),
+            "p10_3y":   float(np.percentile(final_3y, 10)),
+            "p50_3y":   float(np.percentile(final_3y, 50)),
+            "p90_3y":   float(np.percentile(final_3y, 90)),
+            "port_mu":  round(params["port_mu"]  * 100, 2),
+            "port_sig": round(params["port_sig"] * 100, 2),
+            "days_used": params["days_used"],
+            "n_assets":  len(params["valid"]),
         }
-        return stats
 
     stats = await asyncio.get_running_loop().run_in_executor(_executor, _compute)
     return templates.TemplateResponse("montecarlo.html", {
-        "request": request,
-        "stats":   stats,
+        "request":  request,
+        "stats":    stats,
         "has_data": stats is not None,
     })
 
@@ -5111,73 +5219,57 @@ async def chart_montecarlo(request: Request, session: Optional[str] = Cookie(def
         raise HTTPException(403)
 
     def _make():
-        import warnings
-        warnings.filterwarnings("ignore")
         df        = _read_csv()
         positions = {r[0]: (r[1], r[2]) for r in _get_positions()}
         if df is None or not positions:
             return None
-
-        values = {}
-        vols   = {}
-        rets   = {}
-        for ticker, (shares, _) in positions.items():
-            row = df[df["ticker"] == ticker]
-            if row.empty:
-                continue
-            p = row.iloc[0].get("price")
-            if not p or _is_nan(p):
-                continue
-            values[ticker] = shares * float(p)
-            vol = row.iloc[0].get("volatility")
-            vols[ticker] = float(vol) / 100.0 if (vol and not _is_nan(vol)) else 0.20
-            mom = row.iloc[0].get("momentum_3m")
-            rets[ticker] = float(mom) / 100.0 * (252 / 63) if (mom and not _is_nan(mom)) else 0.07
-
-        if not values:
+        params = _get_mc_params_cached(df, positions)
+        if params is None:
             return None
 
-        total    = sum(values.values())
-        weights  = {t: v / total for t, v in values.items()}
-        port_mu  = sum(weights[t] * rets.get(t, 0.07)  for t in weights)
-        port_sig = sum(weights[t] * vols.get(t, 0.20)  for t in weights)
+        paths = _run_mc_simulation(params["total"], params["port_mu"], params["port_sig"])
 
-        N_PATHS = 500
-        rng     = np.random.default_rng(42)
-        days    = 757
-        paths   = np.zeros((N_PATHS, days))
-        paths[:, 0] = total
-        mu_d    = port_mu / 252
-        sig_d   = port_sig / np.sqrt(252)
-
-        for t in range(1, days):
-            z = rng.standard_normal(N_PATHS)
-            paths[:, t] = paths[:, t-1] * np.exp((mu_d - 0.5 * sig_d**2) + sig_d * z)
-
-        x = np.arange(days)
+        x   = np.arange(paths.shape[1])
         p10 = np.percentile(paths, 10, axis=0)
         p25 = np.percentile(paths, 25, axis=0)
         p50 = np.percentile(paths, 50, axis=0)
         p75 = np.percentile(paths, 75, axis=0)
         p90 = np.percentile(paths, 90, axis=0)
 
-        fig, ax = plt.subplots(figsize=(10, 4.5))
-        _style_ax(ax, fig)
+        with _chart_lock:
+            fig, ax = plt.subplots(figsize=(10, 4.5))
+            _style_ax(ax, fig)
 
-        ax.fill_between(x, p10, p90, alpha=0.18, color=_C_BLUE, label="P10–P90")
-        ax.fill_between(x, p25, p75, alpha=0.35, color=_C_BLUE, label="P25–P75")
-        ax.plot(x, p50, color=_C_FG, linewidth=2, label="Mediana")
-        ax.axhline(total, color=_C_TEXT, linewidth=0.8, linestyle="--", label="Valor inicial")
-        ax.axvline(252, color=_C_GREEN, linewidth=0.8, linestyle=":", alpha=0.8)
-        ax.axvline(756, color=_C_GREEN, linewidth=0.8, linestyle=":", alpha=0.8)
-        ax.text(252, ax.get_ylim()[1] * 0.98, "1 año", color=_C_GREEN, fontsize=8, ha="center", va="top")
-        ax.text(756, ax.get_ylim()[1] * 0.98, "3 años", color=_C_GREEN, fontsize=8, ha="center", va="top")
+            ax.fill_between(x, p10, p90, alpha=0.18, color=_C_BLUE, label="P10–P90")
+            ax.fill_between(x, p25, p75, alpha=0.35, color=_C_BLUE, label="P25–P75")
+            ax.plot(x, p50, color=_C_FG, linewidth=2, label="Mediana")
+            ax.axhline(params["total"], color=_C_TEXT, linewidth=0.8,
+                       linestyle="--", label="Valor inicial")
+            ax.axvline(252, color=_C_GREEN, linewidth=0.8, linestyle=":", alpha=0.8)
+            ax.axvline(756, color=_C_GREEN, linewidth=0.8, linestyle=":", alpha=0.8)
+            # Etiquetas usando coordenadas de eje (y) + datos (x) → no dependen de ylim
+            trans = ax.get_xaxis_transform()
+            ax.text(252, 0.97, "1 año",  color=_C_GREEN, fontsize=8,
+                    ha="center", va="top", transform=trans)
+            ax.text(756, 0.97, "3 años", color=_C_GREEN, fontsize=8,
+                    ha="center", va="top", transform=trans)
 
-        ax.set_title("Monte Carlo — Simulación de cartera (500 paths, distribución log-normal)", fontsize=11, pad=8)
-        ax.set_xlabel("Días", fontsize=9)
-        ax.set_ylabel("Valor (€)", fontsize=9)
-        ax.legend(fontsize=8, facecolor=_C_CARD, edgecolor=_C_GRID, labelcolor=_C_FG)
-        fig.tight_layout()
+            sigma_pct = round(params["port_sig"] * 100, 1)
+            mu_pct    = round(params["port_mu"]  * 100, 1)
+            n_days    = params["days_used"]
+            ax.set_title(
+                f"Monte Carlo — 1 000 paths · log-normal · "
+                f"μ={mu_pct:+.1f}% σ={sigma_pct:.1f}% (cov real, {n_days}d)",
+                fontsize=10, pad=8,
+            )
+            ax.set_xlabel("Días de trading", fontsize=9)
+            ax.set_ylabel("Valor (€)", fontsize=9)
+            ax.yaxis.set_major_formatter(
+                plt.FuncFormatter(lambda v, _: f"€{v:,.0f}")
+            )
+            ax.legend(fontsize=8, facecolor=_C_CARD, edgecolor=_C_GRID,
+                      labelcolor=_C_FG)
+            fig.tight_layout()
         return fig
 
     fig = await asyncio.get_running_loop().run_in_executor(_executor, _make)

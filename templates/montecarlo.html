@@ -3,8 +3,10 @@
 
 {% block content %}
 <p style="font-size:12px;color:#8b949e;margin:0 0 16px">
-  Simulación de 500 trayectorias del valor total de la cartera usando distribución log-normal con
-  volatilidades y retornos históricos por activo. Los resultados son orientativos, no predictivos.
+  Simulación de 1 000 trayectorias del valor total de la cartera usando distribución log-normal (GBM).
+  Retornos esperados multi-factor (histórico 2 años + score + analistas + momentum + fundamentales).
+  Volatilidad de cartera calculada con la matriz de covarianza real entre activos.
+  Los resultados son orientativos, no predictivos.
 </p>
 
 {% if not has_data %}
@@ -44,14 +46,19 @@
   <div class="stat-card">
     <div class="stat-label">Retorno anual estimado</div>
     <div class="stat-value" style="font-size:18px">{{ stats.port_mu }}%</div>
-    <div class="stat-sub">Volatilidad: {{ stats.port_sig }}%</div>
+    <div class="stat-sub">μ multi-factor</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Volatilidad cartera</div>
+    <div class="stat-value" style="font-size:18px">{{ stats.port_sig }}%</div>
+    <div class="stat-sub">σ con covarianza real · {{ stats.days_used }}d · {{ stats.n_assets }} activos</div>
   </div>
 </div>
 
 <!-- ── Gráfico ── -->
 <div class="card" style="margin-bottom:20px">
   <div class="card-header">
-    <span class="card-title">Simulación 500 paths — 3 años vista</span>
+    <span class="card-title">Simulación 1 000 paths — 3 años vista</span>
   </div>
   <div class="card-body" style="padding:16px">
     <img id="img-mc" src="/chart/montecarlo" class="chart-img"
@@ -113,9 +120,10 @@
 <div style="margin-top:16px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:6px">
   <p style="font-size:12px;color:#8b949e;margin:0">
     ⚠️ <strong style="color:#c9d1d9">Nota metodológica:</strong>
-    La simulación usa distribución log-normal con retorno diario μ = retorno_anual/252 y σ = volatilidad/√252.
-    Las volatilidades y retornos provienen del último snapshot de la base de datos. No se modelan correlaciones entre activos.
-    Los resultados pasados no garantizan rendimientos futuros.
+    Simulación GBM log-normal con corrección de Itô: V(t+1) = V(t)·exp((μ_d − ½σ_d²) + σ_d·Z).
+    μ estimado con 5 factores ponderados por horizonte (histórico 2 años · score radar · precio objetivo analistas · momentum · fundamentales).
+    σ de cartera calculada con covarianza real entre activos: σ = √(w′Σw), donde Σ es la matriz de covarianza anualizada de retornos diarios (2 años de datos yfinance).
+    Pesos fijos durante la simulación (sin rebalanceo). Los resultados pasados no garantizan rendimientos futuros.
   </p>
 </div>
 

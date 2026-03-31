@@ -68,8 +68,8 @@ _BASE_EUROPA = [
     "ASML.AS", "PHIA.AS", "UNA.AS",
     # Suiza
     "NESN.SW", "ROG.SW", "NOVN.SW", "ABBN.SW", "CFR.SW", "ZURN.SW",
-    # Dinamarca
-    "NOVO-B.CO",
+    # Dinamarca (Novo Nordisk está en _BASE_ASIA como NVO ADR)
+    # "NOVO-B.CO",  # duplicado de NVO
     # Italia
     "ENI.MI", "ISP.MI", "UCG.MI",
     # Suecia
@@ -596,16 +596,23 @@ def generate_discoveries() -> list:
 
     # Fetch paralelo
     raw_data = []
+    failed: list = []
     with ThreadPoolExecutor(max_workers=_FETCH_WORKERS) as pool:
         futures = {pool.submit(_fetch_ticker, t): t for t in to_fetch}
         for fut in as_completed(futures):
+            ticker_name = futures[fut]
             try:
                 result = fut.result()
                 if result:
                     raw_data.append(result)
-            except Exception:
-                pass
-    logger.info("Fetch completado: %d/%d tickers con datos", len(raw_data), len(to_fetch))
+                else:
+                    failed.append(ticker_name)
+            except Exception as e:
+                failed.append(ticker_name)
+                logger.debug("Excepción fetch %s: %s", ticker_name, e)
+    logger.info("Fetch completado: %d/%d tickers con datos (%d sin datos: %s)",
+                len(raw_data), len(to_fetch), len(failed),
+                ", ".join(sorted(failed)) if failed else "ninguno")
 
     if not raw_data:
         logger.warning("No se obtuvieron datos; abortando generación.")

@@ -78,7 +78,7 @@ _BASE_EUROPA = [
 
 _BASE_ASIA = [
     # ADRs USA (sin sufijo, más fiables en yfinance)
-    "TSM", "SONY", "TM", "NVO", "MUFG", "SMFG", "SAP",
+    "TSM", "SONY", "TM", "NVO", "MUFG", "SMFG",
     # Hong Kong directo
     "0700.HK", "9988.HK", "1299.HK",
 ]
@@ -360,6 +360,11 @@ def _fetch_ticker(ticker: str) -> dict | None:
         sector  = _SECTOR_TO_BLOCK.get(info.get("sector", ""), info.get("sector") or "")
         country = info.get("country", "")
         region  = _infer_region(ticker, country)
+        # Override para tickers donde yfinance devuelve datos erróneos
+        if ticker in _TICKER_OVERRIDES:
+            ov = _TICKER_OVERRIDES[ticker]
+            name   = ov.get("name",   name)
+            sector = ov.get("sector", sector)
 
         return {
             "ticker":            ticker,
@@ -384,6 +389,18 @@ def _fetch_ticker(ticker: str) -> dict | None:
         logger.debug("Error fetching %s: %s", ticker, e)
         return None
 
+
+# Tickers donde yfinance devuelve datos incorrectos (nombre/sector corrupto)
+_TICKER_OVERRIDES = {
+    "GOLD":  {"name": "Barrick Gold Corporation",        "sector": "Materiales"},
+    "NEM":   {"name": "Newmont Corporation",             "sector": "Materiales"},
+    "AEM":   {"name": "Agnico Eagle Mines Limited",      "sector": "Materiales"},
+    "WPM":   {"name": "Wheaton Precious Metals Corp.",   "sector": "Materiales"},
+    "FNV":   {"name": "Franco-Nevada Corporation",       "sector": "Materiales"},
+}
+
+# Tickers que cotizan en bolsas USA aunque la empresa sea extranjera
+_USA_LISTED = set(_BASE_USA) | {"TSM", "SONY", "TM", "NVO", "MUFG", "SMFG"}
 
 _SUFFIX_REGION = {
     ".DE": "Europa", ".PA": "Europa", ".MC": "Europa", ".L": "Europa",
@@ -425,14 +442,18 @@ _METAL_TICKERS = set(_BASE_METALES)
 def _infer_region(ticker: str, country: str = "") -> str:
     if ticker in _METAL_TICKERS:
         return "Metales preciosos"
-    # Prefer country from yfinance info over suffix-based inference
+    # Sufijo de bolsa: máxima prioridad (más fiable que el país de yfinance)
+    for suffix, region in _SUFFIX_REGION.items():
+        if ticker.endswith(suffix):
+            return region
+    # Tickers listados en bolsas USA (aunque la empresa sea extranjera)
+    if ticker in _USA_LISTED:
+        return "USA"
+    # País desde yfinance como último recurso
     if country:
         mapped = _COUNTRY_TO_REGION.get(country)
         if mapped:
             return mapped
-    for suffix, region in _SUFFIX_REGION.items():
-        if ticker.endswith(suffix):
-            return region
     return "USA"
 
 

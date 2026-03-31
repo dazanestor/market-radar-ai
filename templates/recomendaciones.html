@@ -117,7 +117,7 @@
         <span x-text="open ? 'Ocultar detalles' : 'Ver detalles'"></span>
       </button>
 
-      <div x-show="open" x-cloak style="font-size:12px;color:#8b949e;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:12px">
+      <div x-show="open" style="display:none;font-size:12px;color:#8b949e;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:12px">
         {% if item.roe is not none %}
         <span>ROE: <strong style="color:#c9d1d9">{{ "%.1f"|format(item.roe) }}%</strong></span>
         {% endif %}

@@ -30,7 +30,7 @@
 {% else %}
 
 {% for report_id, report_date, content in reports %}
-<div class="card section" x-data="{ open: {{ 'true' if loop.first else 'false' }} }">
+<div class="card section" x-data="{ open: false }">
   <button class="collapse-btn" @click="open = !open">
     <span style="display:flex;align-items:center;gap:10px">
       <span class="badge badge-blue">#{{ report_id }}</span>
@@ -43,7 +43,7 @@
       <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
     </svg>
   </button>
-  <div class="collapse-body report-body" x-show="open" x-cloak>
+  <div class="collapse-body report-body" x-show="open" style="display:none">
     {{ content | tg }}
   </div>
 </div>

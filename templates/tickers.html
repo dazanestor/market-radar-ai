@@ -94,19 +94,19 @@
                 </td>
                 <td>
                   <span x-show="!editing" x-text="nombre" style="cursor:default"></span>
-                  <input x-show="editing" x-model="nombre" x-cloak
+                  <input x-show="editing" x-model="nombre" style="display:none"
                          class="form-input" style="padding:3px 8px;font-size:12px;width:140px"
                          @keydown.enter.prevent="save()" @keydown.escape="editing=false">
                 </td>
                 <td class="text-muted hide-mobile">
                   <span x-show="!editing" x-text="bloque || '—'" style="cursor:default"></span>
-                  <input x-show="editing" x-model="bloque" x-cloak
+                  <input x-show="editing" x-model="bloque" style="display:none"
                          class="form-input" style="padding:3px 8px;font-size:12px;width:110px"
                          @keydown.enter.prevent="save()" @keydown.escape="editing=false">
                 </td>
                 <td class="text-muted hide-mobile">
                   <span x-show="!editing" x-text="region || '—'" style="cursor:default"></span>
-                  <input x-show="editing" x-model="region" x-cloak
+                  <input x-show="editing" x-model="region" style="display:none"
                          class="form-input" style="padding:3px 8px;font-size:12px;width:90px"
                          @keydown.enter.prevent="save()" @keydown.escape="editing=false">
                 </td>
@@ -145,7 +145,7 @@
                 </td>
                 <td style="text-align:right;white-space:nowrap">
                   <!-- Botón editar / guardar -->
-                  <button x-show="!editing" @click="startEdit()" :disabled="fetching" x-cloak
+                  <button x-show="!editing" @click="startEdit()" :disabled="fetching"
                           class="btn btn-ghost btn-sm" style="margin-right:4px" title="Editar nombre, bloque y región">
                     <svg x-show="!fetching" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -153,20 +153,20 @@
                     </svg>
                     <svg x-show="fetching" class="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                   </button>
-                  <button x-show="editing" @click="save()" :disabled="saving" x-cloak
+                  <button x-show="editing" @click="save()" :disabled="saving" style="display:none"
                           class="btn btn-primary btn-sm" style="margin-right:4px">
                     <span x-text="saving ? '…' : 'OK'"></span>
                   </button>
-                  <button x-show="editing" @click="editing=false" x-cloak
+                  <button x-show="editing" @click="editing=false" style="display:none"
                           class="btn btn-ghost btn-sm" style="margin-right:4px">✕</button>
                   {% if cat_key == 'watchlist' %}
                   <!-- Mover a portfolio inline -->
                   <span x-data="{ buying: false, sh: '', ap: '' }" style="display:inline">
-                    <button x-show="!buying" @click="buying=true" x-cloak
+                    <button x-show="!buying" @click="buying=true"
                             class="btn btn-ghost btn-sm" style="margin-right:4px;color:#3fb950;border-color:rgba(63,185,80,0.3)" title="Registrar compra y mover a portfolio">
                       → Comprado
                     </button>
-                    <span x-show="buying" x-cloak style="display:inline-flex;align-items:center;gap:4px">
+                    <span x-show="buying" style="display:none;align-items:center;gap:4px">
                       <input type="number" x-model="sh" placeholder="Acciones" step="0.0001" min="0.0001"
                              class="form-input" style="width:80px;padding:3px 6px;font-size:11px">
                       <input type="number" x-model="ap" placeholder="Precio €" step="0.01" min="0.01"
@@ -241,7 +241,7 @@
           <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:16px;height:16px;transition:transform 0.15s" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
           Añadir a {{ cat_key }}
         </button>
-        <div x-show="open" x-cloak style="margin-top:16px">
+        <div x-show="open" style="display:none;margin-top:16px">
           <div style="position:relative;margin-bottom:14px">
             <label class="form-label">Buscar empresa o ticker</label>
             <input type="text" x-model="query" @input.debounce.400ms="search()"
@@ -311,7 +311,7 @@
               <label class="form-label">Tesis de inversión (opcional)</label>
               <input type="text" name="notes" maxlength="500" placeholder="Tesis de inversión (opcional)" class="form-input">
             </div>
-            <div x-show="horizonLabel" x-cloak style="margin-top:10px;padding:9px 12px;background:#21262d;border-radius:6px;border:1px solid #30363d;font-size:12px;color:#c9d1d9">
+            <div x-show="horizonLabel" style="display:none;margin-top:10px;padding:9px 12px;background:#21262d;border-radius:6px;border:1px solid #30363d;font-size:12px;color:#c9d1d9">
               <strong style="color:#e6edf3">Sugerencia:</strong> <span x-text="horizonLabel"></span>
               <span style="color:#8b949e;margin-left:6px" x-text="'(' + horizonRange + ')'"></span>
               — <span x-text="horizonDesc"></span>
@@ -357,7 +357,7 @@
           <svg :style="open ? 'transform:rotate(45deg)' : ''" style="width:13px;height:13px;transition:transform 0.15s;flex-shrink:0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
           Añadir / actualizar posición
         </button>
-        <div x-show="open" x-cloak style="margin-top:16px">
+        <div x-show="open" style="display:none;margin-top:16px">
           <p style="font-size:12px;color:#8b949e;margin-bottom:14px">Introduce el precio en euros. Si el ticker ya existe, se actualiza.</p>
           <form method="post" action="/posiciones/add">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -438,7 +438,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="btn btn-ghost btn-sm" :disabled="loading">
             <span x-show="!loading">Enriquecer todos</span>
-            <span x-show="loading" x-cloak>Consultando yfinance…</span>
+            <span x-show="loading" style="display:none">Consultando yfinance…</span>
           </button>
         </form>
       </div>
@@ -494,7 +494,7 @@
   <!-- ══════════════════════════════════════════════════════════════════════════
        TAB: TRADE REPUBLIC
        ══════════════════════════════════════════════════════════════════════════ -->
-  <div x-show="tab==='tr'" x-cloak>
+  <div x-show="tab==='tr'" style="display:none">
 
     {% set tr_synced   = request.query_params.get('tr_synced') %}
     {% set tr_unm_q    = request.query_params.get('tr_unmatched') %}
@@ -588,7 +588,7 @@
                   </span>
                 </template>
                 <template x-if="loading">
-                  <span x-cloak style="display:flex;align-items:center;gap:5px">
+                  <span style="display:flex;align-items:center;gap:5px">
                     <svg class="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                     Sincronizando…
                   </span>

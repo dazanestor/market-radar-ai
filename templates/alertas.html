@@ -130,7 +130,7 @@
                  step="any" required>
           <!-- Score hint: muestra el score actual cuando el tipo es score y hay ticker seleccionado -->
           <div x-show="ctype === 'score' && selectedTicker && scores[selectedTicker] !== undefined"
-               style="margin-top:4px;font-size:11px;color:#8b949e" x-cloak>
+               style="display:none;margin-top:4px;font-size:11px;color:#8b949e">
             Score actual: <strong style="color:#58a6ff" x-text="scores[selectedTicker]"></strong>
           </div>
         </div>

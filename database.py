@@ -188,6 +188,10 @@ CREATE TABLE IF NOT EXISTS tr_isin_map (
         _add_column_if_missing(conn, "price_history", "trend",         "TEXT")
         _add_column_if_missing(conn, "price_history", "pnl",           "REAL")
 
+        # Migración: limpiar centinelas '—' en block/region para que COALESCE use tickers
+        c.execute("UPDATE price_history SET block  = NULL WHERE block  = '—'")
+        c.execute("UPDATE price_history SET region = NULL WHERE region = '—'")
+
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
         # Composite index for get_ticker_history queries (ticker + date DESC)
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker_date ON price_history(ticker, date DESC)")
@@ -742,8 +746,8 @@ def get_latest_snapshot_as_df():
                 ph.volatility, ph.dividend_yield, ph.rsi, ph.score, ph.opportunity,
                 COALESCE(ph.category, t.category)         AS category,
                 COALESCE(ph.name, t.name, ph.ticker)      AS name,
-                COALESCE(ph.block, t.block, '—')          AS block,
-                COALESCE(ph.region, t.region, '—')        AS region,
+                COALESCE(NULLIF(ph.block, '—'), t.block)  AS block,
+                COALESCE(NULLIF(ph.region, '—'), t.region) AS region,
                 COALESCE(ph.horizon, t.horizon)           AS horizon,
                 COALESCE(ph.target_weight, t.target_weight) AS target_weight,
                 COALESCE(ph.target_price, t.target_price) AS target_price,

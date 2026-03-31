@@ -166,8 +166,8 @@ def _process_ticker(ticker, category, meta, today, portfolio_positions,
         yf_region = _COUNTRY_TO_REGION.get(yf_country, yf_country or None)
 
         name   = meta.get("name")   or yf_name   or ticker
-        block  = meta.get("block")  or yf_block  or "—"
-        region = meta.get("region") or yf_region or "—"
+        block  = meta.get("block")  or yf_block  or None
+        region = meta.get("region") or yf_region or None
 
         # Persistir en tickers si faltaban (enriquecimiento automático)
         updates = {}

@@ -1117,7 +1117,9 @@ def _tr_status() -> str:
 
 def _do_generate_report():
     macro = get_macro_context()
-    df, _ = generate()
+    df, gen_errors = generate()
+    if gen_errors:
+        logger.warning("generate_csv errores (%d): %s", len(gen_errors), gen_errors)
     if df.empty:
         return
     df = score_by_horizon(df)

@@ -101,7 +101,7 @@ _TICKER_OVERRIDES = {
     "KGC":  {"name": "Kinross Gold Corporation",       "block": "Materiales", "region": "América"},
 }
 
-_MAX_WORKERS = int(os.environ.get("FETCH_WORKERS", "10"))
+_MAX_WORKERS = int(os.environ.get("FETCH_WORKERS", "5"))
 
 def _real(v):
     """Devuelve v solo si es un valor real (no None, no vacío, no '—')."""
@@ -234,6 +234,10 @@ def _process_ticker(ticker, category, meta, today, portfolio_positions,
         yf_industry = info.get("industry") or info.get("industryDisp") or ""
         yf_country = info.get("country", "")
 
+        # Advertir si yfinance devuelve info vacía o incompleta
+        if not info or not info.get("currency"):
+            logger.warning("%s: yfinance devolvió info vacía/incompleta (posible rate limit)", ticker)
+
         # Sector → bloque; si sector vacío, intentar via industria
         yf_block = (_SECTOR_TO_BLOCK.get(yf_sector)
                     or _INDUSTRY_TO_BLOCK.get(yf_industry)
@@ -315,6 +319,7 @@ def generate():
     rows = []
     errors = []
 
+    logger.info("Procesando %d tickers con %d workers...", len(tasks), _MAX_WORKERS)
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
         futures = {
             pool.submit(_process_ticker, ticker, cat, meta, today,
@@ -332,6 +337,10 @@ def generate():
                 ticker = futures[fut]
                 logger.exception("Error inesperado procesando %s", ticker)
                 errors.append(f"{ticker}: error inesperado al procesar")
+
+    logger.info("generate(): %d OK, %d errores", len(rows), len(errors))
+    if errors:
+        logger.warning("Tickers con error: %s", errors)
 
     df = pd.DataFrame(rows)
     return df, errors

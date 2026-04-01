@@ -892,6 +892,42 @@ _SECTOR_TO_BLOCK = {
     "Real Estate":            "Inmobiliario",
     "Utilities":              "Utilities",
 }
+_INDUSTRY_TO_BLOCK = {
+    "Software—Application": "Tecnología", "Software—Infrastructure": "Tecnología",
+    "Semiconductors": "Tecnología", "Semiconductor Equipment & Materials": "Tecnología",
+    "Consumer Electronics": "Tecnología", "Electronic Components": "Tecnología",
+    "Information Technology Services": "Tecnología", "Internet Content & Information": "Tecnología",
+    "Computer Hardware": "Tecnología", "Electronic Gaming & Multimedia": "Tecnología",
+    "Banks—Diversified": "Financiero", "Banks—Regional": "Financiero",
+    "Insurance—Diversified": "Financiero", "Asset Management": "Financiero",
+    "Capital Markets": "Financiero", "Credit Services": "Financiero",
+    "Drug Manufacturers—General": "Salud", "Biotechnology": "Salud",
+    "Medical Devices": "Salud", "Medical Instruments & Supplies": "Salud",
+    "Healthcare Plans": "Salud", "Diagnostics & Research": "Salud",
+    "Pharmaceutical Retailers": "Salud",
+    "Grocery Stores": "Consumo básico", "Household Products": "Consumo básico",
+    "Beverages—Non-Alcoholic": "Consumo básico", "Tobacco": "Consumo básico",
+    "Specialty Retail": "Consumo cíclico", "Auto Manufacturers": "Consumo cíclico",
+    "Restaurants": "Consumo cíclico", "Travel Services": "Consumo cíclico",
+    "Lodging": "Consumo cíclico", "Internet Retail": "Consumo cíclico",
+    "Luxury Goods": "Consumo cíclico",
+    "Telecom Services": "Comunicaciones", "Entertainment": "Comunicaciones",
+    "Broadcasting": "Comunicaciones",
+    "Aerospace & Defense": "Industrial", "Airlines": "Industrial",
+    "Railroads": "Industrial", "Specialty Industrial Machinery": "Industrial",
+    "Farm & Heavy Construction Machinery": "Industrial", "Consulting Services": "Industrial",
+    "Gold": "Materiales", "Silver": "Materiales", "Copper": "Materiales",
+    "Specialty Chemicals": "Materiales", "Agricultural Inputs": "Materiales",
+    "Steel": "Materiales", "Other Industrial Metals & Mining": "Materiales",
+    "Oil & Gas Integrated": "Energía", "Oil & Gas E&P": "Energía",
+    "Oil & Gas Midstream": "Energía", "Oil & Gas Refining & Marketing": "Energía",
+    "Uranium": "Energía",
+    "REIT—Retail": "Inmobiliario", "REIT—Office": "Inmobiliario",
+    "REIT—Industrial": "Inmobiliario", "REIT—Residential": "Inmobiliario",
+    "Real Estate Services": "Inmobiliario",
+    "Utilities—Regulated Electric": "Utilities", "Utilities—Renewable": "Utilities",
+    "Utilities—Diversified": "Utilities",
+}
 _COUNTRY_TO_REGION = {
     "United States": "USA",
     "Switzerland":   "Europa",
@@ -907,15 +943,64 @@ _COUNTRY_TO_REGION = {
     "Finland":       "Europa",
     "Norway":        "Europa",
     "Portugal":      "Europa",
+    "Ireland":       "Europa",
+    "Luxembourg":    "Europa",
+    "Austria":       "Europa",
     "Australia":     "Asia-Pacífico",
     "Japan":         "Asia-Pacífico",
     "China":         "Asia-Pacífico",
     "Hong Kong":     "Asia-Pacífico",
     "South Korea":   "Asia-Pacífico",
     "India":         "Asia-Pacífico",
+    "Taiwan":        "Asia-Pacífico",
+    "Singapore":     "Asia-Pacífico",
     "Canada":        "América",
     "Brazil":        "América",
+    "Mexico":        "América",
 }
+_SUFFIX_REGION = {
+    ".DE": "Europa", ".PA": "Europa", ".MC": "Europa", ".L": "Europa",
+    ".AS": "Europa", ".SW": "Europa", ".CO": "Europa", ".ST": "Europa",
+    ".MI": "Europa", ".LS": "Europa", ".BR": "Europa", ".OL": "Europa",
+    ".HE": "Europa", ".HK": "Asia-Pacífico", ".T": "Asia-Pacífico",
+    ".AX": "Asia-Pacífico", ".KS": "Asia-Pacífico", ".SS": "Asia-Pacífico",
+}
+# Tickers donde yfinance devuelve nombre/sector incorrecto
+_TICKER_OVERRIDES = {
+    "GOLD": {"name": "Barrick Gold Corporation",       "block": "Materiales", "region": "América"},
+    "NEM":  {"name": "Newmont Corporation",            "block": "Materiales", "region": "USA"},
+    "AEM":  {"name": "Agnico Eagle Mines Limited",     "block": "Materiales", "region": "América"},
+    "WPM":  {"name": "Wheaton Precious Metals Corp.",  "block": "Materiales", "region": "América"},
+    "FNV":  {"name": "Franco-Nevada Corporation",      "block": "Materiales", "region": "América"},
+    "RGLD": {"name": "Royal Gold, Inc.",               "block": "Materiales", "region": "USA"},
+    "PAAS": {"name": "Pan American Silver Corp.",      "block": "Materiales", "region": "América"},
+    "AG":   {"name": "First Majestic Silver Corp.",    "block": "Materiales", "region": "América"},
+    "HL":   {"name": "Hecla Mining Company",           "block": "Materiales", "region": "USA"},
+    "KGC":  {"name": "Kinross Gold Corporation",       "block": "Materiales", "region": "América"},
+}
+
+def _region_from_suffix(ticker: str) -> str | None:
+    for suffix, region in _SUFFIX_REGION.items():
+        if ticker.endswith(suffix):
+            return region
+    return None
+
+def _resolve_block(ticker: str, info: dict) -> str | None:
+    if ticker in _TICKER_OVERRIDES:
+        return _TICKER_OVERRIDES[ticker].get("block")
+    sector   = info.get("sector") or info.get("sectorDisp") or ""
+    industry = info.get("industry") or info.get("industryDisp") or ""
+    return (_SECTOR_TO_BLOCK.get(sector)
+            or _INDUSTRY_TO_BLOCK.get(industry)
+            or (sector if sector else None))
+
+def _resolve_region(ticker: str, info: dict) -> str | None:
+    if ticker in _TICKER_OVERRIDES:
+        return _TICKER_OVERRIDES[ticker].get("region")
+    country = info.get("country", "")
+    return (_COUNTRY_TO_REGION.get(country)
+            or _region_from_suffix(ticker)
+            or (country if country else None))
 
 
 def _sanitize_name(s: str) -> str:
@@ -936,15 +1021,14 @@ def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
         stock = yf.Ticker(ticker)
         info  = stock.info or {}
         if needs_name:
-            long_name = info.get("longName") or info.get("shortName") or ""
+            ov_name = _TICKER_OVERRIDES.get(ticker, {}).get("name")
+            long_name = ov_name or info.get("longName") or info.get("shortName") or ""
             if long_name:
                 meta["name"] = _sanitize_name(long_name)
         if needs_block:
-            sector = info.get("sector", "")
-            meta["block"] = _SECTOR_TO_BLOCK.get(sector, sector or None)
+            meta["block"] = _resolve_block(ticker, info)
         if needs_region:
-            country = info.get("country", "")
-            meta["region"] = _COUNTRY_TO_REGION.get(country, country or None)
+            meta["region"] = _resolve_region(ticker, info)
         if needs_horizon:
             roe = info.get("returnOnEquity")
             pe  = info.get("trailingPE")
@@ -2440,9 +2524,9 @@ async def ticker_detalle(ticker: str, request: Request,
         description = description[:500] + "…"
 
     fundamentals = {
-        "name":           info.get("longName") or info.get("shortName") or ticker,
-        "sector":         info.get("sector", "—"),
-        "country":        info.get("country", "—"),
+        "name":           _TICKER_OVERRIDES.get(ticker, {}).get("name") or info.get("longName") or info.get("shortName") or ticker,
+        "sector":         _resolve_block(ticker, info) or info.get("sector") or "—",
+        "country":        _resolve_region(ticker, info) or info.get("country") or "—",
         "cap_b":          cap_b,
         "currency":       info.get("currency", "—"),
         "pe_ratio":       info.get("trailingPE"),
@@ -2565,10 +2649,11 @@ async def tickers_info(request: Request, ticker: str = "", session: Optional[str
             horizon  = suggest_horizon(roe_pct, pe_val, div_pct, vol, mom3m)
             if horizon not in HORIZON_META:
                 horizon = "medio"
+            ov = _TICKER_OVERRIDES.get(ticker, {})
             return {
-                "name":            info.get("longName") or info.get("shortName", ticker),
-                "block":           _SECTOR_TO_BLOCK.get(sector, sector),
-                "region":          _COUNTRY_TO_REGION.get(country, country),
+                "name":            ov.get("name") or info.get("longName") or info.get("shortName") or ticker,
+                "block":           _resolve_block(ticker, info),
+                "region":          _resolve_region(ticker, info),
                 "horizon":         horizon,
                 "horizon_label":   HORIZON_META[horizon]["label"],
                 "horizon_range":   HORIZON_META[horizon]["range"],

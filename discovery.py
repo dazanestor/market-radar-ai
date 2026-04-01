@@ -356,10 +356,15 @@ def _fetch_ticker(ticker: str) -> dict | None:
             except Exception:
                 pass
 
-        name    = info.get("longName") or info.get("shortName") or ticker
-        sector  = _SECTOR_TO_BLOCK.get(info.get("sector", ""), info.get("sector") or "")
-        country = info.get("country", "")
-        region  = _infer_region(ticker, country)
+        yf_name    = info.get("longName") or info.get("shortName") or ticker
+        yf_sector  = info.get("sector") or info.get("sectorDisp") or ""
+        yf_industry = info.get("industry") or info.get("industryDisp") or ""
+        country    = info.get("country", "")
+        region     = _infer_region(ticker, country)
+        sector     = (_SECTOR_TO_BLOCK.get(yf_sector)
+                      or _INDUSTRY_TO_BLOCK.get(yf_industry)
+                      or yf_sector or "")
+        name = yf_name
         # Override para tickers donde yfinance devuelve datos erróneos
         if ticker in _TICKER_OVERRIDES:
             ov = _TICKER_OVERRIDES[ticker]
@@ -416,9 +421,11 @@ _COUNTRY_TO_REGION = {
     "Netherlands": "Europa", "Sweden": "Europa", "Spain": "Europa",
     "Italy": "Europa", "Belgium": "Europa", "Finland": "Europa",
     "Norway": "Europa", "Portugal": "Europa", "Ireland": "Europa",
+    "Luxembourg": "Europa", "Austria": "Europa",
     "Australia": "Asia-Pacífico", "Japan": "Asia-Pacífico",
     "China": "Asia-Pacífico", "Hong Kong": "Asia-Pacífico",
     "South Korea": "Asia-Pacífico", "India": "Asia-Pacífico",
+    "Taiwan": "Asia-Pacífico", "Singapore": "Asia-Pacífico",
     "Canada": "América", "Brazil": "América", "Mexico": "América",
 }
 
@@ -434,6 +441,42 @@ _SECTOR_TO_BLOCK = {
     "Energy":                 "Energía",
     "Real Estate":            "Inmobiliario",
     "Utilities":              "Utilities",
+}
+_INDUSTRY_TO_BLOCK = {
+    "Software—Application": "Tecnología", "Software—Infrastructure": "Tecnología",
+    "Semiconductors": "Tecnología", "Semiconductor Equipment & Materials": "Tecnología",
+    "Consumer Electronics": "Tecnología", "Electronic Components": "Tecnología",
+    "Information Technology Services": "Tecnología", "Internet Content & Information": "Tecnología",
+    "Computer Hardware": "Tecnología", "Electronic Gaming & Multimedia": "Tecnología",
+    "Banks—Diversified": "Financiero", "Banks—Regional": "Financiero",
+    "Insurance—Diversified": "Financiero", "Asset Management": "Financiero",
+    "Capital Markets": "Financiero", "Credit Services": "Financiero",
+    "Drug Manufacturers—General": "Salud", "Biotechnology": "Salud",
+    "Medical Devices": "Salud", "Medical Instruments & Supplies": "Salud",
+    "Healthcare Plans": "Salud", "Diagnostics & Research": "Salud",
+    "Pharmaceutical Retailers": "Salud",
+    "Grocery Stores": "Consumo básico", "Household Products": "Consumo básico",
+    "Beverages—Non-Alcoholic": "Consumo básico", "Tobacco": "Consumo básico",
+    "Specialty Retail": "Consumo cíclico", "Auto Manufacturers": "Consumo cíclico",
+    "Restaurants": "Consumo cíclico", "Travel Services": "Consumo cíclico",
+    "Lodging": "Consumo cíclico", "Internet Retail": "Consumo cíclico",
+    "Luxury Goods": "Consumo cíclico",
+    "Telecom Services": "Comunicaciones", "Entertainment": "Comunicaciones",
+    "Broadcasting": "Comunicaciones",
+    "Aerospace & Defense": "Industrial", "Airlines": "Industrial",
+    "Railroads": "Industrial", "Specialty Industrial Machinery": "Industrial",
+    "Farm & Heavy Construction Machinery": "Industrial", "Consulting Services": "Industrial",
+    "Gold": "Materiales", "Silver": "Materiales", "Copper": "Materiales",
+    "Specialty Chemicals": "Materiales", "Agricultural Inputs": "Materiales",
+    "Steel": "Materiales", "Other Industrial Metals & Mining": "Materiales",
+    "Oil & Gas Integrated": "Energía", "Oil & Gas E&P": "Energía",
+    "Oil & Gas Midstream": "Energía", "Oil & Gas Refining & Marketing": "Energía",
+    "Uranium": "Energía",
+    "REIT—Retail": "Inmobiliario", "REIT—Office": "Inmobiliario",
+    "REIT—Industrial": "Inmobiliario", "REIT—Residential": "Inmobiliario",
+    "Real Estate Services": "Inmobiliario",
+    "Utilities—Regulated Electric": "Utilities", "Utilities—Renewable": "Utilities",
+    "Utilities—Diversified": "Utilities",
 }
 
 _METAL_TICKERS = set(_BASE_METALES)

@@ -87,6 +87,20 @@ def _region_from_suffix(ticker: str) -> str | None:
             return region
     return None
 
+# Tickers donde yfinance devuelve nombre/sector incorrecto
+_TICKER_OVERRIDES = {
+    "GOLD": {"name": "Barrick Gold Corporation",       "block": "Materiales", "region": "América"},
+    "NEM":  {"name": "Newmont Corporation",            "block": "Materiales", "region": "USA"},
+    "AEM":  {"name": "Agnico Eagle Mines Limited",     "block": "Materiales", "region": "América"},
+    "WPM":  {"name": "Wheaton Precious Metals Corp.",  "block": "Materiales", "region": "América"},
+    "FNV":  {"name": "Franco-Nevada Corporation",      "block": "Materiales", "region": "América"},
+    "RGLD": {"name": "Royal Gold, Inc.",               "block": "Materiales", "region": "USA"},
+    "PAAS": {"name": "Pan American Silver Corp.",      "block": "Materiales", "region": "América"},
+    "AG":   {"name": "First Majestic Silver Corp.",    "block": "Materiales", "region": "América"},
+    "HL":   {"name": "Hecla Mining Company",           "block": "Materiales", "region": "USA"},
+    "KGC":  {"name": "Kinross Gold Corporation",       "block": "Materiales", "region": "América"},
+}
+
 _MAX_WORKERS = int(os.environ.get("FETCH_WORKERS", "10"))
 
 def _safe_round(v, n=2):
@@ -225,15 +239,16 @@ def _process_ticker(ticker, category, meta, today, portfolio_positions,
                      or _region_from_suffix(ticker)
                      or (yf_country if yf_country else None))
 
-        name   = meta.get("name")   or yf_name   or ticker
-        block  = meta.get("block")  or yf_block  or None
-        region = meta.get("region") or yf_region or None
+        ov     = _TICKER_OVERRIDES.get(ticker, {})
+        name   = ov.get("name")   or meta.get("name")   or yf_name   or ticker
+        block  = ov.get("block")  or meta.get("block")  or yf_block  or None
+        region = ov.get("region") or meta.get("region") or yf_region or None
 
         # Persistir en tickers si faltaban (enriquecimiento automático)
         updates = {}
-        if not meta.get("name")   and yf_name:   updates["name"]   = yf_name
-        if not meta.get("block")  and yf_block:  updates["block"]  = yf_block
-        if not meta.get("region") and yf_region: updates["region"] = yf_region
+        if not meta.get("name")   and name   != ticker: updates["name"]   = name
+        if not meta.get("block")  and block:            updates["block"]  = block
+        if not meta.get("region") and region:           updates["region"] = region
         if updates:
             try:
                 update_ticker_fields(ticker, **updates)

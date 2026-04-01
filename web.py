@@ -964,6 +964,7 @@ _SUFFIX_REGION = {
     ".MI": "Europa", ".LS": "Europa", ".BR": "Europa", ".OL": "Europa",
     ".HE": "Europa", ".HK": "Asia-Pacífico", ".T": "Asia-Pacífico",
     ".AX": "Asia-Pacífico", ".KS": "Asia-Pacífico", ".SS": "Asia-Pacífico",
+    ".MX": "América",
 }
 # Tickers donde yfinance devuelve nombre/sector incorrecto
 _TICKER_OVERRIDES = {
@@ -3378,10 +3379,13 @@ async def screener_page(request: Request, session: Optional[str] = Cookie(defaul
     if df is not None:
         df_s = _get_scored_df(df)
         for d in df_s.to_dict("records"):
-            sector = d.get("block")
-            region = d.get("region")
-            sector = sector if isinstance(sector, str) and sector else ""
-            region = region if isinstance(region, str) and region else ""
+            # Sanitizar NaN de pandas a None para que el template muestre '—'
+            for field in ("block", "region", "rsi", "score", "drawdown_52w",
+                          "momentum_3m", "dividend_yield", "pe_ratio", "volatility"):
+                if _is_nan(d.get(field)):
+                    d[field] = None
+            sector = d.get("block") or ""
+            region = d.get("region") or ""
             if sector:
                 sectors.add(sector)
             if region:

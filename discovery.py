@@ -370,6 +370,7 @@ def _fetch_ticker(ticker: str) -> dict | None:
             ov = _TICKER_OVERRIDES[ticker]
             name   = ov.get("name",   name)
             sector = ov.get("sector", sector)
+            region = ov.get("region", region)
 
         return {
             "ticker":            ticker,
@@ -395,13 +396,21 @@ def _fetch_ticker(ticker: str) -> dict | None:
         return None
 
 
-# Tickers donde yfinance devuelve datos incorrectos (nombre/sector corrupto)
+# Tickers donde yfinance devuelve datos incorrectos (nombre/sector/región corrupto)
 _TICKER_OVERRIDES = {
-    "GOLD":  {"name": "Barrick Gold Corporation",        "sector": "Materiales"},
-    "NEM":   {"name": "Newmont Corporation",             "sector": "Materiales"},
-    "AEM":   {"name": "Agnico Eagle Mines Limited",      "sector": "Materiales"},
-    "WPM":   {"name": "Wheaton Precious Metals Corp.",   "sector": "Materiales"},
-    "FNV":   {"name": "Franco-Nevada Corporation",       "sector": "Materiales"},
+    "GOLD":  {"name": "Barrick Gold Corporation",       "sector": "Materiales", "region": "América"},
+    "NEM":   {"name": "Newmont Corporation",            "sector": "Materiales", "region": "USA"},
+    "AEM":   {"name": "Agnico Eagle Mines Limited",     "sector": "Materiales", "region": "América"},
+    "WPM":   {"name": "Wheaton Precious Metals Corp.",  "sector": "Materiales", "region": "América"},
+    "FNV":   {"name": "Franco-Nevada Corporation",      "sector": "Materiales", "region": "América"},
+    "RGLD":  {"name": "Royal Gold, Inc.",               "sector": "Materiales", "region": "USA"},
+    "PAAS":  {"name": "Pan American Silver Corp.",      "sector": "Materiales", "region": "América"},
+    "AG":    {"name": "First Majestic Silver Corp.",    "sector": "Materiales", "region": "América"},
+    "HL":    {"name": "Hecla Mining Company",           "sector": "Materiales", "region": "USA"},
+    "KGC":   {"name": "Kinross Gold Corporation",       "sector": "Materiales", "region": "América"},
+    "AGI":   {"name": "Alamos Gold Inc.",               "sector": "Materiales", "region": "América"},
+    "SBSW":  {"name": "Sibanye Stillwater Limited",     "sector": "Materiales", "region": "América"},
+    "IMPUY": {"name": "Impala Platinum Holdings Ltd.",  "sector": "Materiales", "region": "América"},
 }
 
 # Tickers que cotizan en bolsas USA aunque la empresa sea extranjera
@@ -483,8 +492,6 @@ _METAL_TICKERS = set(_BASE_METALES)
 
 
 def _infer_region(ticker: str, country: str = "") -> str:
-    if ticker in _METAL_TICKERS:
-        return "Metales preciosos"
     # Sufijo de bolsa: máxima prioridad (más fiable que el país de yfinance)
     for suffix, region in _SUFFIX_REGION.items():
         if ticker.endswith(suffix):

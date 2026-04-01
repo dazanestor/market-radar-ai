@@ -191,6 +191,8 @@ CREATE TABLE IF NOT EXISTS tr_isin_map (
         # Migración: limpiar centinelas '—' en block/region para que COALESCE use tickers
         c.execute("UPDATE price_history SET block  = NULL WHERE block  = '—'")
         c.execute("UPDATE price_history SET region = NULL WHERE region = '—'")
+        c.execute("UPDATE tickers SET block  = NULL WHERE block  = '—'")
+        c.execute("UPDATE tickers SET region = NULL WHERE region = '—'")
 
         c.execute("CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)")
         # Composite index for get_ticker_history queries (ticker + date DESC)

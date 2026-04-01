@@ -103,6 +103,10 @@ _TICKER_OVERRIDES = {
 
 _MAX_WORKERS = int(os.environ.get("FETCH_WORKERS", "10"))
 
+def _real(v):
+    """Devuelve v solo si es un valor real (no None, no vacío, no '—')."""
+    return v if v and v != "—" else None
+
 def _safe_round(v, n=2):
     return round(v, n) if v is not None and not math.isnan(v) else None
 
@@ -241,14 +245,14 @@ def _process_ticker(ticker, category, meta, today, portfolio_positions,
 
         ov     = _TICKER_OVERRIDES.get(ticker, {})
         name   = ov.get("name")   or meta.get("name")   or yf_name   or ticker
-        block  = ov.get("block")  or meta.get("block")  or yf_block  or None
-        region = ov.get("region") or meta.get("region") or yf_region or None
+        block  = ov.get("block")  or _real(meta.get("block"))  or yf_block  or None
+        region = ov.get("region") or _real(meta.get("region")) or yf_region or None
 
         # Persistir en tickers si faltaban (enriquecimiento automático)
         updates = {}
-        if not meta.get("name")   and name   != ticker: updates["name"]   = name
-        if not meta.get("block")  and block:            updates["block"]  = block
-        if not meta.get("region") and region:           updates["region"] = region
+        if not _real(meta.get("name"))   and name   != ticker: updates["name"]   = name
+        if not _real(meta.get("block"))  and block:            updates["block"]  = block
+        if not _real(meta.get("region")) and region:           updates["region"] = region
         if updates:
             try:
                 update_ticker_fields(ticker, **updates)

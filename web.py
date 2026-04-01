@@ -1010,9 +1010,10 @@ def _sanitize_name(s: str) -> str:
 
 def _enrich_ticker_meta(ticker: str, meta: dict) -> dict:
     """Rellena name, block, region y horizon en meta usando yfinance si están vacíos."""
-    needs_name    = not meta.get("name") or meta.get("name") == ticker
-    needs_block   = not meta.get("block")
-    needs_region  = not meta.get("region")
+    def _empty(v): return not v or v == "—"
+    needs_name    = _empty(meta.get("name")) or meta.get("name") == ticker
+    needs_block   = _empty(meta.get("block"))
+    needs_region  = _empty(meta.get("region"))
     needs_horizon = not meta.get("horizon")
     if not (needs_name or needs_block or needs_region or needs_horizon):
         return meta

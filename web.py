@@ -2235,10 +2235,10 @@ async def dashboard(
                 if price and not _is_nan(price):
                     value        = shares * price
                     total_value += value
-                if avg and price and not _is_nan(price):
+                if avg is not None and avg > 0 and price and not _is_nan(price):
                     pnl = (price - avg) / avg * 100
             pnl_eur = (price - avg) * shares if (
-                avg and price and not _is_nan(price) and shares
+                avg is not None and avg > 0 and price and not _is_nan(price) and shares
             ) else None
             d["shares"]    = shares
             d["avg_price"] = avg
@@ -2698,13 +2698,13 @@ async def tickers_page(
                 r     = row.iloc[0]
                 price = r.get("price")
                 name  = r.get("name")
-                if price and not _is_nan(price) and avg_price:
+                if price and not _is_nan(price) and avg_price is not None and avg_price > 0:
                     pnl   = (price - avg_price) / avg_price * 100
                     value = shares * price
         if not name or name == ticker_row:
             name = yaml_names.get(ticker_row, ticker_row)
         pnl_eur = (price - avg_price) * shares if (
-            price and not _is_nan(price) and avg_price
+            price and not _is_nan(price) and avg_price is not None and avg_price > 0
         ) else None
         split_warning = (
             price and avg_price and not _is_nan(price)
@@ -3201,8 +3201,10 @@ async def distribucion_page(request: Request, session: Optional[str] = Cookie(de
                 continue  # Only show distribution for portfolio positions
 
             total += value
-            sector = row.get("block") or "Sin sector"
-            region = row.get("region") or "Sin región"
+            _blk = row.get("block")
+            _rgn = row.get("region")
+            sector = _blk if (_blk and not _is_nan(_blk)) else "Sin sector"
+            region = _rgn if (_rgn and not _is_nan(_rgn)) else "Sin región"
             currency = _REGION_TO_CURRENCY.get(region, "OTHER")
 
             by_sector[sector] = by_sector.get(sector, 0.0) + value
@@ -5594,7 +5596,7 @@ async def chart_treemap(session: Optional[str] = Cookie(default=None)):
             if not p or _is_nan(p):
                 continue
             value  = shares * float(p)
-            pnl    = (float(p) - float(avg)) / float(avg) * 100 if avg else 0
+            pnl    = (float(p) - float(avg)) / float(avg) * 100 if avg is not None and avg > 0 else 0
             name   = row.iloc[0].get("name", ticker)
             items.append((value, {"ticker": ticker, "name": name, "value": value, "pnl": pnl}))
 
@@ -5858,7 +5860,7 @@ async def export_portfolio(session: Optional[str] = Cookie(default=None)):
                 p = d.get("price")
                 if p and not _is_nan(p):
                     value = shares * p
-                    if avg:
+                    if avg is not None and avg > 0:
                         pnl = (p - avg) / avg * 100
             rows.append({
                 "ticker": ticker, "name": d.get("name", ""),

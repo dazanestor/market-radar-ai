@@ -99,6 +99,7 @@ _TICKER_OVERRIDES = {
     "AG":   {"name": "First Majestic Silver Corp.",    "block": "Materiales", "region": "América"},
     "HL":   {"name": "Hecla Mining Company",           "block": "Materiales", "region": "USA"},
     "KGC":  {"name": "Kinross Gold Corporation",       "block": "Materiales", "region": "América"},
+    "0K36.L": {"name": "Moody's Corporation",          "block": "Financiero",  "region": "USA"},
 }
 
 _MAX_WORKERS = int(os.environ.get("FETCH_WORKERS", "5"))

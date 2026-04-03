@@ -762,9 +762,9 @@ def get_latest_snapshot_as_df():
                        ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS _rn
                 FROM price_history ph
             ) ph
-            LEFT JOIN tickers t ON ph.ticker = t.ticker
+            INNER JOIN tickers t ON ph.ticker = t.ticker
             WHERE ph._rn = 1
-            ORDER BY ph.category, ph.ticker
+            ORDER BY t.category, ph.ticker
         """, conn)
     if df.empty:
         return None
